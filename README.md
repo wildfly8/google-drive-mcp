@@ -22,13 +22,18 @@ See the constitution for the full invariant set (Articles I–XV).
 Cursor skills are installed under `.cursor/skills/`. Use them in this order:
 
 0. `/speckit-constitution` — project principles (done: v1.0.0)
-1. `/speckit-specify` — what to build (requirements and user stories)
+1. `/speckit-specify` — what to build (done: access control + retrieval core)
 2. `/speckit-clarify` — optional; de-risk underspecified areas
 3. `/speckit-plan` — how to build it (stack and architecture)
 4. `/speckit-tasks` — actionable implementation tasks
 5. `/speckit-analyze` — optional; cross-artifact consistency
 6. `/speckit-implement` — execute the tasks
 7. `/speckit-converge` — compare the codebase to spec/plan/tasks and append remaining work
+
+Draft feature specs:
+
+- [Access Control Boundary](specs/001-access-control/spec.md) — who may act, and on what authority
+- [Retrieval Core](specs/002-retrieval-core/spec.md) — discover, read, exact-search once a call is cleared
 
 Repeat implement and converge until converge reports **Converged**.
 
