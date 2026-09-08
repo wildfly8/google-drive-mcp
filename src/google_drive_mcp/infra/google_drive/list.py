@@ -79,9 +79,14 @@ def walk_files(
     budget: Budget,
     *,
     include_trashed: bool = False,
+    include_folders: bool = True,
     request_id: str | None = None,
 ) -> WalkResult:
-    """BFS descendants (folder scope) or whole-grant listing. Uses is_within_scope."""
+    """BFS descendants (folder scope) or whole-grant listing. Uses is_within_scope.
+
+    When ``include_folders`` is false (grep), folder nodes are used only for BFS
+    and do not consume ``max_files`` or appear in ``WalkResult.files``.
+    """
     result = WalkResult()
     lookup = _parent_lookup(drive)
 
@@ -89,6 +94,8 @@ def walk_files(
         if file.trashed and not include_trashed:
             return
         if not is_within_scope(file.id, scope, lookup):
+            return
+        if file.is_folder and not include_folders:
             return
         if budget.files_exhausted() or budget.time_exceeded():
             return
@@ -128,12 +135,13 @@ def walk_files(
                 ]
                 if getattr(drive, "list_time_exceeded", False):
                     result.time_exceeded = True
-                for child in children:
+                for index, child in enumerate(children):
                     if child.is_folder:
                         queue.append(child.id)
                     consider(child)
                     if budget.files_exhausted():
-                        result.truncated = True
+                        if index + 1 < len(children) or queue:
+                            result.truncated = True
                         break
                     if budget.time_exceeded():
                         result.time_exceeded = True
@@ -153,7 +161,9 @@ def walk_files(
                 result.truncated = True
                 break
             consider(_as_file(item))
-        if budget.files_exhausted() and len(result.files) < len(raw):
+        if budget.files_exhausted() and len(result.files) < len(
+            [i for i in raw if include_folders or not _as_file(i).is_folder]
+        ):
             result.truncated = True
         return result
     except GoogleApiError as exc:

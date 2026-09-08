@@ -47,13 +47,19 @@ def drive_grep(
         budget.max_matches = min(budget.max_matches, max_matches)
     compiled = compile_pattern(pattern, regex=regex, case_sensitive=case_sensitive)
     scope = RetrievalScope.from_tool_args(folder_id=folder_id, file_ids=file_ids)
-    walk = walk_files(drive, scope, budget, request_id=request_id)
+    named_only = bool(file_ids) and not folder_id
+    walk = walk_files(
+        drive,
+        scope,
+        budget,
+        include_folders=named_only,
+        request_id=request_id,
+    )
 
     matches: list[SearchMatch] = []
     skipped_unsupported = 0
     searchable = 0
     last_unsupported: ErrorCategory | None = None
-    named_only = bool(file_ids) and not folder_id
     truncated_bytes = False
 
     for file in walk.files:
@@ -63,6 +69,11 @@ def drive_grep(
         if budget.bytes_exhausted():
             walk.truncated = True
             break
+        if file.is_folder:
+            if named_only:
+                skipped_unsupported += 1
+                last_unsupported = ErrorCategory.UNSUPPORTED_MIME_TYPE
+            continue
         if default_representation(file.mime_type) is None:
             skipped_unsupported += 1
             last_unsupported = ErrorCategory.UNSUPPORTED_MIME_TYPE
@@ -134,17 +145,19 @@ def drive_grep(
     hit_match_cap = len(matches) >= budget.max_matches and (
         walk.truncated or budget.matches_exhausted()
     )
+    walk_incomplete = walk.rate_limited or walk.time_exceeded or walk.truncated
 
     if named_only and searchable == 0 and skipped_unsupported:
         raise DomainError.of(last_unsupported or ErrorCategory.UNSUPPORTED_MIME_TYPE, request_id=request_id)
-    if not named_only and searchable == 0 and skipped_unsupported and not walk.files:
-        pass
-    if not named_only and searchable == 0 and skipped_unsupported and walk.files:
-        # entire walk unsupported
-        if skipped_unsupported >= len(walk.files):
-            raise DomainError.of(
-                last_unsupported or ErrorCategory.UNSUPPORTED_MIME_TYPE, request_id=request_id
-            )
+    if (
+        not named_only
+        and searchable == 0
+        and skipped_unsupported
+        and not walk_incomplete
+    ):
+        raise DomainError.of(
+            last_unsupported or ErrorCategory.UNSUPPORTED_MIME_TYPE, request_id=request_id
+        )
 
     if walk.rate_limited:
         return {
