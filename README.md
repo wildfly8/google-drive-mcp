@@ -25,7 +25,7 @@ Cursor skills are installed under `.cursor/skills/`. Use them in this order:
 1. `/speckit-specify` — what to build (done: access control + retrieval core)
 2. `/speckit-clarify` — optional; de-risk underspecified areas (done: session 2026-09-08)
 3. `/speckit-plan` — how to build it (done: access control + retrieval core)
-4. `/speckit-tasks` — actionable implementation tasks
+4. `/speckit-tasks` — actionable implementation tasks (done: both features)
 5. `/speckit-analyze` — optional; cross-artifact consistency
 6. `/speckit-implement` — execute the tasks
 7. `/speckit-converge` — compare the codebase to spec/plan/tasks and append remaining work
