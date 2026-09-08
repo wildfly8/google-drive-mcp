@@ -233,3 +233,13 @@ Remaining work from `/speckit-converge` (2026-09-08). Do not rewrite earlier tas
 - [X] T047 Return `status: PARTIAL` with `partial_reason: max_bytes` from `drive_grep` when `fetch_text` truncates a file at `max_bytes` / `max_export_size` instead of searching the prefix and possibly reporting `COMPLETE` in `retrieval/grep.py` (FR-041, FR-104, Article X) (partial)
 - [X] T048 Honor `max_execution_time` during production `GoogleDriveClient` list pagination in `infra/google_drive/client.py` (and surface `PARTIAL` / `max_execution_time`) instead of fetching the full grant/folder into memory before `walk_files` can stop (FR-104, FR-041) (partial)
 - [X] T049 Map a non-integer `drive_ls` `page_token` to `INVALID_ARGUMENT` in `infra/google_drive/list.py` / `retrieval/ls.py` instead of raising `ValueError` (FR-003, FR-060 `INVALID_ARGUMENT`) (partial)
+
+---
+
+## Phase 9: Convergence
+
+Remaining work from `/speckit-converge` (2026-09-08, second pass). Do not rewrite earlier tasks.
+
+- [ ] T050 CRITICAL Return `PARTIAL` with `partial_reason: RATE_LIMITED` / `max_files` / `max_execution_time` from `drive_grep` when a folder or whole-grant walk is cut short with zero searchable files, instead of raising `UNSUPPORTED_MIME_TYPE` because the all-unsupported check runs before completeness flags in `retrieval/grep.py` (FR-037, FR-041, US4/AC3, Article X, result-status.md) (contradicts)
+- [ ] T051 Skip `file.is_folder` in `drive_grep` without counting folders as unsupported skips, so a completed search over folders plus searchable docs is not `PARTIAL`/`unsupported_skipped` and a folder-only tree is `EMPTY` rather than `UNSUPPORTED_MIME_TYPE` in `retrieval/grep.py` (FR-037, FR-041, Article X) (contradicts)
+- [ ] T052 Stop counting folder nodes toward grep `max_files` in `infra/google_drive/list.py` `walk_files`/`consider()` (or exclude folders from the grep walk payload while still using them for BFS) so nested docs remain reachable under the file budget (FR-030, FR-104) (partial)
