@@ -48,6 +48,10 @@ Google 404/403-as-404 (and single-file 429 with no prefix) go through Access Con
 
 Sheets/Slides context: character window of 200 characters around a match when the representation is not line-oriented; Docs/plain text use `max_context_lines`.
 
+### `content_format` (plan-level, spec FR-022)
+
+Omitted → default MIME from the research export map (Docs/Slides `text/plain`, Sheets `text/csv`, text blobs as stored). If set, it MUST be a MIME that type can produce. Unknown or type-incompatible value → `INVALID_ARGUMENT`.
+
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*

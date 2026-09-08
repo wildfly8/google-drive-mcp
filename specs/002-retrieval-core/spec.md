@@ -129,7 +129,7 @@ Drive is the only source of truth. After a document changes in Drive, a later re
 - **FR-020**: MUST retrieve current, authoritative `DocumentContent` for a given `file_id` directly from live Drive at call time — never from a prior MCP-owned copy (Articles I, IX).
 - **FR-021**: MUST obtain a usable text representation appropriate to the file type. v1 MUST support Google Docs, Sheets, and Slides. v1 MUST also support other Drive files that yield usable text (for example plain text or similarly text-extractable files). How export versus download is implemented is infrastructure (Article XII).
 - **FR-021a**: A type that cannot yield usable text MUST fail as `UNSUPPORTED_MIME_TYPE` or `FILE_NOT_EXPORTABLE` when the operation’s target is that file alone (`drive_read`, or `drive_grep` with only `file_ids` and every named id unsupported) — never as empty successful retrieval or fabricated empty content. Folder or whole-grant `drive_grep` follows FR-037.
-- **FR-022**: MUST support optional `content_format` and `max_bytes`.
+- **FR-022**: MUST support optional `content_format` and `max_bytes`. Omitted `content_format` MUST use the plan-level export/download MIME for that Drive type (research export map). An unknown or type-incompatible `content_format` MUST be `INVALID_ARGUMENT`.
 - **FR-023**: If the same file is re-read after being modified in Drive, the result MUST reflect the newer content when Drive itself makes it available.
 
 #### Verification — `drive_grep`
@@ -178,7 +178,7 @@ Drive is the only source of truth. After a document changes in Drive, a later re
 
 ### Key Entities
 
-- **DriveFile**: A logical Drive resource: `id, name, mimeType, parents[], modifiedTime, createdTime, webViewLink, size?, owners?, trashed`.
+- **DriveFile**: Domain fields `id, name, mime_type, parents[], modified_time, created_time, web_view_link, size?, owners?, trashed`. On the wire, the view link is `source_url` (mapped from Drive `webViewLink`). Drive API camelCase is adapter-only.
 - **Folder**: A DriveFile acting as a container; hierarchy is a discovery signal, not a second source of truth.
 - **DocumentContent**: Ephemeral, retrieval-time representation of a file's content: `file_id, mime_type, content, retrieved_at, representation`. Never persists beyond the operation (Article III).
 - **SearchCandidate**: A DriveFile surfaced as possibly relevant: `file, reason, discovery_method`. `discovery_method` is `find` (`drive_ls` returns children, not candidates). **Not evidence.**

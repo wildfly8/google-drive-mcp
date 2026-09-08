@@ -35,4 +35,4 @@
 - `DRIVE_API_ERROR` is an Article XI failure category (upstream failure), not an instruction to call a particular client library.
 - Export-versus-download and regex-engine choice are called out as infrastructure (Article XII) and deferred to plan.md.
 - Numeric resource-budget defaults and Sheets/Slides context-window shape are plan-level assumptions, not unspecified product scope.
-- Analyze remediations (2026-09-08): `source_url` wire field; FR-050 match fields grep-only; rate-limit walks are `PARTIAL`; grep unsupported split (FR-037); Evidence is conceptual. Checklist items above remain satisfied.
+- Analyze remediations (2026-09-08): `source_url` wire field; FR-050 match fields grep-only; rate-limit walks are `PARTIAL`; grep unsupported split (FR-037); Evidence is conceptual; `content_format` defaults to the export map. Plan synced. Checklist items above remain satisfied.

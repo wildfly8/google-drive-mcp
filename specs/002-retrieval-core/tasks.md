@@ -55,7 +55,7 @@ description: "Task list for Retrieval Core"
 
 - [ ] T012 [P] [US1] Contract tests for `drive_ls` in `tests/contract/test_drive_ls.py`
 - [ ] T013 [P] [US1] Contract tests for `drive_find` (nested descendants, no content field) in `tests/contract/test_drive_find.py`
-- [ ] T014 [P] [US1] Contract tests for `drive_read` provenance and unsupported MIME in `tests/contract/test_drive_read.py`
+- [ ] T014 [P] [US1] Contract tests for `drive_read` provenance, default `content_format` (plan export map), and unsupported MIME in `tests/contract/test_drive_read.py`
 
 ### Implementation for User Story 1
 
@@ -63,7 +63,7 @@ description: "Task list for Retrieval Core"
 - [ ] T016 [P] [US1] Implement export/download adapter (Docs/Sheets/Slides map + text/* download) in `src/google_drive_mcp/infra/google_drive/export.py`; 404/403-as-404 and single-file 429 via `domain/google_errors.map_google_error` (do not map walk 429 here)
 - [ ] T017 [US1] Implement `drive_ls` use case in `src/google_drive_mcp/retrieval/ls.py` (no content in output)
 - [ ] T018 [US1] Implement `drive_find` use case in `src/google_drive_mcp/retrieval/find.py` (candidates only; recursive folder)
-- [ ] T019 [US1] Implement `drive_read` use case in `src/google_drive_mcp/retrieval/read.py` (call-time fetch, provenance required)
+- [ ] T019 [US1] Implement `drive_read` use case in `src/google_drive_mcp/retrieval/read.py` (call-time fetch, provenance required; omitted `content_format` uses the plan export map; unknown `content_format` → `INVALID_ARGUMENT`)
 - [ ] T020 [US1] Expose `drive_ls`, `drive_find`, `drive_read` in `src/google_drive_mcp/mcp/tools.py` behind chain middleware
 - [ ] T021 [US1] Populate `tests/fakes/fake_drive.py` with folder, nested Doc/Sheet/Slide, text file, and opaque binary
 
@@ -143,7 +143,7 @@ description: "Task list for Retrieval Core"
 - [ ] T040 Scan `src/google_drive_mcp/infra/google_drive` for write methods (`create`, `update`, `delete`, `permissions`) and fail the build if found in `tests/unit/retrieval/test_readonly_drive_adapter.py` (oauth/tool-registration scan remains Access Control T020)
 - [ ] T041 Dockerfile for Cloud Run serving Streamable HTTP in `Dockerfile` (no document volume, read-only Drive env secrets)
 - [ ] T042 [P] Retrieval structured logs (`request_id, tool, file count, bytes processed, duration, result count, status, error category`; no document bodies) in `src/google_drive_mcp/infra/logging.py` or `src/google_drive_mcp/mcp/tools.py` per FR-103
-- [ ] T043 [P] Contract tests for `INVALID_ARGUMENT` (bad regex, bad file_id shape, max_bytes/max_results out of range) in `tests/contract/test_invalid_argument.py`
+- [ ] T043 [P] Contract tests for `INVALID_ARGUMENT` (bad regex, bad file_id shape, max_bytes/max_results out of range, unknown `content_format`) in `tests/contract/test_invalid_argument.py`
 - [ ] T044 [P] Untrusted-content control-flow test: document body containing tool-like instructions does not change grep flags, pagination, or status in `tests/unit/retrieval/test_untrusted_tool_control_flow.py` (FR-080)
 - [ ] T045 Confirm list/export/read/grep use `map_google_error` for 404/403-as-404 (and single-file 429 with no prefix); walk 429 stays T036 `PARTIAL` — do not invent a second 404 mapper or send walk 429 through the mapper as `RATE_LIMITED`
 

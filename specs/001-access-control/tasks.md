@@ -115,7 +115,7 @@ description: "Task list for Access Control Boundary"
 ## Phase 6: Polish & Cross-Cutting Concerns
 
 - [ ] T029 [P] Align `specs/001-access-control/quickstart.md` commands with actual pytest paths
-- [ ] T030 Run `uv run pytest tests/contract tests/unit/access_control tests/integration -q` and fix failures
+- [ ] T030 Run `uv run pytest tests/contract/test_auth_contract.py tests/unit/access_control tests/integration/test_request_isolation.py -q` and fix failures (do not glob all of `tests/contract` or `tests/integration`; Retrieval owns those extra files)
 - [ ] T031 [P] Add `.env.example` listing `MCP_AUTH_TOKEN`, `MCP_PRINCIPAL_ID`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` with no real secrets
 
 ---

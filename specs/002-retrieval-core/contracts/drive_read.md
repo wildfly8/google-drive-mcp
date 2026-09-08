@@ -13,7 +13,7 @@ Must run Access Control chain first. v1 does **not** emit `AUTHORIZATION_ERROR` 
   "required": ["file_id"],
   "properties": {
     "file_id": { "type": "string" },
-    "content_format": { "type": "string", "description": "Optional; default is the plan export map" },
+    "content_format": { "type": "string", "description": "Optional. Omit for the plan export map (Docs/Slides text/plain, Sheets text/csv, text blobs as stored). Unknown or type-incompatible value → INVALID_ARGUMENT" },
     "max_bytes": { "type": "integer", "minimum": 1, "maximum": 5000000 }
   }
 }
@@ -54,5 +54,5 @@ Canonical categories: [error-taxonomy.md](./error-taxonomy.md).
 | `RESOURCE_LIMIT` | Over `max_export_size` / hard cap with **no** usable prefix |
 | `RATE_LIMITED` | HTTP 429 on this single-file export with **no** usable prefix |
 | `DRIVE_API_ERROR` | Other upstream failures |
-| `INVALID_ARGUMENT` | Bad `file_id` shape / `max_bytes` out of range |
+| `INVALID_ARGUMENT` | Bad `file_id` shape / `max_bytes` out of range / unknown or type-incompatible `content_format` |
 | `TEMPORARY_STORAGE_ERROR` | Tempfile create/cleanup failure |

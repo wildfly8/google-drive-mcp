@@ -12,7 +12,7 @@ this state rather than re-initializing Spec-Kit or re-ratifying the constitution
 
 - **Spec-Kit:** initialized (`specify-cli` 1.0.4, `cursor-agent`, bash scripts)
 - **Constitution:** ratified v1.0.0 at `.specify/memory/constitution.md` (binding)
-- **SDD phase:** analyze remediations applied (2026-09-08); next is `/speckit-implement`
+- **SDD phase:** analyze remediations and plan sync applied (2026-09-08); next is `/speckit-implement`
 - **Specs:** `specs/001-access-control/`, `specs/002-retrieval-core/` (Ready for implementation)
 - **Next command:** `/speckit-implement` (access control first)
 

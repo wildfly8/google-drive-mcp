@@ -34,4 +34,4 @@
 - Credential-issuance mechanics, token storage, and OAuth library choice are explicitly deferred to plan.md (Article XII).
 - Constitution citations use ratified v1.0.0 (source attachments named v2.0.0; article text matches v1.0.0).
 - Error category names (`AUTHENTICATION_ERROR`, `AUTHORIZATION_ERROR`) are agent-visible domain taxonomy, not transport APIs.
-- Analyze remediations (2026-09-08): step-3 vs Google metadata for `AUTHORIZATION_ERROR`; `default_whole_grant`; shared `map_google_error` and fake Drive port. Checklist items above remain satisfied.
+- Analyze remediations (2026-09-08): AUTH metadata vs content I/O; stub/`evaluate_chain` test vehicle; `map_google_error` vs walk 429; AC polish pytest scoped to auth files. Plan synced. Checklist items above remain satisfied.
