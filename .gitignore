@@ -14,13 +14,23 @@
 
 # Python
 .venv/
+venv/
 __pycache__/
 *.py[cod]
 *.egg-info/
+dist/
+build/
+*.log
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+htmlcov/
+coverage/
+*.tmp
 
 # OS / editor
 .DS_Store
+Thumbs.db
 *.swp
+.idea/

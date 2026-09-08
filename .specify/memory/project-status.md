@@ -7,14 +7,22 @@ SDD phase changes (specify / plan / tasks / implement / converge).
 | --- | --- |
 | Spec-Kit | Initialized (specify-cli 1.0.4, cursor-agent, bash) |
 | Constitution | Ratified v1.0.0 (`.specify/memory/constitution.md`) |
-| Current phase | Analyze remediations applied (2026-09-08); next is `/speckit-implement` |
-| Next command | `/speckit-implement` (access control US1 MVP, then remaining stories / retrieval) |
-| Feature specs | `specs/001-access-control/spec.md`, `specs/002-retrieval-core/spec.md` (Ready for implementation) |
+| Current phase | Implement complete (2026-09-08); next is `/speckit-converge` |
+| Next command | `/speckit-converge` |
+| Feature specs | `specs/001-access-control/spec.md`, `specs/002-retrieval-core/spec.md` (implemented) |
 | Git branch | `main` only (spec dirs are not git branches) |
-| Implementation | None yet |
+| Implementation | Access Control T001–T031 and Retrieval Core T001–T046 in `src/google_drive_mcp/` |
 | Pull requests | Only when the user explicitly asks |
 
 v1 scope remains: one authenticated Google identity, read-only agentic
 retrieval over Google Drive, no application-owned RAG pipeline.
 
-Analyze remediations (locked for implementers): shared `RetrievalScope.default_whole_grant` and `is_within_scope`; shared `map_google_error` (404/403-as-404 and single-file 429 only; walk 429 is `PARTIAL`); one fake Drive port; v1 `AUTHORIZATION_ERROR` tested on AC stub/`evaluate_chain` then replayed on `drive_grep` (T039); `source_url` on the wire; Evidence is conceptual; `content_format` defaults to the export map. Plans and leftover LOW items synced (2026-09-08).
+Implemented: ordered auth chain, shared `RetrievalScope` / `is_within_scope`,
+shared `map_google_error`, one fake Drive port, MCP tools `drive_ls` /
+`drive_find` / `drive_read` / `drive_grep` behind the chain, PARTIAL completeness,
+Cloud Run Dockerfile. Validate with:
+
+```bash
+uv run pytest tests/contract/test_auth_contract.py tests/unit/access_control tests/integration/test_request_isolation.py -q
+uv run pytest tests/contract tests/unit/retrieval -q
+```
