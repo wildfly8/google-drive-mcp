@@ -54,7 +54,7 @@ Step 3 MUST NOT walk parents and MUST NOT call the Drive adapter.
 - Use only `drive.readonly`.
 - On Google not-found or permission-denied-as-not-found: `FILE_NOT_FOUND`, no name/link/content.
 - The MCP MUST NOT implement a second allow-list that could return **content** Google would deny.
-- When the call names **both** `folder_id` and `file_ids` (v1: `drive_grep`): for each named `file_id`, metadata `files.get` then `is_within_scope`.
+- When the call names **both** `folder_id` and `file_ids` (v1 agent-visible: `drive_grep`; Access Control US1 stub/`evaluate_chain` uses the same arguments): for each named `file_id`, metadata `files.get` then `is_within_scope`.
   - Google does not grant the file → `FILE_NOT_FOUND` (no existence leak; do not mention the folder check).
   - Google grants the file but it is not the folder and not a descendant → `AUTHORIZATION_ERROR`. The caller already named both ids; implying existence of that named id is allowed.
 - After `ALLOW`, later tool I/O can still 404 (race, export-only failure). Map those with the **same** `map_google_error()` as step 4 (`src/google_drive_mcp/domain/google_errors.py`). Retrieval Core MUST NOT invent a second 404 mapping.
@@ -67,3 +67,4 @@ Step 3 MUST NOT walk parents and MUST NOT call the Drive adapter.
 | `drive_ls` | No |
 | `drive_find` | No |
 | `drive_grep` | Yes, only when **both** `folder_id` and `file_ids` are set and a named file is outside that folder after a granted metadata get |
+| US1 stub / `evaluate_chain` (same args) | Same as `drive_grep`; used so Access Control can test AUTH before grep exists |

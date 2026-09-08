@@ -55,7 +55,7 @@ Rate-limit split (locked):
 
 Prefix vs hard cap: usable prefix → `PARTIAL`; no prefix → `RESOURCE_LIMIT`.
 
-Google 404 after `ALLOW` uses Access Control’s `map_google_error()` — do not fork a second mapper.
+Google 404 after `ALLOW` uses Access Control’s `map_google_error()` — do not fork a second mapper. Walk 429 is intercepted in list/grep (T036) **before** the mapper; only single-file 429 with no prefix goes through `map_google_error` as `RATE_LIMITED`.
 
 **Alternatives considered**: HTTP 429 only (agent cannot tell coverage). Silent retry until timeout (Art. X forbid). Always `ERROR`/`RATE_LIMITED` for walks (collapses “not fully searched” into failure and invites EMPTY-shaped handling).
 

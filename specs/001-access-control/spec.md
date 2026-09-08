@@ -28,17 +28,17 @@
 
 ### User Story 1 - Every call must clear the same authority chain (Priority: P1)
 
-An agent asks the MCP to discover, read, or search Drive content. Before any Drive resource is touched, the call is authenticated as a principal, authorized by the MCP for that operation and retrieval scope, then checked by Google's own authorization. A convincing prompt, a prior successful call, or text inside a document does not skip or satisfy any step. If any step fails, the call stops there.
+An agent asks the MCP to discover, read, or search Drive content. Before any Drive **content** I/O, the call is authenticated as a principal, authorized by the MCP for that operation and retrieval scope, then checked by Google's own authorization (metadata `files.get` as needed). A convincing prompt, a prior successful call, or text inside a document does not skip or satisfy any step. If any step fails, the call stops there.
 
 **Why this priority**: Without an independently evaluated chain, every other retrieval guarantee is bypassable. Article VII is the security invariant this story encodes.
 
-**Independent Test**: Issue an unauthenticated call (`AUTHENTICATION_ERROR`, no Drive I/O). Issue a call for a Google-ungranted file id (`FILE_NOT_FOUND`, no content). Issue `drive_grep` with both `folder_id` and a `file_ids` entry that Google grants but that is not in that folder (`AUTHORIZATION_ERROR`, metadata get allowed, no export). Confirm none return the target content — never empty successful retrieval.
+**Independent Test**: Issue an unauthenticated call (`AUTHENTICATION_ERROR`, no Drive I/O). Issue a call for a Google-ungranted file id (`FILE_NOT_FOUND`, no content). Call `evaluate_chain` (or the US1 stub tool) with both `folder_id` and a `file_ids` entry that Google grants but that is not in that folder (`AUTHORIZATION_ERROR`, metadata get allowed, no export). Confirm none return the target content — never empty successful retrieval. The agent-visible tool that uses this argument shape is later `drive_grep`; Access Control MUST NOT implement grep.
 
 **Acceptance Scenarios**:
 
 1. **Given** no authenticated principal, **When** any retrieval call is issued, **Then** the MCP refuses the call as `AUTHENTICATION_ERROR` before any Drive resource is accessed.
 2. **Given** an authenticated caller whose Google grant does not include a requested file, **When** they ask to retrieve that file (however the request is phrased), **Then** the MCP denies the call as `FILE_NOT_FOUND` without confirming that the file exists or returning its content.
-3. **Given** an authenticated caller who passes `drive_grep` with both a `folder_id` and a `file_id` that Google grants but that is not that folder or a descendant, **When** they request that resource, **Then** the MCP denies the call as `AUTHORIZATION_ERROR` without returning that resource’s content. (`drive_read` / `drive_ls` / `drive_find` do not emit `AUTHORIZATION_ERROR` in v1; Google misses are `FILE_NOT_FOUND`.)
+3. **Given** an authenticated caller who passes **both** a `folder_id` and a `file_id` that Google grants but that is not that folder or a descendant (v1 agent-visible shape: `drive_grep`; Access Control tests this via `evaluate_chain` / US1 stub with the same arguments), **When** they request that resource, **Then** the MCP denies the call as `AUTHORIZATION_ERROR` without returning that resource’s content. (`drive_read` / `drive_ls` / `drive_find` do not emit `AUTHORIZATION_ERROR` in v1; Google misses are `FILE_NOT_FOUND`.)
 4. **Given** a prior successful retrieval by the same deployment identity, **When** a later call is issued for a resource Google does not grant, **Then** the prior success is not treated as a credential and the new call is evaluated from the first chain step.
 5. **Given** a request that fails MCP authentication, **When** later chain steps would have passed, **Then** those later steps are never evaluated (no default-allow).
 

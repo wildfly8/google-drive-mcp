@@ -36,7 +36,7 @@ Flat agent-visible categories. Access Control owns the first three; Retrieval Co
 }
 ```
 
-Shared implementation: `ErrorEnvelope` in `src/google_drive_mcp/domain/errors.py`. Google HTTP mapping: `map_google_error()` in `src/google_drive_mcp/domain/google_errors.py` (used by the chain **and** by retrieval adapters).
+Shared implementation: `ErrorEnvelope` in `src/google_drive_mcp/domain/errors.py`. Google HTTP mapping: `map_google_error()` in `src/google_drive_mcp/domain/google_errors.py` (used by the chain **and** by retrieval adapters for 404/403-as-404 and single-file 429). Walk 429 MUST be handled by the list/grep layer as completeness (`PARTIAL`), not by this mapper.
 
 ## Mapping rules (Access Control)
 
@@ -49,7 +49,7 @@ Shared implementation: `ErrorEnvelope` in `src/google_drive_mcp/domain/errors.py
 MUST NOT return `status: EMPTY` or `COMPLETE` for these failures.
 MUST NOT include access tokens, refresh tokens, or unauthorized file metadata in `message`.
 
-`FILE_NOT_FOUND` is dual-owned by design: Access Control raises it when Google’s grant does not include the resource (before or during the chain). After `ALLOW`, Retrieval Core raises the same category for a genuine miss or a later Google 404, **via the same mapper**.
+`FILE_NOT_FOUND` is dual-owned by design: Access Control raises it when Google’s grant does not include the resource (before or during the chain). After `ALLOW`, Retrieval Core raises the same category for a genuine miss or a later Google 404, **via the same mapper**. `map_google_error` also maps single-file HTTP 429 (no prefix) to `RATE_LIMITED`. It MUST NOT be used for list/find/grep walk 429.
 
 ## Mapping rules (Retrieval Core)
 
