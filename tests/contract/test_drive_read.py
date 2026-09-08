@@ -75,3 +75,12 @@ def test_read_metadata_429_after_allow_is_rate_limited(runtime, fake_drive):
     )
     assert result["status"] == "ERROR"
     assert result["category"] == "RATE_LIMITED"
+
+
+def test_read_export_429_is_rate_limited_envelope(runtime, fake_drive):
+    fake_drive.rate_limit_export = True
+    result = handle_tool(
+        runtime, "drive_read", {"file_id": "nested-doc"}, "Bearer test-token"
+    )
+    assert result["status"] == "ERROR"
+    assert result["category"] == "RATE_LIMITED"

@@ -1,6 +1,6 @@
 """drive_grep: fetch → exact search → provenance → discard bytes.
 
-No module-level file_id→bytes cache. Walk 429 → PARTIAL RATE_LIMITED.
+No module-level file_id→bytes cache. Walk and multi-target export 429 → PARTIAL RATE_LIMITED.
 """
 
 from __future__ import annotations
@@ -98,6 +98,12 @@ def drive_grep(
                 skipped_unsupported += 1
                 last_unsupported = exc.error.category
                 continue
+            if exc.error.category == ErrorCategory.RATE_LIMITED:
+                single_named_file = named_only and len(file_ids or []) == 1
+                if single_named_file:
+                    raise
+                walk.rate_limited = True
+                break
             raise
         searchable += 1
         budget.note_bytes(exported.byte_length)
@@ -149,7 +155,7 @@ def drive_grep(
     )
     walk_incomplete = walk.rate_limited or walk.time_exceeded or walk.truncated
 
-    if named_only and searchable == 0 and skipped_unsupported:
+    if named_only and searchable == 0 and skipped_unsupported and not walk_incomplete:
         raise DomainError.of(last_unsupported or ErrorCategory.UNSUPPORTED_MIME_TYPE, request_id=request_id)
     if (
         not named_only

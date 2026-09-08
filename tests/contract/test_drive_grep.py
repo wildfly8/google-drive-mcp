@@ -293,3 +293,129 @@ def test_grep_max_files_does_not_count_folder_nodes():
     ids = {m["file_id"] for m in result["matches"]}
     assert ids == {f"doc-{i}" for i in range(5)}
     assert result["status"] == "COMPLETE"
+
+
+def test_folder_export_429_is_partial_not_envelope(runtime, fake_drive):
+    fake_drive.rate_limit_export = True
+    result = handle_tool(
+        runtime,
+        "drive_grep",
+        {"pattern": "idempotency", "folder_id": "folder-a"},
+        "Bearer test-token",
+    )
+    assert result["status"] == "PARTIAL"
+    assert result["partial_reason"] == "RATE_LIMITED"
+    assert result.get("category") != "RATE_LIMITED"
+    assert result["matches"] == []
+
+
+def test_whole_grant_export_429_is_partial(runtime, fake_drive):
+    fake_drive.rate_limit_export = True
+    result = handle_tool(
+        runtime,
+        "drive_grep",
+        {"pattern": "idempotency"},
+        "Bearer test-token",
+    )
+    assert result["status"] == "PARTIAL"
+    assert result["partial_reason"] == "RATE_LIMITED"
+    assert result.get("category") != "RATE_LIMITED"
+
+
+def test_multi_file_ids_export_429_is_partial(runtime, fake_drive):
+    fake_drive.rate_limit_export = True
+    result = handle_tool(
+        runtime,
+        "drive_grep",
+        {
+            "pattern": "idempotency",
+            "file_ids": ["nested-doc", "nested-slide"],
+        },
+        "Bearer test-token",
+    )
+    assert result["status"] == "PARTIAL"
+    assert result["partial_reason"] == "RATE_LIMITED"
+    assert result.get("category") != "RATE_LIMITED"
+
+
+def test_multi_file_ids_skip_then_export_429_is_partial(runtime, fake_drive):
+    fake_drive.rate_limit_export = True
+    result = handle_tool(
+        runtime,
+        "drive_grep",
+        {
+            "pattern": "idempotency",
+            "file_ids": ["binary-file", "nested-doc"],
+        },
+        "Bearer test-token",
+    )
+    assert result["status"] == "PARTIAL"
+    assert result["partial_reason"] == "RATE_LIMITED"
+    assert result.get("category") != "UNSUPPORTED_MIME_TYPE"
+
+
+def test_single_file_id_export_429_is_error_envelope(runtime, fake_drive):
+    fake_drive.rate_limit_export = True
+    result = handle_tool(
+        runtime,
+        "drive_grep",
+        {"pattern": "idempotency", "file_ids": ["nested-doc"]},
+        "Bearer test-token",
+    )
+    assert result["status"] == "ERROR"
+    assert result["category"] == "RATE_LIMITED"
+
+
+def test_folder_export_429_preserves_matches_already_found(runtime, fake_drive):
+    from google_drive_mcp.domain.google_errors import GoogleApiError
+
+    original = fake_drive.export
+    seen = {"n": 0}
+
+    def fail_after_first(file_id: str, mime: str) -> str:
+        seen["n"] += 1
+        if seen["n"] > 1:
+            raise GoogleApiError(429)
+        return original(file_id, mime)
+
+    fake_drive.export = fail_after_first  # type: ignore[method-assign]
+    result = handle_tool(
+        runtime,
+        "drive_grep",
+        {"pattern": "idempotency", "folder_id": "folder-a"},
+        "Bearer test-token",
+    )
+    assert result["status"] == "PARTIAL"
+    assert result["partial_reason"] == "RATE_LIMITED"
+    assert result["matches"]
+    assert {m["file_id"] for m in result["matches"]} == {"nested-doc"}
+
+
+def test_text_blob_get_media_429_on_folder_grep_is_partial():
+    from fakes.fake_drive import FOLDER_MIME, FakeDrive, FakeFile
+    from google_drive_mcp.infra.config import Settings
+    from google_drive_mcp.mcp.middleware import Runtime
+
+    drive = FakeDrive()
+    drive.add(FakeFile(id="root", name="My Drive", mime_type=FOLDER_MIME, parents=[]))
+    drive.add(FakeFile(id="top", name="Top", mime_type=FOLDER_MIME, parents=["root"]))
+    drive.add(
+        FakeFile(
+            id="readme",
+            name="readme.txt",
+            mime_type="text/plain",
+            parents=["top"],
+            content="idempotency notes",
+        )
+    )
+    drive.rate_limit_export = True
+    runtime = Runtime(Settings.for_tests(), drive=drive)
+    result = handle_tool(
+        runtime,
+        "drive_grep",
+        {"pattern": "idempotency", "folder_id": "top"},
+        "Bearer test-token",
+    )
+    assert result["status"] == "PARTIAL"
+    assert result["partial_reason"] == "RATE_LIMITED"
+    assert result.get("category") != "RATE_LIMITED"
