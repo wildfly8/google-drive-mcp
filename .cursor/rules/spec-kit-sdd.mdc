@@ -12,9 +12,9 @@ this state rather than re-initializing Spec-Kit or re-ratifying the constitution
 
 - **Spec-Kit:** initialized (`specify-cli` 1.0.4, `cursor-agent`, bash scripts)
 - **Constitution:** ratified v1.0.0 at `.specify/memory/constitution.md` (binding)
-- **SDD phase:** constitution complete; two feature specs clarified (session 2026-09-08)
-- **Specs:** `specs/001-access-control/spec.md` (upstream), `specs/002-retrieval-core/spec.md` (downstream)
-- **Next command:** `/speckit-plan` per feature (how, not more what)
+- **SDD phase:** constitution complete; specs clarified; plans complete
+- **Specs:** `specs/001-access-control/`, `specs/002-retrieval-core/`
+- **Next command:** `/speckit-tasks` per feature
 - **Then:** `/speckit-tasks` → `/speckit-implement` → `/speckit-converge`
 
 Do not skip to application code unless the user explicitly waives SDD.
