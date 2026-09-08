@@ -14,6 +14,8 @@ from google_drive_mcp.domain.operation import OperationStatus, PartialReason
 from google_drive_mcp.domain.retrieval_scope import RetrievalScope
 from google_drive_mcp.infra.exact_search.regex import compile_pattern, search_text
 from google_drive_mcp.infra.google_drive.export import (
+    SHEET_MIME,
+    SLIDE_MIME,
     default_representation,
     fetch_text,
     representation_for,
@@ -107,7 +109,7 @@ def drive_grep(
         line_oriented = _line_oriented(exported.representation) and not exported.representation.endswith(
             "csv"
         )
-        if file.mime_type.endswith("spreadsheet") or exported.representation == "text/csv":
+        if file.mime_type in (SHEET_MIME, SLIDE_MIME) or exported.representation == "text/csv":
             line_oriented = False
         try:
             raw = search_text(

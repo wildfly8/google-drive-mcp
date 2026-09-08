@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from google_drive_mcp.domain.budgets import MAX_BYTES_PER_FILE, Budget
 from google_drive_mcp.domain.drive_file import DriveFile
 from google_drive_mcp.domain.errors import DomainError, ErrorCategory
+from google_drive_mcp.domain.google_errors import GoogleApiError, map_google_error
 from google_drive_mcp.domain.operation import OperationStatus, PartialReason
 from google_drive_mcp.infra.google_drive.export import fetch_text, representation_for
 
@@ -28,7 +29,10 @@ def drive_read(
     cap = max_bytes if max_bytes is not None else min(
         budget.max_bytes_per_file, MAX_BYTES_PER_FILE
     )
-    meta = DriveFile.from_metadata(drive.get_metadata(file_id))
+    try:
+        meta = DriveFile.from_metadata(drive.get_metadata(file_id))
+    except GoogleApiError as exc:
+        raise DomainError(map_google_error(exc, request_id=request_id)) from exc
     representation = representation_for(meta.mime_type, content_format)
     exported = fetch_text(
         drive,

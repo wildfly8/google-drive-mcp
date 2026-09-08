@@ -35,3 +35,43 @@ def test_unknown_content_format_is_invalid_argument(runtime):
         "Bearer test-token",
     )
     assert result["category"] == "INVALID_ARGUMENT"
+
+
+def test_read_metadata_404_after_allow_is_file_not_found(runtime, fake_drive):
+    from google_drive_mcp.domain.google_errors import GoogleApiError
+
+    original = fake_drive.get_metadata
+    seen = {"n": 0}
+
+    def second_get_misses(file_id: str):
+        seen["n"] += 1
+        if seen["n"] > 1:
+            raise GoogleApiError(404)
+        return original(file_id)
+
+    fake_drive.get_metadata = second_get_misses  # type: ignore[method-assign]
+    result = handle_tool(
+        runtime, "drive_read", {"file_id": "nested-doc"}, "Bearer test-token"
+    )
+    assert result["status"] == "ERROR"
+    assert result["category"] == "FILE_NOT_FOUND"
+
+
+def test_read_metadata_429_after_allow_is_rate_limited(runtime, fake_drive):
+    from google_drive_mcp.domain.google_errors import GoogleApiError
+
+    original = fake_drive.get_metadata
+    seen = {"n": 0}
+
+    def second_get_limited(file_id: str):
+        seen["n"] += 1
+        if seen["n"] > 1:
+            raise GoogleApiError(429)
+        return original(file_id)
+
+    fake_drive.get_metadata = second_get_limited  # type: ignore[method-assign]
+    result = handle_tool(
+        runtime, "drive_read", {"file_id": "nested-doc"}, "Bearer test-token"
+    )
+    assert result["status"] == "ERROR"
+    assert result["category"] == "RATE_LIMITED"

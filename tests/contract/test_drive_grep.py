@@ -77,6 +77,23 @@ def test_literal_vs_regex_and_case_flag(runtime):
     assert escaped["status"] == "EMPTY"
 
 
+def test_slides_grep_uses_character_window_not_lines(runtime, fake_drive):
+    fake_drive.update_content(
+        "nested-slide",
+        "intro line\n\nQuarterly update idempotency extra context",
+    )
+    result = handle_tool(
+        runtime,
+        "drive_grep",
+        {"pattern": "idempotency", "file_ids": ["nested-slide"]},
+        "Bearer test-token",
+    )
+    assert result["matches"]
+    location = result["matches"][0]["location"]
+    assert "offset" in location
+    assert "line" not in location
+
+
 def test_mixed_folder_skips_unsupported_partial(runtime):
     result = handle_tool(
         runtime,

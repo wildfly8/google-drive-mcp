@@ -250,5 +250,5 @@ Remaining work from `/speckit-converge` (2026-09-08, second pass). Do not rewrit
 
 Remaining work from `/speckit-converge` (2026-09-08, third pass). Do not rewrite earlier tasks.
 
-- [ ] T053 Wrap `drive.get_metadata` failures in `retrieval/read.py` with `map_google_error` so a post-ALLOW 404/429 becomes `FILE_NOT_FOUND` / `RATE_LIMITED` instead of an uncaught `GoogleApiError` (FR-060, T045, Article XI, drive_read.md) (contradicts)
-- [ ] T054 Treat Google Slides as a non-line-oriented grep target (200-character window, not `max_context_lines`) in `retrieval/grep.py` per plan: Sheets/Slides context (FR-034, plan: Sheets/Slides context) (partial)
+- [X] T053 Wrap `drive.get_metadata` failures in `retrieval/read.py` with `map_google_error` so a post-ALLOW 404/429 becomes `FILE_NOT_FOUND` / `RATE_LIMITED` instead of an uncaught `GoogleApiError` (FR-060, T045, Article XI, drive_read.md) (contradicts)
+- [X] T054 Treat Google Slides as a non-line-oriented grep target (200-character window, not `max_context_lines`) in `retrieval/grep.py` per plan: Sheets/Slides context (FR-034, plan: Sheets/Slides context) (partial)

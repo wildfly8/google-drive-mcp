@@ -7,11 +7,11 @@ SDD phase changes (specify / plan / tasks / implement / converge).
 | --- | --- |
 | Spec-Kit | Initialized (specify-cli 1.0.4, cursor-agent, bash) |
 | Constitution | Ratified v1.0.0 (`.specify/memory/constitution.md`) |
-| Current phase | Converge (2026-09-08, third pass): Retrieval Phase 10 appended |
-| Next command | `/speckit-implement` (Retrieval T053–T054) |
-| Feature specs | `specs/001-access-control/spec.md` (converged), `specs/002-retrieval-core/spec.md` (Phase 10 gaps) |
+| Current phase | Implement (2026-09-08): Retrieval T053–T054 closed; next is `/speckit-converge` |
+| Next command | `/speckit-converge` (Retrieval Core) |
+| Feature specs | `specs/001-access-control/spec.md` (converged), `specs/002-retrieval-core/spec.md` (Phase 10 implemented) |
 | Git branch | `main` only (spec dirs are not git branches) |
-| Implementation | Package in `src/google_drive_mcp/`; AC converged; RC T053–T054 open |
+| Implementation | Package in `src/google_drive_mcp/`; AC converged; RC T053–T054 complete |
 | Pull requests | Only when the user explicitly asks |
 
 v1 scope remains: one authenticated Google identity, read-only agentic
