@@ -243,3 +243,12 @@ Remaining work from `/speckit-converge` (2026-09-08, second pass). Do not rewrit
 - [X] T050 CRITICAL Return `PARTIAL` with `partial_reason: RATE_LIMITED` / `max_files` / `max_execution_time` from `drive_grep` when a folder or whole-grant walk is cut short with zero searchable files, instead of raising `UNSUPPORTED_MIME_TYPE` because the all-unsupported check runs before completeness flags in `retrieval/grep.py` (FR-037, FR-041, US4/AC3, Article X, result-status.md) (contradicts)
 - [X] T051 Skip `file.is_folder` in `drive_grep` without counting folders as unsupported skips, so a completed search over folders plus searchable docs is not `PARTIAL`/`unsupported_skipped` and a folder-only tree is `EMPTY` rather than `UNSUPPORTED_MIME_TYPE` in `retrieval/grep.py` (FR-037, FR-041, Article X) (contradicts)
 - [X] T052 Stop counting folder nodes toward grep `max_files` in `infra/google_drive/list.py` `walk_files`/`consider()` (or exclude folders from the grep walk payload while still using them for BFS) so nested docs remain reachable under the file budget (FR-030, FR-104) (partial)
+
+---
+
+## Phase 10: Convergence
+
+Remaining work from `/speckit-converge` (2026-09-08, third pass). Do not rewrite earlier tasks.
+
+- [ ] T053 Wrap `drive.get_metadata` failures in `retrieval/read.py` with `map_google_error` so a post-ALLOW 404/429 becomes `FILE_NOT_FOUND` / `RATE_LIMITED` instead of an uncaught `GoogleApiError` (FR-060, T045, Article XI, drive_read.md) (contradicts)
+- [ ] T054 Treat Google Slides as a non-line-oriented grep target (200-character window, not `max_context_lines`) in `retrieval/grep.py` per plan: Sheets/Slides context (FR-034, plan: Sheets/Slides context) (partial)
