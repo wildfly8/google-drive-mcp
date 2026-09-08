@@ -4,6 +4,8 @@ description: "Task list for Retrieval Core"
 
 # Tasks: Retrieval Core
 
+**Branch**: `main` (spec dir `specs/002-retrieval-core`)
+
 **Input**: Design documents from `/specs/002-retrieval-core/`
 
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/; Access Control MVP (US1 ALLOW path)

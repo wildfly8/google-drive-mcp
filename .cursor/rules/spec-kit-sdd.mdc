@@ -14,6 +14,7 @@ this state rather than re-initializing Spec-Kit or re-ratifying the constitution
 - **Constitution:** ratified v1.0.0 at `.specify/memory/constitution.md` (binding)
 - **SDD phase:** analyze remediations and plan sync applied (2026-09-08); next is `/speckit-implement`
 - **Specs:** `specs/001-access-control/`, `specs/002-retrieval-core/` (Ready for implementation)
+- **Git:** `main` only. Do not create feature or topic branches. Spec directories (`001-access-control`, `002-retrieval-core`) are documentation ids, not git branches.
 - **Next command:** `/speckit-implement` (access control first)
 
 Do not skip to application code unless the user explicitly waives SDD.
@@ -32,5 +33,5 @@ retrieval are MAJOR constitutional changes.
 ## Pull requests
 
 Raise a pull request **only when the user explicitly asks**. Do not open,
-update, or merge a PR as a default wrap-up. Commit and push on the working
-branch (prefer `main` as the pickup point) unless the user says otherwise.
+update, or merge a PR as a default wrap-up. Commit and push on `main`. Do
+not create other git branches unless the user says otherwise.

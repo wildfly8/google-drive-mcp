@@ -1,6 +1,8 @@
 # Feature Specification: Access Control Boundary
 
-**Feature Branch**: `001-access-control`
+**Branch**: `main`
+
+**Spec directory**: `specs/001-access-control`
 
 **Created**: 2026-09-08
 

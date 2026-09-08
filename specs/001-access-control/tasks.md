@@ -4,6 +4,8 @@ description: "Task list for Access Control Boundary"
 
 # Tasks: Access Control Boundary
 
+**Branch**: `main` (spec dir `specs/001-access-control`)
+
 **Input**: Design documents from `/specs/001-access-control/`
 
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/

@@ -1,6 +1,8 @@
 # Feature Specification: Retrieval Core
 
-**Feature Branch**: `002-retrieval-core`
+**Branch**: `main`
+
+**Spec directory**: `specs/002-retrieval-core`
 
 **Created**: 2026-09-08
 

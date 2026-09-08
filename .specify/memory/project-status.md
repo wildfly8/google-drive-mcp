@@ -10,6 +10,7 @@ SDD phase changes (specify / plan / tasks / implement / converge).
 | Current phase | Analyze remediations applied (2026-09-08); next is `/speckit-implement` |
 | Next command | `/speckit-implement` (access control US1 MVP, then remaining stories / retrieval) |
 | Feature specs | `specs/001-access-control/spec.md`, `specs/002-retrieval-core/spec.md` (Ready for implementation) |
+| Git branch | `main` only (spec dirs are not git branches) |
 | Implementation | None yet |
 | Pull requests | Only when the user explicitly asks |
 
