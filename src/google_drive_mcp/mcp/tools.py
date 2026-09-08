@@ -63,10 +63,11 @@ def handle_tool(
     def body() -> dict[str, Any]:
         if name == SCOPE_PROBE:
             return {"status": "COMPLETE", "ok": True}
+        drive = runtime.active_drive()
         if name == "drive_ls":
             validate_ls_args(args)
             return drive_ls(
-                runtime.drive,
+                drive,
                 folder_id=args.get("folder_id"),
                 max_results=args.get("max_results"),
                 page_token=args.get("page_token"),
@@ -75,7 +76,7 @@ def handle_tool(
         if name == "drive_find":
             validate_find_args(args)
             return drive_find(
-                runtime.drive,
+                drive,
                 name_pattern=args.get("name_pattern"),
                 mime_type=args.get("mime_type"),
                 folder_id=args.get("folder_id"),
@@ -88,7 +89,7 @@ def handle_tool(
         if name == "drive_read":
             validate_read_args(args)
             return drive_read(
-                runtime.drive,
+                drive,
                 file_id=args["file_id"],
                 content_format=args.get("content_format"),
                 max_bytes=args.get("max_bytes"),
@@ -97,7 +98,7 @@ def handle_tool(
         if name == "drive_grep":
             validate_grep_args(args)
             return drive_grep(
-                runtime.drive,
+                drive,
                 pattern=args["pattern"],
                 file_ids=args.get("file_ids"),
                 folder_id=args.get("folder_id"),

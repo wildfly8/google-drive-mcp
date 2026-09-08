@@ -12,10 +12,10 @@ this state rather than re-initializing Spec-Kit or re-ratifying the constitution
 
 - **Spec-Kit:** initialized (`specify-cli` 1.0.4, `cursor-agent`, bash scripts)
 - **Constitution:** ratified v1.0.0 at `.specify/memory/constitution.md` (binding)
-- **SDD phase:** converge (2026-09-08) appended remaining tasks; next is `/speckit-implement`
-- **Specs:** `specs/001-access-control/`, `specs/002-retrieval-core/` (implemented; converge gaps in tasks.md)
+- **SDD phase:** implement (2026-09-08) closed AC T032–T036 and Retrieval T047–T049; next is `/speckit-converge`
+- **Specs:** `specs/001-access-control/`, `specs/002-retrieval-core/` (implemented including converge tasks)
 - **Git:** `main` only. Do not create feature or topic branches. Spec directories (`001-access-control`, `002-retrieval-core`) are documentation ids, not git branches.
-- **Next command:** `/speckit-implement` (converge tasks: AC T032–T036, Retrieval T047–T049)
+- **Next command:** `/speckit-converge` (confirm spec-vs-code gaps from AC T032–T036 and Retrieval T047–T049)
 
 Do not skip to application code unless the user explicitly waives SDD.
 Do not run `specify init` again. Upgrade managed files with

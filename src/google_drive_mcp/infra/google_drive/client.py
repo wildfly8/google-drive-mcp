@@ -6,6 +6,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from google.oauth2.credentials import Credentials
 
+from google_drive_mcp.domain.budgets import Budget
 from google_drive_mcp.domain.google_errors import GoogleApiError
 from google_drive_mcp.infra.google_drive.export import FileNotExportableError
 
@@ -44,6 +45,7 @@ class GoogleDriveClient:
         self.metadata_get_count = 0
         self.content_export_count = 0
         self.content_media_count = 0
+        self.list_time_exceeded = False
 
     @property
     def content_count(self) -> int:
@@ -70,19 +72,23 @@ class GoogleDriveClient:
             raise
         return list(meta.get("parents") or [])
 
-    def list_children(self, folder_id: str) -> list[dict]:
+    def list_children(self, folder_id: str, budget: Budget | None = None) -> list[dict]:
         query = f"'{folder_id}' in parents and trashed = false"
-        return self._list(query)
+        return self._list(query, budget=budget)
 
-    def list_all(self, *, include_trashed: bool = False) -> list[dict]:
+    def list_all(self, *, include_trashed: bool = False, budget: Budget | None = None) -> list[dict]:
         query = "trashed = false" if not include_trashed else None
-        return self._list(query)
+        return self._list(query, budget=budget)
 
-    def _list(self, query: str | None) -> list[dict]:
+    def _list(self, query: str | None, budget: Budget | None = None) -> list[dict]:
         items: list[dict] = []
         page_token = None
+        self.list_time_exceeded = False
         try:
             while True:
+                if budget is not None and budget.time_exceeded():
+                    self.list_time_exceeded = True
+                    break
                 kwargs = {
                     "q": query,
                     "fields": f"nextPageToken, files({_FIELDS})",
@@ -97,6 +103,9 @@ class GoogleDriveClient:
                 response = self._service.files().list(**kwargs).execute()
                 for resource in response.get("files", []):
                     items.append(_meta(resource))
+                    if budget is not None and budget.time_exceeded():
+                        self.list_time_exceeded = True
+                        return items
                 page_token = response.get("nextPageToken")
                 if not page_token:
                     break

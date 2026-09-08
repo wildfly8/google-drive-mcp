@@ -55,3 +55,18 @@ def test_max_execution_time_partial(runtime):
     result = drive_find(runtime.drive, folder_id="folder-a", budget=budget)
     assert result["status"] == "PARTIAL"
     assert result["partial_reason"] == "max_execution_time"
+
+
+def test_grep_truncated_export_is_partial_max_bytes(runtime, fake_drive):
+    from google_drive_mcp.domain.budgets import Budget
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    fake_drive.update_content("nested-doc", "idempotency " * 200)
+    result = drive_grep(
+        fake_drive,
+        pattern="idempotency",
+        file_ids=["nested-doc"],
+        budget=Budget(max_bytes_per_file=20),
+    )
+    assert result["status"] == "PARTIAL"
+    assert result["partial_reason"] == "max_bytes"

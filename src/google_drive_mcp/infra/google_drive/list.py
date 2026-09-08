@@ -54,7 +54,12 @@ def immediate_children(
             return WalkResult(rate_limited=True)
         raise DomainError(map_google_error(exc, request_id=request_id)) from exc
     files = [_as_file(item) for item in raw]
-    start = int(page_token) if page_token else 0
+    start = 0
+    if page_token:
+        try:
+            start = int(page_token)
+        except (TypeError, ValueError) as exc:
+            raise DomainError.of(ErrorCategory.INVALID_ARGUMENT, request_id=request_id) from exc
     if start < 0:
         start = 0
     page = files[start : start + page_size]
@@ -117,7 +122,12 @@ def walk_files(
                 if folder in seen:
                     continue
                 seen.add(folder)
-                children = [_as_file(i) for i in drive.list_children(folder_id=folder)]
+                children = [
+                    _as_file(i)
+                    for i in drive.list_children(folder_id=folder, budget=budget)
+                ]
+                if getattr(drive, "list_time_exceeded", False):
+                    result.time_exceeded = True
                 for child in children:
                     if child.is_folder:
                         queue.append(child.id)
@@ -128,9 +138,13 @@ def walk_files(
                     if budget.time_exceeded():
                         result.time_exceeded = True
                         break
+                if result.time_exceeded:
+                    break
             return result
 
-        raw = drive.list_all(include_trashed=include_trashed)
+        raw = drive.list_all(include_trashed=include_trashed, budget=budget)
+        if getattr(drive, "list_time_exceeded", False):
+            result.time_exceeded = True
         for item in raw:
             if budget.time_exceeded():
                 result.time_exceeded = True

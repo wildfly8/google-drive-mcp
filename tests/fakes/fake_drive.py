@@ -71,6 +71,7 @@ class FakeDrive:
         self.rate_limit_lists_after: int | None = None
         self.rate_limit_export: bool = False
         self.fail_tempfile: bool = False
+        self.list_time_exceeded: bool = False
 
     @property
     def content_count(self) -> int:
@@ -99,7 +100,7 @@ class FakeDrive:
             raise GoogleApiError(404)
         return item.metadata_dict()
 
-    def list_children(self, folder_id: str) -> list[FakeFile]:
+    def list_children(self, folder_id: str, budget=None) -> list[FakeFile]:
         self.list_count += 1
         if self.rate_limit_lists_after is not None and self.list_count > self.rate_limit_lists_after:
             raise GoogleApiError(429)
@@ -111,7 +112,7 @@ class FakeDrive:
             if folder_id in f.parents and not f.trashed
         ]
 
-    def list_all(self, *, include_trashed: bool = False) -> list[FakeFile]:
+    def list_all(self, *, include_trashed: bool = False, budget=None) -> list[FakeFile]:
         self.list_count += 1
         if self.rate_limit_lists_after is not None and self.list_count > self.rate_limit_lists_after:
             raise GoogleApiError(429)

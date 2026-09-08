@@ -230,6 +230,6 @@ Task: "Export adapter in src/google_drive_mcp/infra/google_drive/export.py"
 
 Remaining work from `/speckit-converge` (2026-09-08). Do not rewrite earlier tasks.
 
-- [ ] T047 Return `status: PARTIAL` with `partial_reason: max_bytes` from `drive_grep` when `fetch_text` truncates a file at `max_bytes` / `max_export_size` instead of searching the prefix and possibly reporting `COMPLETE` in `retrieval/grep.py` (FR-041, FR-104, Article X) (partial)
-- [ ] T048 Honor `max_execution_time` during production `GoogleDriveClient` list pagination in `infra/google_drive/client.py` (and surface `PARTIAL` / `max_execution_time`) instead of fetching the full grant/folder into memory before `walk_files` can stop (FR-104, FR-041) (partial)
-- [ ] T049 Map a non-integer `drive_ls` `page_token` to `INVALID_ARGUMENT` in `infra/google_drive/list.py` / `retrieval/ls.py` instead of raising `ValueError` (FR-003, FR-060 `INVALID_ARGUMENT`) (partial)
+- [X] T047 Return `status: PARTIAL` with `partial_reason: max_bytes` from `drive_grep` when `fetch_text` truncates a file at `max_bytes` / `max_export_size` instead of searching the prefix and possibly reporting `COMPLETE` in `retrieval/grep.py` (FR-041, FR-104, Article X) (partial)
+- [X] T048 Honor `max_execution_time` during production `GoogleDriveClient` list pagination in `infra/google_drive/client.py` (and surface `PARTIAL` / `max_execution_time`) instead of fetching the full grant/folder into memory before `walk_files` can stop (FR-104, FR-041) (partial)
+- [X] T049 Map a non-integer `drive_ls` `page_token` to `INVALID_ARGUMENT` in `infra/google_drive/list.py` / `retrieval/ls.py` instead of raising `ValueError` (FR-003, FR-060 `INVALID_ARGUMENT`) (partial)

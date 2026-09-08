@@ -97,12 +97,7 @@ def evaluate_chain(
                 reason_code="google_grant_miss",
                 principal_id=principal_id,
             )
-        return AuthorizationDecision(
-            outcome=DecisionOutcome.FILE_NOT_FOUND,
-            step_failed=StepFailed.google_authorization,
-            reason_code="google_grant_miss",
-            principal_id=principal_id,
-        )
+        raise
 
     return AuthorizationDecision(
         outcome=DecisionOutcome.ALLOW,

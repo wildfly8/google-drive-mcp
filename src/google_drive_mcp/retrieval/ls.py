@@ -71,3 +71,9 @@ def validate_ls_args(arguments: dict) -> None:
         from google_drive_mcp.mcp.validation import require_file_id
 
         require_file_id(folder_id)
+    page_token = arguments.get("page_token")
+    if page_token is not None:
+        try:
+            int(page_token)
+        except (TypeError, ValueError) as exc:
+            raise DomainError.of(ErrorCategory.INVALID_ARGUMENT) from exc

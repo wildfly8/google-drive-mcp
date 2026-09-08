@@ -54,3 +54,13 @@ def test_unknown_content_format(runtime):
         "Bearer test-token",
     )
     assert result["category"] == "INVALID_ARGUMENT"
+
+
+def test_bad_page_token_is_invalid_argument(runtime):
+    result = handle_tool(
+        runtime,
+        "drive_ls",
+        {"folder_id": "folder-a", "page_token": "not-an-int"},
+        "Bearer test-token",
+    )
+    assert result["category"] == "INVALID_ARGUMENT"

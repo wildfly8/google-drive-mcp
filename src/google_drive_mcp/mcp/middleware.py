@@ -9,13 +9,14 @@ from uuid import uuid4
 
 from google_drive_mcp.access_control.chain import evaluate_chain
 from google_drive_mcp.access_control.decisions import AuthorizationDecision
-from google_drive_mcp.domain.errors import DomainError, ErrorEnvelope
+from google_drive_mcp.domain.errors import DomainError, ErrorCategory, ErrorEnvelope
 from google_drive_mcp.infra.config import Settings
 from google_drive_mcp.infra.google_auth.refresh_token import mint_readonly_credentials
 from google_drive_mcp.infra.logging import log_chain_event
 
 _authorization: ContextVar[str | None] = ContextVar("mcp_authorization", default=None)
 _request_id: ContextVar[str] = ContextVar("mcp_request_id", default="")
+_request_drive: ContextVar[Any] = ContextVar("mcp_request_drive", default=None)
 
 
 def set_authorization(value: str | None) -> None:
@@ -41,12 +42,42 @@ def new_request_id() -> str:
     return rid
 
 
-class Runtime:
-    """Composition-time dependencies for one server instance (Drive port is injected)."""
+def reset_request_drive() -> None:
+    """Clear request-scoped Drive binding at the start of each HTTP request."""
+    _request_drive.set(None)
 
-    def __init__(self, settings: Settings, drive: Any) -> None:
+
+class Runtime:
+    """Composition-time dependencies. Production leaves `drive` unset so each
+    request mints credentials and builds a GoogleDriveClient in this request's
+    context. Tests inject a FakeDrive.
+    """
+
+    def __init__(self, settings: Settings, drive: Any | None = None) -> None:
         self.settings = settings
         self.drive = drive
+
+    def bind_request_drive(self) -> Any:
+        """Mint request-scoped credentials and bind the Drive port used for I/O."""
+        creds = mint_readonly_credentials(self.settings)
+        if self.drive is not None:
+            _request_drive.set(self.drive)
+            return self.drive
+        from google_drive_mcp.infra.google_drive.client import GoogleDriveClient
+
+        client = GoogleDriveClient(creds)
+        _request_drive.set(client)
+        return client
+
+    def mint_and_bind(self) -> object:
+        """Called only after MCP authentication passes."""
+        from google_drive_mcp.infra.google_auth.refresh_token import current_credentials
+
+        self.bind_request_drive()
+        return current_credentials()
+
+    def active_drive(self) -> Any:
+        return _request_drive.get() or self.drive
 
 
 def authorize(
@@ -57,16 +88,21 @@ def authorize(
 ) -> AuthorizationDecision:
     rid = request_id or new_request_id()
     auth = authorization if authorization is not None else get_authorization()
-    drive = runtime.drive
 
     def get_metadata(file_id: str) -> Any:
+        drive = runtime.active_drive()
+        if drive is None:
+            raise DomainError.of(ErrorCategory.DRIVE_API_ERROR)
         return drive.get_metadata(file_id)
 
     def parent_lookup(file_id: str) -> list[str] | None:
+        drive = runtime.active_drive()
+        if drive is None:
+            return None
         return drive.parent_lookup(file_id)
 
     def mint() -> object:
-        return mint_readonly_credentials(runtime.settings)
+        return runtime.mint_and_bind()
 
     decision = evaluate_chain(
         authorization=auth,
@@ -98,7 +134,21 @@ def run_with_chain(
     request_id: str | None = None,
 ) -> dict[str, Any]:
     rid = request_id or new_request_id()
-    decision = authorize(runtime, arguments, authorization=authorization, request_id=rid)
+    try:
+        decision = authorize(runtime, arguments, authorization=authorization, request_id=rid)
+    except DomainError as exc:
+        err = exc.error
+        if err.request_id is None:
+            err = ErrorEnvelope(
+                category=err.category, message=err.message, request_id=rid
+            )
+        log_chain_event(
+            request_id=rid,
+            principal_id=runtime.settings.mcp_principal_id,
+            step_failed="google_authorization",
+            category=err.category.value,
+        )
+        return err.to_dict()
     if not decision.allowed:
         return decision.to_envelope(rid).to_dict()
     try:

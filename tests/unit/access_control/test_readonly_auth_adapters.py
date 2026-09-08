@@ -40,8 +40,10 @@ def test_mcp_registration_has_no_mutating_tools():
         elif hasattr(maybe, "keys"):
             names = set(maybe.keys())
     # Decorator-registered tools always include the four read tools.
-    mutating = {"drive_write", "drive_create", "drive_delete", "drive_share", "drive_update"}
+    mutating = {"drive_write", "drive_create", "drive_delete", "drive_share", "drive_update", "scope_probe"}
     assert not (names & mutating)
+    src = Path("src/google_drive_mcp/mcp/server.py").read_text()
+    assert "def scope_probe" not in src
     for required in READ_ONLY_TOOLS:
         assert required in (
             "drive_ls",

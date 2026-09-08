@@ -54,6 +54,7 @@ def drive_grep(
     searchable = 0
     last_unsupported: ErrorCategory | None = None
     named_only = bool(file_ids) and not folder_id
+    truncated_bytes = False
 
     for file in walk.files:
         if budget.time_exceeded():
@@ -87,6 +88,8 @@ def drive_grep(
             raise
         searchable += 1
         budget.note_bytes(exported.byte_length)
+        if exported.truncated:
+            truncated_bytes = True
         remaining = budget.max_matches - len(matches)
         if remaining <= 0:
             break
@@ -159,6 +162,12 @@ def drive_grep(
         return {
             "status": OperationStatus.PARTIAL.value,
             "partial_reason": PartialReason.max_matches.value,
+            "matches": wire,
+        }
+    if truncated_bytes:
+        return {
+            "status": OperationStatus.PARTIAL.value,
+            "partial_reason": PartialReason.max_bytes.value,
             "matches": wire,
         }
     if walk.truncated or budget.bytes_exhausted():
