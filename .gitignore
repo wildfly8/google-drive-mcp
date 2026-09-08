@@ -1,0 +1,22 @@
+# Cursor local state and credentials; keep committed Spec Kit skills
+.cursor/*
+!.cursor/skills/
+!.cursor/skills/**
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# OS / editor
+.DS_Store
+*.swp
