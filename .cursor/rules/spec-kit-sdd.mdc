@@ -1,0 +1,36 @@
+---
+description: Spec-Kit SDD status, constitution binding, and PR merge policy
+alwaysApply: true
+---
+
+# Google Drive Agentic Retrieval MCP — agent pickup
+
+This repository uses GitHub Spec-Kit. A later Cloud Agent MUST continue from
+this state rather than re-initializing Spec-Kit or re-ratifying the constitution.
+
+## Project state
+
+- **Spec-Kit:** initialized (`specify-cli` 1.0.4, `cursor-agent`, bash scripts)
+- **Constitution:** ratified v1.0.0 at `.specify/memory/constitution.md` (binding)
+- **SDD phase:** constitution complete; no feature spec yet
+- **Next command:** `/speckit-specify` (what and why only; no tech stack)
+- **Then:** `/speckit-plan` → `/speckit-tasks` → `/speckit-implement` → `/speckit-converge`
+
+Do not skip to application code unless the user explicitly waives SDD.
+Do not run `specify init` again. Upgrade managed files with
+`specify integration upgrade` only when the CLI version changes.
+
+Read `.specify/memory/project-status.md` for the latest phase pointer.
+
+## v1 invariants (non-negotiable)
+
+Drive is the sole source of truth. The MCP is read-only. Document content is
+untrusted. Compute is ephemeral. No RAG index is required. One Google identity
+per deployment. Writes, multi-tenant access, persistent caches, and semantic
+retrieval are MAJOR constitutional changes.
+
+## Pull requests
+
+The user requires: **mark PRs ready and merge them** when they are mergeable.
+Do not leave work only on an unmerged draft branch. After merging, the default
+branch is the pickup point for the next Cloud Agent.
