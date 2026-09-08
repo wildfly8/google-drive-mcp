@@ -8,9 +8,11 @@
 
 ## Summary
 
-Expose four read-only MCP tools — `drive_ls`, `drive_find`, `drive_read`, `drive_grep` — so an agent can iterate `discover → read → exact search` against live Google Drive. No RAG index, no persistent document copy. Candidates are not evidence; grep matches are deterministic over request-scoped bytes; truncation is `PARTIAL`.
+Expose four read-only MCP tools — `drive_ls`, `drive_find`, `drive_read`, `drive_grep` — so an agent can iterate `discover → read → exact search` against live Google Drive. No RAG index, no persistent document copy. Candidates are not evidence; `DocumentContent` and `SearchMatch` with provenance play the evidence role (no separate Evidence class). Grep is deterministic over request-scoped bytes. Truncation and walk 429 are `PARTIAL`.
 
-Technical approach: domain operations (discover/inspect/search) behind ports; Google Drive list/export/download and stdlib `re` are adapters (Article XII). Default RetrievalScope is the whole Google grant; a folder or file list narrows one call. `ls` is immediate children; `find`/`grep` on a folder include descendants.
+Technical approach: domain operations (discover/inspect/search) behind ports; Google Drive list/export/download and stdlib `re` are adapters (Article XII). `RetrievalScope.default_whole_grant` is the whole Google grant; a folder or file list narrows one call. `drive_ls` with omitted folder **projects** that grant onto My Drive `root` children (not the same universe as omitted-folder find/grep). `find`/`grep` on a folder include descendants via shared `is_within_scope`. Wire view-link field is `source_url`. Mixed-folder grep skips unsupported files (`PARTIAL`); single-id unsupported is a classified error.
+
+Google 404/403-as-404 (and single-file 429 with no prefix) go through Access Control’s `map_google_error()`. Walk 429 is intercepted in list/grep as `PARTIAL` (`partial_reason: RATE_LIMITED`), not `ErrorEnvelope` `RATE_LIMITED`. AUTH folder∩file_ids on real `drive_grep` is replayed after the tool exists (Access Control already tested the same args on the stub).
 
 ## Technical Context
 
@@ -20,7 +22,7 @@ Technical approach: domain operations (discover/inspect/search) behind ports; Go
 
 **Storage**: None persistent. Exports live in memory or `tempfile.TemporaryDirectory` deleted at end of the tool call.
 
-**Testing**: pytest; contract tests from `contracts/`; integration tests against a fake Drive fixture; optional live Drive smoke
+**Testing**: pytest; contract tests from `contracts/`; integration tests against shared `tests/fakes/fake_drive.py`; AUTH replay on real `drive_grep`; `PARTIAL` including `max_execution_time`; optional live Drive smoke
 
 **Target Platform**: Linux, Cloud Run Streamable HTTP MCP. Same process as Access Control.
 
@@ -65,7 +67,7 @@ Sheets/Slides context: character window of 200 characters around a match when th
 | agent reasoning and retrieval mechanics stay separate | PASS — no sufficiency/synthesis |
 | no RAG index is required for correctness | PASS |
 
-**Post-Phase 1 re-check:** Still PASS. Contracts are read/search/enumerate. Budgets emit `PARTIAL`. Export map is infrastructure, not a second source of truth.
+**Post-Phase 1 re-check:** Still PASS. Contracts are read/search/enumerate. Budgets and walk 429 emit `PARTIAL`. `map_google_error` is not used for walk 429. Export map is infrastructure, not a second source of truth. Evidence is a role, not a type.
 
 ## Project Structure
 
@@ -77,7 +79,7 @@ specs/002-retrieval-core/
 ├── research.md
 ├── data-model.md
 ├── quickstart.md
-├── contracts/
+├── contracts/           # includes error-taxonomy.md pointer to Access Control
 └── tasks.md
 ```
 
@@ -87,7 +89,9 @@ specs/002-retrieval-core/
 src/google_drive_mcp/
 ├── domain/
 │   ├── errors.py
-│   ├── google_errors.py     # shared map_google_error (owned with Access Control)
+│   ├── google_errors.py     # shared mapper: 404/403-as-404; single-file 429; not walk 429
+│   ├── budgets.py
+│   ├── drive_file.py
 │   ├── provenance.py
 │   ├── retrieval_scope.py   # is_within_scope; implemented in Access Control T005
 │   ├── candidates.py
@@ -118,7 +122,7 @@ tests/
     └── retrieval/
 ```
 
-**Structure Decision**: Same single package as Access Control. Retrieval owns `retrieval/`, Drive content adapters, exact-search adapter, and MCP tool registration. Access-control middleware wraps every tool. `mcp/server.py` remains the composition root (do not start a second server). One fake Drive: `tests/fakes/fake_drive.py`.
+**Structure Decision**: Same single package as Access Control. Retrieval owns `retrieval/`, Drive content adapters, exact-search adapter, and MCP tool registration. Access-control middleware wraps every tool. `mcp/server.py` remains the composition root (do not start a second server). One fake Drive: `tests/fakes/fake_drive.py`. Do not fork `RetrievalScope` or a second parent walk. T040 scans `infra/google_drive` for write methods.
 
 ## Complexity Tracking
 

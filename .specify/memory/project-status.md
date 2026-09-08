@@ -16,4 +16,4 @@ SDD phase changes (specify / plan / tasks / implement / converge).
 v1 scope remains: one authenticated Google identity, read-only agentic
 retrieval over Google Drive, no application-owned RAG pipeline.
 
-Analyze remediations (locked for implementers): shared `RetrievalScope.default_whole_grant` and `is_within_scope`; shared `map_google_error` (404/403-as-404 and single-file 429 only; walk 429 is `PARTIAL`); one fake Drive port; v1 `AUTHORIZATION_ERROR` tested on AC stub/`evaluate_chain` then replayed on `drive_grep` (T039); `source_url` on the wire; Evidence is conceptual.
+Analyze remediations (locked for implementers): shared `RetrievalScope.default_whole_grant` and `is_within_scope`; shared `map_google_error` (404/403-as-404 and single-file 429 only; walk 429 is `PARTIAL`); one fake Drive port; v1 `AUTHORIZATION_ERROR` tested on AC stub/`evaluate_chain` then replayed on `drive_grep` (T039); `source_url` on the wire; Evidence is conceptual. Plans synced to those lock-ins (2026-09-08).
