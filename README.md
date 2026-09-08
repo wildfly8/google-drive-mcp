@@ -36,6 +36,12 @@ The Specify CLI (`specify-cli` 1.0.4) initialized this project with the
 `cursor-agent` integration and bash scripts. Refresh managed files with
 `specify integration upgrade` after upgrading the CLI.
 
+Shared pickup state for the next Cloud Agent:
+
+- `.specify/memory/project-status.md` — current SDD phase
+- `.cursor/rules/spec-kit-sdd.mdc` — always-on constitution and next-step rules
+- `.cursor/environment.json` — installs `uv` and `specify-cli` on Cloud Agent boot
+
 ## Out of v1 scope
 
 Multi-tenant access, write capability, persistent caches, and

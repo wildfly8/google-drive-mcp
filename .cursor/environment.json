@@ -1,0 +1,4 @@
+{
+  "name": "google-drive-mcp",
+  "install": "bash scripts/cloud-agent-install.sh"
+}
