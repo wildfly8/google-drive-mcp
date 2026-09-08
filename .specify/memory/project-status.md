@@ -7,22 +7,16 @@ SDD phase changes (specify / plan / tasks / implement / converge).
 | --- | --- |
 | Spec-Kit | Initialized (specify-cli 1.0.4, cursor-agent, bash) |
 | Constitution | Ratified v1.0.0 (`.specify/memory/constitution.md`) |
-| Current phase | Implement complete (2026-09-08); next is `/speckit-converge` |
-| Next command | `/speckit-converge` |
-| Feature specs | `specs/001-access-control/spec.md`, `specs/002-retrieval-core/spec.md` (implemented) |
+| Current phase | Converge (2026-09-08): remaining tasks appended; next is `/speckit-implement` |
+| Next command | `/speckit-implement` (Access Control T032–T036, then Retrieval T047–T049) |
+| Feature specs | `specs/001-access-control/spec.md`, `specs/002-retrieval-core/spec.md` (implemented; converge gaps open) |
 | Git branch | `main` only (spec dirs are not git branches) |
-| Implementation | Access Control T001–T031 and Retrieval Core T001–T046 in `src/google_drive_mcp/` |
+| Implementation | Package in `src/google_drive_mcp/`; converge Phase 7 (AC) and Phase 8 (RC) still open |
 | Pull requests | Only when the user explicitly asks |
 
 v1 scope remains: one authenticated Google identity, read-only agentic
 retrieval over Google Drive, no application-owned RAG pipeline.
 
-Implemented: ordered auth chain, shared `RetrievalScope` / `is_within_scope`,
-shared `map_google_error`, one fake Drive port, MCP tools `drive_ls` /
-`drive_find` / `drive_read` / `drive_grep` behind the chain, PARTIAL completeness,
-Cloud Run Dockerfile. Validate with:
-
-```bash
-uv run pytest tests/contract/test_auth_contract.py tests/unit/access_control tests/integration/test_request_isolation.py -q
-uv run pytest tests/contract tests/unit/retrieval -q
-```
+`/speckit-analyze` is **not** the next step: it is a pre-implement artifact
+check. After implement, `/speckit-converge` is the spec-vs-code gate.
+Re-run analyze only if spec/plan/tasks are rewritten.
