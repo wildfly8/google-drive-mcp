@@ -252,3 +252,11 @@ Remaining work from `/speckit-converge` (2026-09-08, third pass). Do not rewrite
 
 - [X] T053 Wrap `drive.get_metadata` failures in `retrieval/read.py` with `map_google_error` so a post-ALLOW 404/429 becomes `FILE_NOT_FOUND` / `RATE_LIMITED` instead of an uncaught `GoogleApiError` (FR-060, T045, Article XI, drive_read.md) (contradicts)
 - [X] T054 Treat Google Slides as a non-line-oriented grep target (200-character window, not `max_context_lines`) in `retrieval/grep.py` per plan: Sheets/Slides context (FR-034, plan: Sheets/Slides context) (partial)
+
+---
+
+## Phase 11: Convergence
+
+Remaining work from `/speckit-converge` (2026-09-08, fourth pass). Do not rewrite earlier tasks.
+
+- [ ] T055 CRITICAL Intercept Google HTTP 429 from `fetch_text` / export / `get_media` during multi-target `drive_grep` (folder_id, default_whole_grant, or multiple file_ids) as `status: PARTIAL` with `partial_reason: RATE_LIMITED` (preserve matches already found; empty matches still PARTIAL), instead of re-raising `map_google_error` `ErrorEnvelope` `RATE_LIMITED`; keep single-file `drive_read` and single-`file_ids` grep export 429 with no usable prefix as `ErrorEnvelope` `RATE_LIMITED` in `retrieval/grep.py` (FR-041, FR-060, US4/AC3, Article X, result-status.md, plan: walk 429) (contradicts)
