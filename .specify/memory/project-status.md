@@ -11,6 +11,7 @@ SDD phase changes (specify / plan / tasks / implement / converge).
 | Next command | `/speckit-specify` |
 | Feature spec | None yet |
 | Implementation | None yet |
+| Pull requests | Only when the user explicitly asks |
 
 v1 scope remains: one authenticated Google identity, read-only agentic
 retrieval over Google Drive, no application-owned RAG pipeline.

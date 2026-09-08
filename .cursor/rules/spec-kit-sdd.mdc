@@ -1,5 +1,5 @@
 ---
-description: Spec-Kit SDD status, constitution binding, and PR merge policy
+description: Spec-Kit SDD status, constitution binding, and PR policy
 alwaysApply: true
 ---
 
@@ -31,6 +31,6 @@ retrieval are MAJOR constitutional changes.
 
 ## Pull requests
 
-The user requires: **mark PRs ready and merge them** when they are mergeable.
-Do not leave work only on an unmerged draft branch. After merging, the default
-branch is the pickup point for the next Cloud Agent.
+Raise a pull request **only when the user explicitly asks**. Do not open,
+update, or merge a PR as a default wrap-up. Commit and push on the working
+branch (prefer `main` as the pickup point) unless the user says otherwise.
