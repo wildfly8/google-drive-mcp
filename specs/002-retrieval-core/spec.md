@@ -14,6 +14,16 @@
 
 **Relationship**: Downstream / conformist consumer of Access Control (`specs/001-access-control/spec.md`). Every requirement below assumes a call has already cleared that authorization chain. This spec never restates or substitutes for that chain (Article VII).
 
+## Clarifications
+
+### Session 2026-09-08
+
+- Q: In v1, who is the principal that every Drive call runs as, given the constitution allows only one Google identity per deployment? → A: One Drive identity per deployment. MCP authentication is still required so anonymous callers cannot use it. Concurrent requests share that identity; isolation is no leaked credential state, not multiple Google users. (Owned by Access Control; consumed here.)
+- Q: When a call is denied, should the agent be told the file is forbidden, or only that it was not found? → A: Outside the call’s stated retrieval boundary → `AUTHORIZATION_ERROR`. Google does not grant the file → `FILE_NOT_FOUND` (no existence leak). (Owned by Access Control; consumed here.)
+- Q: If the agent does not name a folder or file list, what may the call search? → A: Unspecified boundary = the whole Google grant for this deployment identity. Optional folder or file list narrows that one call.
+- Q: When the agent names a folder for find or exact search, does that include files in nested subfolders? → A: Find and grep on a folder include nested subfolders. List is immediate children only.
+- Q: Which file kinds must v1 be able to read and exact-search, and what happens for everything else? → A: Required: Docs, Sheets, Slides. Also: other Drive files that yield usable text. Non-text/unreadable types → unsupported error (never empty success).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Discover candidates, then read current content (Priority: P1)
@@ -27,9 +37,11 @@ An agent needs an answer that may live in the user's Drive. It lists a folder or
 **Acceptance Scenarios**:
 
 1. **Given** an accessible folder, **When** the agent enumerates it with `drive_ls`, **Then** each child is returned with id, name, type, folder flag, modified time, and view link, and **no** document body is included.
-2. **Given** accessible files whose names or types match a query, **When** the agent runs `drive_find`, **Then** it receives `SearchCandidate` records that are not labeled or treated as verified evidence.
+2. **Given** accessible files whose names or types match a query, including files nested under a named folder, **When** the agent runs `drive_find` on that folder, **Then** it receives `SearchCandidate` records for matching descendants (not only immediate children) that are not labeled or treated as verified evidence.
 3. **Given** a known `file_id` the principal may read, **When** the agent runs `drive_read`, **Then** it receives current `DocumentContent` sourced from Drive at call time, with provenance intact.
-4. **Given** a workspace document versus another supported file type, **When** the agent reads each, **Then** both yield a usable content representation appropriate to that type (without the agent choosing infrastructure).
+4. **Given** a Google Doc, Sheet, or Slide the principal may read, **When** the agent runs `drive_read`, **Then** it receives a usable text representation with provenance intact.
+5. **Given** another Drive file that yields usable text, **When** the agent reads it, **Then** the text is returned with provenance.
+6. **Given** a Drive file that cannot yield usable text, **When** the agent reads or greps it, **Then** the call fails as `UNSUPPORTED_MIME_TYPE` or `FILE_NOT_EXPORTABLE`, not as empty success.
 
 ---
 
@@ -86,9 +98,10 @@ Drive is the only source of truth. After a document changes in Drive, a later re
 ### Edge Cases
 
 - Pagination (`max_results`, `page_token`) MUST NOT report `COMPLETE` when results were silently truncated (FR-003, FR-041).
+- `drive_ls` enumerates immediate children only; `drive_find` and `drive_grep` on a `folder_id` include nested descendants. A recursive search that hits a limit MUST report `PARTIAL`, not a silent miss.
 - `drive_ls` MUST NOT return document bodies.
 - Discovery results MUST NOT be presented as verified evidence.
-- Unsupported or non-exportable content MUST fail as a classified error (`UNSUPPORTED_MIME_TYPE` / `FILE_NOT_EXPORTABLE`), not as empty success.
+- Unsupported or non-exportable content MUST fail as a classified error (`UNSUPPORTED_MIME_TYPE` / `FILE_NOT_EXPORTABLE`), not as empty success. v1 required types are Google Docs, Sheets, and Slides; other Drive files are supported only when they yield usable text.
 - Invalid arguments MUST be `INVALID_ARGUMENT`.
 - Upstream Drive failures MUST be `DRIVE_API_ERROR` (or equivalent upstream-failure category) rather than a generic error (Article XI). Authentication and authorization errors are raised by Access Control, not this context.
 - Optional `max_bytes` on read: exceeding the bound MUST surface as `PARTIAL` or `RESOURCE_LIMIT`, not as complete content.
@@ -101,25 +114,26 @@ Drive is the only source of truth. After a document changes in Drive, a later re
 
 #### Discovery — `drive_ls`
 
-- **FR-001**: MUST enumerate the immediate children of a given `folder_id`, returning `id, name, mime_type, is_folder, modified_time, web_url` per child.
+- **FR-001**: MUST enumerate the immediate children of a given `folder_id`, returning `id, name, mime_type, is_folder, modified_time, web_url` per child. When `folder_id` is omitted, MUST enumerate the immediate children of the Drive root visible under the default `RetrievalScope` (the whole Google grant for this deployment identity).
 - **FR-002**: MUST NOT read or return document content — metadata and topology only (Article V).
 - **FR-003**: MUST support `max_results` and `page_token` without silently truncating results while reporting completeness as `COMPLETE` (see result status).
 
 #### Discovery — `drive_find`
 
-- **FR-010**: MUST discover `SearchCandidate[]` using metadata and/or Drive-native discovery, filterable by `name_pattern, mime_type, folder_id, modified_after, modified_before, trashed, max_results`.
+- **FR-010**: MUST discover `SearchCandidate[]` using metadata and/or Drive-native discovery, filterable by `name_pattern, mime_type, folder_id, modified_after, modified_before, trashed, max_results`. When `folder_id` is omitted, discovery runs within the default `RetrievalScope` (the whole Google grant for this deployment identity). When `folder_id` is named, discovery MUST include descendants of that folder, not only its immediate children.
 - **FR-011**: MUST NOT represent returned candidates as verified evidence (Article VIII).
 
 #### Inspection — `drive_read`
 
 - **FR-020**: MUST retrieve current, authoritative `DocumentContent` for a given `file_id` directly from live Drive at call time — never from a prior MCP-owned copy (Articles I, IX).
-- **FR-021**: MUST obtain a usable content representation appropriate to the file type (workspace documents versus other supported files). How export versus download is implemented is infrastructure (Article XII).
+- **FR-021**: MUST obtain a usable text representation appropriate to the file type. v1 MUST support Google Docs, Sheets, and Slides. v1 MUST also support other Drive files that yield usable text (for example plain text or similarly text-extractable files). How export versus download is implemented is infrastructure (Article XII).
+- **FR-021a**: A type that cannot yield usable text MUST fail as `UNSUPPORTED_MIME_TYPE` or `FILE_NOT_EXPORTABLE` — never as empty successful retrieval or fabricated empty content.
 - **FR-022**: MUST support optional `content_format` and `max_bytes`.
 - **FR-023**: If the same file is re-read after being modified in Drive, the result MUST reflect the newer content when Drive itself makes it available.
 
 #### Verification — `drive_grep`
 
-- **FR-030**: MUST perform deterministic exact-content search over one or more files, identified by `file_ids` and/or `folder_id`, given `pattern, case_sensitive?, regex?, context_lines?, max_matches?`.
+- **FR-030**: MUST perform deterministic exact-content search over one or more files, identified by `file_ids` and/or `folder_id`, given `pattern, case_sensitive?, regex?, context_lines?, max_matches?`. When neither `file_ids` nor `folder_id` is named, grep runs within the default `RetrievalScope` (the whole Google grant for this deployment identity), subject to resource limits and `PARTIAL` completeness (FR-041). When `folder_id` is named, grep MUST search that folder’s descendants, not only its immediate children.
 - **FR-031**: For identical retrieved bytes and identical parameters, results MUST be identical (Article IX) within the current request. A changed Drive document MAY change results on a subsequent call.
 - **FR-032**: When `case_sensitive = false`, matching MUST be case-insensitive; when `true`, case MUST be respected exactly.
 - **FR-033**: When `regex = true`, `pattern` MUST be interpreted as a regular expression, not a literal string; literal and regex modes MUST be unambiguously distinguished.
@@ -140,7 +154,7 @@ Drive is the only source of truth. After a document changes in Drive, a later re
 
 #### Error domain (this context's categories)
 
-- **FR-060**: Retrieval-originated errors MUST be classified by cause, at minimum: `FILE_NOT_FOUND`, `FILE_NOT_EXPORTABLE`, `UNSUPPORTED_MIME_TYPE`, `DRIVE_API_ERROR`, `RATE_LIMITED`, `RESOURCE_LIMIT`, `TEMPORARY_STORAGE_ERROR`, `SEARCH_ERROR`, `INVALID_ARGUMENT` (Article XI). `AUTHENTICATION_ERROR` and `AUTHORIZATION_ERROR` belong to Access Control and are raised upstream.
+- **FR-060**: Retrieval-originated errors MUST be classified by cause, at minimum: `FILE_NOT_FOUND`, `FILE_NOT_EXPORTABLE`, `UNSUPPORTED_MIME_TYPE`, `DRIVE_API_ERROR`, `RATE_LIMITED`, `RESOURCE_LIMIT`, `TEMPORARY_STORAGE_ERROR`, `SEARCH_ERROR`, `INVALID_ARGUMENT` (Article XI). `AUTHENTICATION_ERROR` and `AUTHORIZATION_ERROR` belong to Access Control and are raised upstream. Access Control also raises `FILE_NOT_FOUND` before this context when Google’s grant does not include the resource; after a call is cleared, this context raises `FILE_NOT_FOUND` only for a resource that is genuinely missing or not visible after that check.
 - **FR-061**: Errors MUST NOT leak credential material in any form (defense-in-depth; primary guarantee owned by Access Control).
 
 #### Untrusted content (content-handling half)
@@ -168,7 +182,7 @@ Drive is the only source of truth. After a document changes in Drive, a later re
 - **SearchCandidate**: A DriveFile surfaced as possibly relevant: `file, reason, discovery_method`. **Not evidence.**
 - **SearchMatch**: A deterministic exact match found in retrieved content: `file_id, file_name, pattern, matched_text, location, context`.
 - **Evidence**: Content returned to the agent to support reasoning: `source_file, content, location, retrieval_timestamp, provenance`. Must be distinguishable from agent inference.
-- **RetrievalScope**: The bounded set of Drive resources an operation may touch. Defined here; enforced by Access Control (`AC-FR-021`).
+- **RetrievalScope**: The bounded set of Drive resources an operation may touch. Default, when the call names no `folder_id` or `file_ids`, is everything the deployment’s Google grant already allows. A named folder or file list narrows that call only. Enforced by Access Control (`AC-FR-021`).
 - **RetrievalOperation**: One MCP invocation: `operation_id, tool, scope, query/pattern, start_time, end_time, result_count, status`.
 
 Domain relationships that MUST hold:
@@ -205,6 +219,7 @@ Scope enforcement and credential use are Access Control invariants AI3/AI4, not 
 - **SC-006**: After any operation completes, 100% of exported or downloaded bytes from that operation are absent from persistent application storage.
 - **SC-007**: Correctness holds when two consecutive requests are handled independently (including on different compute instances): 0 reliance on leftover local working material.
 - **SC-008**: 100% of content-derived results include a correct originating `file_id`.
+- **SC-009**: 100% of reads of accessible Google Docs, Sheets, and Slides return a usable text representation with originating `file_id`. Accessible Drive files that yield usable text also succeed. Types that cannot yield text fail as unsupported/non-exportable in 100% of those cases — never as empty success.
 
 ## Assumptions
 
@@ -213,8 +228,9 @@ Scope enforcement and credential use are Access Control invariants AI3/AI4, not 
 - Whether grep context defaults to line-based or character-offset windows for non-line-oriented formats (Sheets/Slides) is a plan-level decision; both MUST still carry provenance.
 - Matching-engine choice (regex library, etc.) is infrastructure (Article XII) and MUST preserve FR-031 determinism.
 - Concrete growth process for error taxonomy categories is specification-level and MAY grow without amending the constitution (Article XI).
-- v1 is one Google identity per deployment; permission isolation tests live in Access Control.
+- v1 is one Google identity per deployment; permission isolation and dual-identity tests live in Access Control and are out of this context. Retrieval tools always run as that single Drive identity after Access Control has cleared the call.
 - Semantic or vector retrieval is out of scope until a demonstrated need and a MAJOR Article XIV specification.
+- Opaque binary types that cannot yield usable text are out of v1 retrieval/search except as classified unsupported errors.
 
 ## Out of Scope
 
