@@ -30,15 +30,15 @@ The agent never receives this object. Adapter maps env secrets → Credential.
 
 ## RetrievalScope
 
-Defined fully in Retrieval Core. This context stores and enforces:
+**Canonical field definitions live in Retrieval Core** (`specs/002-retrieval-core/data-model.md`). This context stores and **enforces** the same object. Shared module: `src/google_drive_mcp/domain/retrieval_scope.py`.
 
 | Field | Type | Rules |
 | --- | --- | --- |
-| `folder_id` | string? | If set, allowed resources are this folder and (for find/grep) descendants |
+| `folder_id` | string? | If set, allowed resources are this folder and (for find/grep) descendants; ls uses immediate children only |
 | `file_ids` | string[]? | If set, only these ids |
-| `unspecified` | bool | If no folder/file list, scope = whole Google grant for this identity |
+| `default_whole_grant` | bool | True when neither folder nor file list named; scope = whole Google grant for this identity |
 
-A named resource outside this object is an MCP authorization failure (`AUTHORIZATION_ERROR`) before Google is called.
+A caller-named `file_id` that Google grants but that lies outside `folder_id` is an MCP authorization failure (`AUTHORIZATION_ERROR`) after metadata `files.get` (not a content fetch). See [authorization-chain.md](./contracts/authorization-chain.md).
 
 ## AuthorizationDecision
 
@@ -49,15 +49,18 @@ A named resource outside this object is an MCP authorization failure (`AUTHORIZA
 | `reason_code` | string | Machine-readable, no token material |
 | `principal_id` | string | Non-secret; for logs only |
 
+`AUTHORIZATION_ERROR` from a folder ∩ file_ids miss uses `step_failed = google_authorization` because it requires granted metadata. Argument-level step-3 failures (none in v1 tools) would use `mcp_authorization`.
+
 ### Transitions
 
 ```text
 start
   → mcp_authentication fail → AUTHENTICATION_ERROR (stop)
   → mcp_authentication pass
-      → mcp_authorization fail (out of RetrievalScope) → AUTHORIZATION_ERROR (stop)
+      → mcp_authorization fail (argument-level; v1 tools pass) → AUTHORIZATION_ERROR (stop, no Drive I/O)
       → mcp_authorization pass
-          → google_authorization fail → FILE_NOT_FOUND (stop, no existence leak)
+          → google_authorization fail (no grant) → FILE_NOT_FOUND (stop, no existence leak)
+          → google_authorization: granted file_id outside folder_id → AUTHORIZATION_ERROR (stop, no content I/O)
           → google_authorization pass → ALLOW → resource
 ```
 

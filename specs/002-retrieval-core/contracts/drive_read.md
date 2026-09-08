@@ -2,6 +2,8 @@
 
 Current usable text from live Drive. Never from an MCP-owned copy.
 
+Must run Access Control chain first. v1 does **not** emit `AUTHORIZATION_ERROR` (single `file_id` is the call’s scope). Google grant miss or missing file → `FILE_NOT_FOUND` via shared `map_google_error()`.
+
 ## Input
 
 ```json
@@ -38,16 +40,19 @@ Current usable text from live Drive. Never from an MCP-owned copy.
 }
 ```
 
-Truncation at `max_bytes` → `PARTIAL`, content is the prefix actually read. Missing `file_id` in output is invalid.
+Match fields (`matched_text`, `location`) MUST NOT be required. Truncation at `max_bytes` with a usable prefix → `PARTIAL`, `partial_reason: max_bytes`; content is the prefix actually read. Missing `file_id` in output is invalid.
 
 ## Errors
 
+Canonical categories: [error-taxonomy.md](./error-taxonomy.md).
+
 | category | When |
 | --- | --- |
-| `FILE_NOT_FOUND` | Google grant miss or missing file (Access Control / Drive) |
-| `AUTHORIZATION_ERROR` | file_id outside this call’s scope |
+| `FILE_NOT_FOUND` | Google grant miss or missing file (`map_google_error`) |
 | `UNSUPPORTED_MIME_TYPE` | Cannot yield usable text |
 | `FILE_NOT_EXPORTABLE` | Workspace type that export refuses |
-| `RESOURCE_LIMIT` | Over max_export_size with no usable prefix policy — prefer `PARTIAL` when a prefix exists |
+| `RESOURCE_LIMIT` | Over `max_export_size` / hard cap with **no** usable prefix |
+| `RATE_LIMITED` | HTTP 429 on this single-file export with **no** usable prefix |
 | `DRIVE_API_ERROR` | Other upstream failures |
-| `INVALID_ARGUMENT` | Bad file_id shape / max_bytes |
+| `INVALID_ARGUMENT` | Bad `file_id` shape / `max_bytes` out of range |
+| `TEMPORARY_STORAGE_ERROR` | Tempfile create/cleanup failure |

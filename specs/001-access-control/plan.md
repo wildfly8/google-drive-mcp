@@ -16,7 +16,7 @@ Technical approach: a Python hexagonal MCP server on Cloud Run. Access control i
 
 **Language/Version**: Python 3.12
 
-**Primary Dependencies**: Official MCP Python SDK (`mcp` 2.x, Streamable HTTP); `google-auth` + `google-api-python-client` (Google adapter only); `pydantic` for request-scoped models; `httpx` if needed for transport tests
+**Primary Dependencies**: Official MCP Python SDK (`mcp` 2.x, Streamable HTTP); `google-auth` + `google-api-python-client` (Google adapter only); `pydantic` for request-scoped models; `httpx` for Streamable HTTP contract tests
 
 **Storage**: None persistent. Google refresh token and MCP bearer secret live in the environment/secret manager, not in the app. Request-scoped objects only.
 
@@ -74,29 +74,35 @@ Shared with Retrieval Core (one deployable):
 ```text
 src/google_drive_mcp/
 ├── domain/
-│   ├── errors.py              # shared flat taxonomy
-│   └── retrieval_scope.py     # scope value object
+│   ├── errors.py              # shared flat taxonomy (ErrorEnvelope)
+│   ├── google_errors.py       # map_google_error(); used by chain and retrieval
+│   └── retrieval_scope.py     # RetrievalScope + is_within_scope (parent_lookup port)
 ├── access_control/
 │   ├── chain.py               # ordered evaluation, no Google types
 │   ├── principal.py
 │   └── decisions.py
 ├── infra/
+│   ├── config.py
+│   ├── logging.py
 │   ├── mcp_auth/
 │   │   └── bearer.py          # MCP caller authentication adapter
 │   └── google_auth/
 │       └── refresh_token.py   # Drive credential adapter (readonly)
 ├── mcp/
+│   ├── server.py              # composition root: mounts tools.py when present
 │   └── middleware.py          # run chain before any tool
 tests/
+├── fakes/
+│   └── fake_drive.py          # one in-memory Drive port + invocation counters
 ├── contract/
 │   └── test_auth_contract.py
 ├── integration/
-│   └── test_chain_google_errors.py
+│   └── test_request_isolation.py
 └── unit/
     └── access_control/
 ```
 
-**Structure Decision**: Single Python package. Access control owns `access_control/` and auth adapters. Retrieval Core adds tools and Drive content adapters. Domain errors are shared so the wire taxonomy stays flat.
+**Structure Decision**: Single Python package. Access control owns `access_control/` and auth adapters. Retrieval Core adds tools and Drive content adapters. Domain errors, Google error mapping, and `RetrievalScope` are shared. `mcp/server.py` is the composition root: it mounts `mcp/tools.py` when Retrieval Core registers tools; until then a stub tool exists only to prove the chain. One fake Drive port (`tests/fakes/fake_drive.py`) is a counting wrapper over an in-memory store; Retrieval Core populates the store.
 
 ## Complexity Tracking
 

@@ -2,6 +2,8 @@
 
 Deterministic exact search over bytes retrieved **in this call**. Folder scope is recursive. Not Drive `fullText`.
 
+Must run Access Control chain first.
+
 ## Input
 
 ```json
@@ -21,7 +23,9 @@ Deterministic exact search over bytes retrieved **in this call**. Folder scope i
 }
 ```
 
-If both `file_ids` and `folder_id` omitted → default whole grant, still budgeted (`PARTIAL` expected on large drives). `regex=false` → literal (`re.escape`). Invalid regex → `INVALID_ARGUMENT`.
+If both `file_ids` and `folder_id` omitted → `default_whole_grant`, still budgeted (`PARTIAL` expected on large drives). `regex=false` → literal (`re.escape`). Invalid regex or out-of-range budgets → `INVALID_ARGUMENT`. Runtime engine failure after a valid compile → `SEARCH_ERROR`.
+
+When **both** `folder_id` and `file_ids` are set: Access Control step 4 metadata-checks each named id. Granted file outside the folder → `AUTHORIZATION_ERROR`. Ungranted → `FILE_NOT_FOUND`.
 
 ## Output (success)
 
@@ -36,7 +40,7 @@ If both `file_ids` and `folder_id` omitted → default whole grant, still budget
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["file_id", "file_name", "mime_type", "modified_time", "source_url", "retrieved_at", "pattern", "matched_text"],
+        "required": ["file_id", "file_name", "mime_type", "modified_time", "source_url", "retrieved_at", "pattern", "matched_text", "location"],
         "properties": {
           "file_id": { "type": "string" },
           "file_name": { "type": "string" },
@@ -55,6 +59,12 @@ If both `file_ids` and `folder_id` omitted → default whole grant, still budget
 }
 ```
 
-No matches after complete search → `EMPTY`, `matches: []` (never fabricate). Identical bytes + identical params in this request → identical `matches`. Content discarded after the call.
+No matches after complete search → `EMPTY`, `matches: []` (never fabricate). Identical bytes + identical params in this request → identical `matches`. Content discarded after the call. Walk cut by Google 429 → `PARTIAL`, `partial_reason: RATE_LIMITED` (even if `matches` is empty).
 
-Unsupported files in a folder walk: skip with a note in `partial_reason` or per-file error list without failing the whole grep, unless every target is unsupported — then `ERROR` / `UNSUPPORTED_MIME_TYPE`. Prefer continuing and `PARTIAL` if some files were skipped as unsupported while others were searched.
+## Unsupported files
+
+| Target | Result |
+| --- | --- |
+| Only `file_ids`, and every named file is unsupported / not exportable | `ERROR` / `UNSUPPORTED_MIME_TYPE` or `FILE_NOT_EXPORTABLE` |
+| `folder_id` or `default_whole_grant` walk: mix of searchable and unsupported | Skip unsupported, search the rest, `PARTIAL` with `partial_reason` noting skips |
+| Walk: every target unsupported | `ERROR` / `UNSUPPORTED_MIME_TYPE` or `FILE_NOT_EXPORTABLE` |

@@ -26,7 +26,7 @@ Technical approach: domain operations (discover/inspect/search) behind ports; Go
 
 **Project Type**: MCP web service (stateless)
 
-**Performance Goals**: Correctness → retrieval quality → security → simplicity, then latency. Default budgets below; breaches are `PARTIAL` or `RESOURCE_LIMIT`, never silent.
+**Performance Goals**: Correctness → retrieval quality → security → simplicity, then latency. Default budgets below; a usable prefix or partial listing is `PARTIAL`; a hard export refusal with no prefix is `RESOURCE_LIMIT`; a walk cut by 429 is `PARTIAL` (`partial_reason: RATE_LIMITED`). Never silent.
 
 **Constraints**: Read-only adapter methods only. Drive export cap 10 MB; we cap below that. No embeddings. Tool names/meanings must not depend on a single LLM vendor.
 
@@ -87,32 +87,38 @@ specs/002-retrieval-core/
 src/google_drive_mcp/
 ├── domain/
 │   ├── errors.py
+│   ├── google_errors.py     # shared map_google_error (owned with Access Control)
 │   ├── provenance.py
-│   ├── retrieval_scope.py
+│   ├── retrieval_scope.py   # is_within_scope; implemented in Access Control T005
 │   ├── candidates.py
 │   ├── content.py
-│   └── matches.py
+│   ├── matches.py
+│   └── operation.py
 ├── retrieval/
+│   ├── ports.py
 │   ├── ls.py
 │   ├── find.py
 │   ├── read.py
 │   └── grep.py
 ├── infra/
 │   ├── google_drive/
-│   │   ├── list.py          # files.list / get metadata
+│   │   ├── list.py          # files.list / get metadata; uses is_within_scope
 │   │   └── export.py        # files.export / get_media
 │   └── exact_search/
 │       └── regex.py         # stdlib re, swappable port
 ├── mcp/
+│   ├── server.py            # composition root (Access Control); mounts tools.py
 │   └── tools.py             # drive_ls, drive_find, drive_read, drive_grep
 tests/
+├── fakes/
+│   └── fake_drive.py        # same port as Access Control; populate store here
 ├── contract/
 ├── integration/
 └── unit/
     └── retrieval/
 ```
 
-**Structure Decision**: Same single package as Access Control. Retrieval owns `retrieval/`, Drive content adapters, exact-search adapter, and MCP tool registration. Access-control middleware wraps every tool.
+**Structure Decision**: Same single package as Access Control. Retrieval owns `retrieval/`, Drive content adapters, exact-search adapter, and MCP tool registration. Access-control middleware wraps every tool. `mcp/server.py` remains the composition root (do not start a second server). One fake Drive: `tests/fakes/fake_drive.py`.
 
 ## Complexity Tracking
 

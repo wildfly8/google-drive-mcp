@@ -22,8 +22,8 @@ description: "Task list for Access Control Boundary"
 
 **Purpose**: Python package skeleton used by both features
 
-- [ ] T001 Create package directories `src/google_drive_mcp/{domain,access_control,infra/mcp_auth,infra/google_auth,mcp}` and `tests/{contract,integration,unit/access_control}` with empty `__init__.py` files
-- [ ] T002 Initialize Python 3.12 project with `pyproject.toml` dependencies `mcp`, `google-auth`, `google-api-python-client`, `pydantic`, `pytest`, `pytest-asyncio` and package layout `src/`
+- [ ] T001 Create package directories `src/google_drive_mcp/{domain,access_control,infra/mcp_auth,infra/google_auth,mcp}` and `tests/{contract,integration,unit/access_control,fakes}` with empty `__init__.py` files
+- [ ] T002 Initialize Python 3.12 project with `pyproject.toml` dependencies `mcp`, `google-auth`, `google-api-python-client`, `pydantic`, `httpx`, `pytest`, `pytest-asyncio` and package layout `src/`
 - [ ] T003 [P] Configure Ruff and pytest in `pyproject.toml` (src layout, `pythonpath`, asyncio mode)
 
 ---
@@ -34,13 +34,13 @@ description: "Task list for Access Control Boundary"
 
 **⚠️ CRITICAL**: No user story work until this phase is complete
 
-- [ ] T004 Implement shared error taxonomy and `ErrorEnvelope` in `src/google_drive_mcp/domain/errors.py` per `specs/001-access-control/contracts/error-taxonomy.md`
-- [ ] T005 [P] Implement `RetrievalScope` value object (default whole grant, folder_id, file_ids, descendant check helper) in `src/google_drive_mcp/domain/retrieval_scope.py`
+- [ ] T004 Implement shared error taxonomy and `ErrorEnvelope` in `src/google_drive_mcp/domain/errors.py` per `specs/001-access-control/contracts/error-taxonomy.md` (canonical enum; Retrieval Core must not fork it)
+- [ ] T005 [P] Implement `RetrievalScope` (`default_whole_grant`, `folder_id`, `file_ids`) and `is_within_scope(file_id, scope, parent_lookup)` in `src/google_drive_mcp/domain/retrieval_scope.py` per Retrieval Core data-model; parent_lookup is a port (tests inject a map; production uses Drive metadata)
 - [ ] T006 [P] Implement `Principal` in `src/google_drive_mcp/access_control/principal.py` (deployment label only, v1 single identity)
 - [ ] T007 [P] Implement `AuthorizationDecision` in `src/google_drive_mcp/access_control/decisions.py`
 - [ ] T008 Load env secrets (`MCP_AUTH_TOKEN`, `MCP_PRINCIPAL_ID`, `GOOGLE_*`) without logging values in `src/google_drive_mcp/infra/config.py`
 - [ ] T009 Add structured logging helper that redacts secrets in `src/google_drive_mcp/infra/logging.py`
-- [ ] T010 Create MCP server skeleton (Streamable HTTP, no tools yet) in `src/google_drive_mcp/mcp/server.py`
+- [ ] T010 Create MCP server composition root (Streamable HTTP) in `src/google_drive_mcp/mcp/server.py` that mounts `mcp/tools.py` when present; stub tool only until Retrieval Core registers real tools
 
 **Checkpoint**: Foundation ready — user stories can start
 
@@ -50,21 +50,21 @@ description: "Task list for Access Control Boundary"
 
 **Goal**: Ordered chain `MCP auth → MCP scope → Google auth → resource` with classified errors; Drive is never called on earlier failures.
 
-**Independent Test**: Unauthenticated call → `AUTHENTICATION_ERROR` and Drive adapter count 0. Valid bearer + out-of-scope `file_id` → `AUTHORIZATION_ERROR`, Drive count 0. Valid bearer + Google not-found double → `FILE_NOT_FOUND` with no file metadata.
+**Independent Test**: Unauthenticated call → `AUTHENTICATION_ERROR` and Drive **content** count 0. Valid bearer + Google not-found → `FILE_NOT_FOUND` with no file metadata. Valid bearer + `drive_grep` folder_id + granted file_id outside that folder → `AUTHORIZATION_ERROR`, metadata get allowed, export/`get_media` count 0. `drive_read` of a Google-miss is `FILE_NOT_FOUND`, never `AUTHORIZATION_ERROR`.
 
 ### Tests for User Story 1
 
-- [ ] T011 [P] [US1] Contract tests for missing/invalid bearer and out-of-scope vs Google-miss mapping in `tests/contract/test_auth_contract.py`
-- [ ] T012 [P] [US1] Unit tests that chain steps are non-skippable and prior ALLOW is not reused in `tests/unit/access_control/test_chain.py`
+- [ ] T011 [P] [US1] Contract tests for missing/invalid bearer, Google-miss → `FILE_NOT_FOUND`, and grep folder∩file_ids AUTH mapping in `tests/contract/test_auth_contract.py` (assert content I/O = 0 on AUTH; metadata get may be 1)
+- [ ] T012 [P] [US1] Unit tests that chain steps are non-skippable, prior ALLOW is not reused, and `is_within_scope` uses an injected parent map (no Drive) in `tests/unit/access_control/test_chain.py`
 
 ### Implementation for User Story 1
 
 - [ ] T013 [P] [US1] Implement constant-time MCP bearer comparison in `src/google_drive_mcp/infra/mcp_auth/bearer.py`
 - [ ] T014 [P] [US1] Implement read-only Google credential mint (refresh token → access token, request-scoped) in `src/google_drive_mcp/infra/google_auth/refresh_token.py`
 - [ ] T015 [US1] Implement ordered `evaluate_chain` with ports for authn/authz/google in `src/google_drive_mcp/access_control/chain.py` (depends on T004–T007, T013)
-- [ ] T016 [US1] Map Google 404 / permission-as-404 to `FILE_NOT_FOUND` without name/content in `src/google_drive_mcp/access_control/google_errors.py`
-- [ ] T017 [US1] MCP middleware: run chain before any tool; stub tool that only runs on ALLOW in `src/google_drive_mcp/mcp/middleware.py`
-- [ ] T018 [US1] Fake Drive port that records invocation count for contract tests in `tests/fakes/fake_google_drive.py`
+- [ ] T016 [US1] Implement `map_google_error` (404 / permission-as-404 → `FILE_NOT_FOUND`, no name/content) in `src/google_drive_mcp/domain/google_errors.py` for chain **and** later retrieval I/O
+- [ ] T017 [US1] MCP middleware: run chain before any tool; `server.py` mounts stub or `tools.py`; stub tool only runs on ALLOW in `src/google_drive_mcp/mcp/middleware.py`
+- [ ] T018 [US1] Single fake Drive port with metadata vs content invocation counters in `tests/fakes/fake_drive.py` (in-memory store skeleton; Retrieval Core populates files)
 
 **Checkpoint**: US1 independently testable via `uv run pytest tests/contract/test_auth_contract.py tests/unit/access_control/test_chain.py`
 
@@ -79,13 +79,13 @@ description: "Task list for Access Control Boundary"
 ### Tests for User Story 2
 
 - [ ] T019 [P] [US2] Unit test that chain API does not accept document content as a decision input in `tests/unit/access_control/test_untrusted_content.py`
-- [ ] T020 [P] [US2] Static/unit test that Google adapter module forbids mutating method names in `tests/unit/access_control/test_readonly_adapter.py`
+- [ ] T020 [P] [US2] Static/unit test that `infra/google_auth` and MCP registration forbid mutating tools/scopes in `tests/unit/access_control/test_readonly_auth_adapters.py` (Drive client write-method scan is Retrieval Core T040, not this task)
 
 ### Implementation for User Story 2
 
 - [ ] T021 [US2] Keep `evaluate_chain` signature free of content/rationale parameters in `src/google_drive_mcp/access_control/chain.py`
 - [ ] T022 [US2] Restrict `src/google_drive_mcp/infra/google_auth/refresh_token.py` and any Drive client factory to readonly token scope `https://www.googleapis.com/auth/drive.readonly`
-- [ ] T023 [US2] Document structural read-only guarantee (no mutating tools registered) in `src/google_drive_mcp/mcp/server.py`
+- [ ] T023 [US2] Document structural read-only guarantee (no mutating tools registered) in `src/google_drive_mcp/mcp/server.py`; keep this file as the only composition root
 
 **Checkpoint**: US2 tests pass; adversarial phrasing cannot change decisions
 
@@ -100,7 +100,7 @@ description: "Task list for Access Control Boundary"
 ### Tests for User Story 3
 
 - [ ] T024 [P] [US3] Tests that responses and logs omit bearer/refresh/access tokens in `tests/unit/access_control/test_secret_hygiene.py`
-- [ ] T025 [P] [US3] Concurrent-request isolation test in `tests/integration/test_chain_google_errors.py`
+- [ ] T025 [P] [US3] Concurrent-request isolation test in `tests/integration/test_request_isolation.py`
 
 ### Implementation for User Story 3
 
@@ -184,5 +184,7 @@ Task: "Refresh token in src/google_drive_mcp/infra/google_auth/refresh_token.py"
 ## Notes
 
 - Do not implement `drive_ls`/`find`/`read`/`grep` here — those are Retrieval Core
+- `server.py` is the composition root; do not register a second server in Retrieval Core
+- One fake: `tests/fakes/fake_drive.py` (do not add `fake_google_drive.py`)
 - Commit after each task or logical group (push to `main` unless a PR is requested)
 - Verify US1 tests fail before T015–T017 implementation

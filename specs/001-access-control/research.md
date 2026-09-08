@@ -20,9 +20,13 @@
 
 ## Decision: Denial mapping is MCP-boundary vs Google-grant
 
-**Rationale**: Clarify C. If the tool arguments name a `folder_id`/`file_id` outside that call’s `RetrievalScope`, stop at MCP authorization with `AUTHORIZATION_ERROR` (no Google call required). If Google does not grant the resource, return `FILE_NOT_FOUND` and do not include name/metadata/content. Prefer treating Google `404` and permission-denied-as-404 as not found; do not translate them to `AUTHORIZATION_ERROR`.
+**Rationale**: Clarify C. If Google does not grant the resource, return `FILE_NOT_FOUND` and do not include name/metadata/content. Prefer treating Google `404` and permission-denied-as-404 as not found; do not translate them to `AUTHORIZATION_ERROR`.
 
-**Alternatives considered**: Always 403 (leaks existence). Always 404 including MCP scope violations (hides agent mistakes when they named a file they just listed under a tighter scope).
+`AUTHORIZATION_ERROR` is **not** a Drive-free guess that `file_id ≠ folder_id`. Parentage is a Drive fact. v1 reachable case: the caller names **both** `folder_id` and `file_ids` (`drive_grep`). Step 3 (no Drive I/O) always passes for v1 tools. Step 4 metadata `files.get` then `is_within_scope`: granted-but-outside-folder → `AUTHORIZATION_ERROR` (caller already named both ids); no grant → `FILE_NOT_FOUND`. Content export MUST NOT run. `drive_read` / `drive_ls` / `drive_find` never emit `AUTHORIZATION_ERROR` in v1.
+
+Single domain helper `is_within_scope` (parent-lookup port) is shared with Retrieval Core walks so chain and BFS cannot disagree.
+
+**Alternatives considered**: Always 403 (leaks existence). Always 404 including MCP scope violations (hides agent mistakes when they named a file they just listed under a tighter folder). Treating any `file_id ≠ folder_id` as `AUTHORIZATION_ERROR` without a parent walk (breaks legitimate child reads). Requiring Drive **content** count = 0 *and* zero metadata get for the AUTH case (unimplementable without a persistent tree, forbidden by Art. III).
 
 ## Decision: Request-scoped credential objects, no process-wide Google client cache keyed by identity
 
@@ -36,8 +40,14 @@
 
 **Alternatives considered**: Log Google `sub` email (identifying). HMAC of token (useless for ops).
 
+## Decision: One fake Drive port; composition root is `mcp/server.py`
+
+**Rationale**: Analyze 2026-09-08. Access Control and Retrieval Core share one in-memory Drive port (`tests/fakes/fake_drive.py`) with separate metadata vs content counters. Retrieval populates the store; the chain spies on the same object. `mcp/server.py` mounts `mcp/tools.py`; do not start a second HTTP server.
+
+**Alternatives considered**: `fake_google_drive.py` plus `fake_drive_store.py` (auth tests can pass while tools talk to a different graph).
+
 ## Decision: No mutating Google API methods in the dependency surface
 
-**Rationale**: Article V is structural. The Google adapter module imports and calls only `files().list`, `files().get`, `files().export`, `files().get_media` (download). No `create`/`update`/`delete`/`permissions`. Tests grep the adapter for forbidden method names.
+**Rationale**: Article V is structural. Access Control tests scan `infra/google_auth` and MCP registration for mutating capability (no write tools, readonly OAuth scope). Retrieval Core tests scan `infra/google_drive` for `files().create/update/delete/permissions`. Neither scan substitutes for the other.
 
-**Alternatives considered**: Relying on `drive.readonly` scope alone (necessary but not sufficient — still omit write methods).
+**Alternatives considered**: Relying on `drive.readonly` scope alone (necessary but not sufficient — still omit write methods). One combined grep before the Drive adapter exists (Access Control US2 would wait on Retrieval Core).

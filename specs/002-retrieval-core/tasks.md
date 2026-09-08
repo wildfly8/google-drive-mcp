@@ -22,8 +22,8 @@ description: "Task list for Retrieval Core"
 
 **Purpose**: Extend the Access Control package; do not re-init a second project
 
-- [ ] T001 Confirm Access Control `pyproject.toml` and `src/google_drive_mcp` exist; add retrieval/test directories `src/google_drive_mcp/{retrieval,infra/google_drive,infra/exact_search}` and `tests/{unit/retrieval,fakes}` with `__init__.py`
-- [ ] T002 [P] Add fake Drive fixture module skeleton in `tests/fakes/fake_drive_store.py` (in-memory files/folders, no persistence)
+- [ ] T001 Confirm Access Control `pyproject.toml` and `src/google_drive_mcp` exist; add retrieval directories `src/google_drive_mcp/{retrieval,infra/google_drive,infra/exact_search}` and `tests/unit/retrieval` with `__init__.py` (reuse `tests/fakes` from Access Control; do not create a second fake module)
+- [ ] T002 [P] Extend the shared fake Drive port in `tests/fakes/fake_drive.py` (in-memory files/folders, metadata vs content counters, no persistence; do not add `fake_drive_store.py`)
 
 ---
 
@@ -37,9 +37,9 @@ description: "Task list for Retrieval Core"
 - [ ] T006 [P] Implement `SearchCandidate` (not evidence) in `src/google_drive_mcp/domain/candidates.py`
 - [ ] T007 [P] Implement `SearchMatch` in `src/google_drive_mcp/domain/matches.py`
 - [ ] T008 Implement operation status `COMPLETE|PARTIAL|EMPTY|ERROR` and `partial_reason` in `src/google_drive_mcp/domain/operation.py` per `specs/002-retrieval-core/contracts/result-status.md`
-- [ ] T009 Implement default resource budgets in `src/google_drive_mcp/domain/budgets.py` (max_files=40, max_bytes=5_000_000, max_matches=50, max_execution_time=25s, max_context_lines=2, max_export_size=5_000_000)
-- [ ] T010 Define Drive list/export ports (no Google types) in `src/google_drive_mcp/retrieval/ports.py`
-- [ ] T011 Register empty MCP tools module wired through access-control middleware in `src/google_drive_mcp/mcp/tools.py`
+- [ ] T009 Implement default resource budgets in `src/google_drive_mcp/domain/budgets.py` (max_files=40, max_bytes_per_file=5_000_000, max_bytes_per_operation=20_000_000, max_matches=50, max_execution_time=25s, max_context_lines=2, max_export_size=5_000_000)
+- [ ] T010 Define Drive list/export ports (no Google types) in `src/google_drive_mcp/retrieval/ports.py` (parent_lookup used by `is_within_scope`; do not reimplement descendant checks)
+- [ ] T011 Register empty MCP tools module in `src/google_drive_mcp/mcp/tools.py` and mount it from existing `mcp/server.py` composition root through access-control middleware (do not create a second server)
 
 **Checkpoint**: Foundation ready — user stories can start (requires Access Control chain wrapping tools)
 
@@ -49,7 +49,7 @@ description: "Task list for Retrieval Core"
 
 **Goal**: `drive_ls` (immediate children), `drive_find` (recursive descendants), `drive_read` (live text + provenance). Unsupported types fail classified, not empty.
 
-**Independent Test**: Fake Drive with a nested Doc. `ls` has no body; `find` on parent includes nested file as candidate; `read` returns text + `file_id`/`modified_time`; binary file → `UNSUPPORTED_MIME_TYPE`.
+**Independent Test**: Fake Drive with a nested Doc. `ls` has no body and includes `source_url`; `find` on parent includes nested file as candidate; `read` returns text + `file_id`/`modified_time`; binary file by id → `UNSUPPORTED_MIME_TYPE`.
 
 ### Tests for User Story 1
 
@@ -59,13 +59,13 @@ description: "Task list for Retrieval Core"
 
 ### Implementation for User Story 1
 
-- [ ] T015 [P] [US1] Implement metadata list adapter (immediate children vs descendant walk) in `src/google_drive_mcp/infra/google_drive/list.py`
-- [ ] T016 [P] [US1] Implement export/download adapter (Docs/Sheets/Slides map + text/* download) in `src/google_drive_mcp/infra/google_drive/export.py`
+- [ ] T015 [P] [US1] Implement metadata list adapter (immediate children vs descendant walk via `is_within_scope`) in `src/google_drive_mcp/infra/google_drive/list.py`
+- [ ] T016 [P] [US1] Implement export/download adapter (Docs/Sheets/Slides map + text/* download) in `src/google_drive_mcp/infra/google_drive/export.py`, mapping Google HTTP via `domain/google_errors.map_google_error`
 - [ ] T017 [US1] Implement `drive_ls` use case in `src/google_drive_mcp/retrieval/ls.py` (no content in output)
 - [ ] T018 [US1] Implement `drive_find` use case in `src/google_drive_mcp/retrieval/find.py` (candidates only; recursive folder)
 - [ ] T019 [US1] Implement `drive_read` use case in `src/google_drive_mcp/retrieval/read.py` (call-time fetch, provenance required)
 - [ ] T020 [US1] Expose `drive_ls`, `drive_find`, `drive_read` in `src/google_drive_mcp/mcp/tools.py` behind chain middleware
-- [ ] T021 [US1] Populate `tests/fakes/fake_drive_store.py` with folder, nested Doc/Sheet/Slide, text file, and opaque binary
+- [ ] T021 [US1] Populate `tests/fakes/fake_drive.py` with folder, nested Doc/Sheet/Slide, text file, and opaque binary
 
 **Checkpoint**: US1 pytest contract tests pass; discover → read works without grep
 
@@ -81,11 +81,12 @@ description: "Task list for Retrieval Core"
 
 - [ ] T022 [P] [US2] Contract tests for grep matches, EMPTY, literal vs regex, case flag in `tests/contract/test_drive_grep.py`
 - [ ] T023 [P] [US2] Unit tests for regex adapter determinism in `tests/unit/retrieval/test_regex.py`
+- [ ] T046 [P] [US2] Mixed-folder grep: skip unsupported files → `PARTIAL`; all-unsupported → classified error in `tests/contract/test_drive_grep.py` (FR-037)
 
 ### Implementation for User Story 2
 
 - [ ] T024 [P] [US2] Implement exact-search adapter (`re.escape` vs compile, IGNORECASE) in `src/google_drive_mcp/infra/exact_search/regex.py`
-- [ ] T025 [US2] Implement `drive_grep` use case (fetch → search → provenance → discard bytes) in `src/google_drive_mcp/retrieval/grep.py`
+- [ ] T025 [US2] Implement `drive_grep` use case (fetch → search → provenance → discard bytes; map runtime engine failures to `SEARCH_ERROR`) in `src/google_drive_mcp/retrieval/grep.py`
 - [ ] T026 [US2] Register `drive_grep` in `src/google_drive_mcp/mcp/tools.py`
 - [ ] T027 [US2] Add line-context vs 200-char window for non-line formats in `src/google_drive_mcp/retrieval/grep.py`
 
@@ -106,7 +107,7 @@ description: "Task list for Retrieval Core"
 
 ### Implementation for User Story 3
 
-- [ ] T030 [US3] Ensure export/download uses in-memory or `TemporaryDirectory` cleaned in `finally` in `src/google_drive_mcp/infra/google_drive/export.py`
+- [ ] T030 [US3] Ensure export/download uses in-memory or `TemporaryDirectory` cleaned in `finally` in `src/google_drive_mcp/infra/google_drive/export.py`; tempfile failures → `TEMPORARY_STORAGE_ERROR`
 - [ ] T031 [US3] Forbid cross-call content cache (no module-level dict of file_id→bytes) in `src/google_drive_mcp/retrieval/read.py` and `src/google_drive_mcp/retrieval/grep.py`
 - [ ] T032 [US3] Add a unit/grep check that `src/` contains no embedding/vector index dependencies in `tests/unit/retrieval/test_no_rag.py`
 
@@ -118,7 +119,7 @@ description: "Task list for Retrieval Core"
 
 **Goal**: Re-read sees fixture updates; limits yield `PARTIAL` with reason; rate-limit stop is completeness, not silent full success.
 
-**Independent Test**: Mutate fake Drive between reads. `max_matches=1` with two hits → `PARTIAL`. Simulated rate-limit during find/grep → `PARTIAL` or `RATE_LIMITED`, never `EMPTY`/`COMPLETE` by omission.
+**Independent Test**: Mutate fake Drive between reads. `max_matches=1` with two hits → `PARTIAL`. Simulated rate-limit during find/grep → `status: PARTIAL`, `partial_reason: RATE_LIMITED` (including zero items), never `EMPTY`/`COMPLETE` by omission. Single-file 429 with no prefix → `ErrorEnvelope` `RATE_LIMITED`.
 
 ### Tests for User Story 4
 
@@ -128,7 +129,7 @@ description: "Task list for Retrieval Core"
 ### Implementation for User Story 4
 
 - [ ] T035 [US4] Thread budgets through ls/find/read/grep and set `status`/`partial_reason` in `src/google_drive_mcp/retrieval/{ls,find,read,grep}.py`
-- [ ] T036 [US4] Map sustained Google rate-limit during a walk to `PARTIAL` + reason, no silent retry-to-COMPLETE, in `src/google_drive_mcp/infra/google_drive/list.py` and `src/google_drive_mcp/retrieval/grep.py`
+- [ ] T036 [US4] Map sustained Google rate-limit during a walk to `status: PARTIAL` + `partial_reason: RATE_LIMITED` (no silent retry-to-COMPLETE; not ErrorEnvelope RATE_LIMITED) in `src/google_drive_mcp/infra/google_drive/list.py` and `src/google_drive_mcp/retrieval/grep.py`
 - [ ] T037 [US4] Pagination: `drive_ls` `page_token`/`max_results` must not report `COMPLETE` when more children exist in `src/google_drive_mcp/retrieval/ls.py`
 
 **Checkpoint**: Completeness is visible; no stale MCP copy
@@ -138,9 +139,13 @@ description: "Task list for Retrieval Core"
 ## Phase 7: Polish & Cross-Cutting Concerns
 
 - [ ] T038 [P] Run `specs/002-retrieval-core/quickstart.md` pytest commands and fix gaps
-- [ ] T039 [P] Confirm unauthenticated tools never hit fake Drive (reuse Access Control contract) in `tests/contract/test_auth_contract.py`
-- [ ] T040 Scan `src/google_drive_mcp/infra/google_drive` for write methods (`create`, `update`, `delete`, `permissions`) and fail the build if found in `tests/unit/retrieval/test_readonly_drive_adapter.py`
+- [ ] T039 [P] Confirm unauthenticated tools never hit fake Drive content I/O in `tests/contract/test_tools_require_auth.py` (do not edit Access Control `test_auth_contract.py`; reuse fixtures)
+- [ ] T040 Scan `src/google_drive_mcp/infra/google_drive` for write methods (`create`, `update`, `delete`, `permissions`) and fail the build if found in `tests/unit/retrieval/test_readonly_drive_adapter.py` (oauth/tool-registration scan remains Access Control T020)
 - [ ] T041 Dockerfile for Cloud Run serving Streamable HTTP in `Dockerfile` (no document volume, read-only Drive env secrets)
+- [ ] T042 [P] Retrieval structured logs (`request_id, tool, file count, bytes processed, duration, result count, status, error category`; no document bodies) in `src/google_drive_mcp/infra/logging.py` or `src/google_drive_mcp/mcp/tools.py` per FR-103
+- [ ] T043 [P] Contract tests for `INVALID_ARGUMENT` (bad regex, bad file_id shape, max_bytes/max_results out of range) in `tests/contract/test_invalid_argument.py`
+- [ ] T044 [P] Untrusted-content control-flow test: document body containing tool-like instructions does not change grep flags, pagination, or status in `tests/unit/retrieval/test_untrusted_tool_control_flow.py` (FR-080)
+- [ ] T045 Wire list/export/read/grep Google failures through `src/google_drive_mcp/domain/google_errors.py` (`map_google_error`); do not invent a second 404 mapper
 
 ---
 
@@ -168,9 +173,10 @@ description: "Task list for Retrieval Core"
 - T003–T007 models in parallel after T001
 - T012–T014 contract tests in parallel
 - T015–T016 adapters in parallel
-- T022–T023 tests in parallel
+- T022–T023 and T046 tests in parallel
 - T028–T029 in parallel
 - T033–T034 in parallel
+- T042–T044, T046 in parallel with polish
 
 ---
 
@@ -209,6 +215,8 @@ Task: "Export adapter in src/google_drive_mcp/infra/google_drive/export.py"
 ## Notes
 
 - Tools MUST go through Access Control middleware; do not call Drive adapters from tools directly on AUTH failures
+- One fake Drive port: `tests/fakes/fake_drive.py`; do not add `fake_drive_store.py`
 - No embeddings, vector DBs, or persistent file cache
+- Do not implement a second `RetrievalScope` type or a second parent walk
 - Push to `main` unless a PR is requested
 - Verify story tests fail before implementation tasks in that phase

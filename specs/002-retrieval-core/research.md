@@ -18,7 +18,9 @@
 | `text/*`, `application/json`, `application/csv`, markdown | download | as stored |
 | other | fail | `UNSUPPORTED_MIME_TYPE` / `FILE_NOT_EXPORTABLE` |
 
-Google export is capped at 10 MB; we fail at 5 MB (`max_export_size`) as `PARTIAL` or `RESOURCE_LIMIT`. PDF is not required in v1 (not reliably “usable text” without extra libraries); treat as unsupported unless a later MINOR adds a text extractor.
+Google export is capped at 10 MB; we cap at 5 MB (`max_export_size`). A usable prefix within `max_bytes` / `max_export_size` is `PARTIAL` (`partial_reason: max_bytes`). A hard refusal with **no** prefix is `RESOURCE_LIMIT`. PDF is not required in v1 (not reliably “usable text” without extra libraries); treat as unsupported unless a later MINOR adds a text extractor.
+
+Wire link field is `source_url` (from Drive `webViewLink`).
 
 **Alternatives considered**: Docs API / Sheets API structural reads (more faithful layout, more APIs — rejected for v1; Drive export is enough for exact search). Always markdown for Docs (fine later via `content_format`).
 
@@ -30,9 +32,11 @@ Google export is capped at 10 MB; we fail at 5 MB (`max_export_size`) as `PARTIA
 
 ## Decision: Default scope = whole grant; ls root = My Drive root (`root`)
 
-**Rationale**: Clarify A. Omitted `folder_id` on `drive_ls` lists immediate children of `root`. Omitted folder/file list on find/grep searches the grant subject to budgets (`PARTIAL` likely on large drives — required by Art. X).
+**Rationale**: Clarify A. Omitted `folder_id` on `drive_ls` lists immediate children of My Drive `root` — a **projection** of `default_whole_grant`, not a second source of truth. Omitted folder/file list on find/grep searches the whole grant subject to budgets (`PARTIAL` likely on large drives — required by Art. X). Shared-with-me and other corpora MAY appear in find/grep and MUST NOT be assumed present in omitted-folder `ls`.
 
-**Alternatives considered**: Require folder always (rejected in clarify). Shared-with-me as a second root — include only if `files.list` corpora default already returns them under the grant; do not special-case a second source of truth.
+Descendant checks use domain `is_within_scope` (same helper as Access Control). Do not implement a second parent walk in `list.py`.
+
+**Alternatives considered**: Require folder always (rejected in clarify). Shared-with-me as a second ls root — rejected; do not special-case a second source of truth. Treating omitted-folder ls and find as the same universe (false; would hide the projection).
 
 ## Decision: Stdlib `re` with explicit literal vs regex modes
 
@@ -42,9 +46,18 @@ Google export is capped at 10 MB; we fail at 5 MB (`max_export_size`) as `PARTIA
 
 ## Decision: Result status enum on every tool result
 
-**Rationale**: FR-040. `EMPTY` is a successful scan with zero hits/children. `PARTIAL` if any budget or sustained rate-limit cut work short (map Google 403 rate limit that stops a walk to `PARTIAL` + `RATE_LIMITED` category when the operation errors vs partial results — if some results exist and more were possible, `PARTIAL`; if none and rate-limited to a stop, `ERROR`/`RATE_LIMITED` or `PARTIAL` with empty list **and** explicit incomplete flag — spec says rate-limit that cuts search short is completeness, so prefer `PARTIAL` with `reason=RATE_LIMITED` rather than swallowing retries).
+**Rationale**: FR-040 / Article X. `EMPTY` is a successful scan with zero hits/children. `PARTIAL` if any budget, mixed unsupported skips, or sustained rate-limit cut a **walk** short.
 
-**Alternatives considered**: HTTP 429 only (agent cannot tell coverage). Silent retry until timeout (Art. X forbid).
+Rate-limit split (locked):
+
+- Walk (ls/find/grep) cut by Google 429, even with zero items: `status: PARTIAL`, `partial_reason: RATE_LIMITED`. Never `EMPTY`/`COMPLETE`. Never `ErrorEnvelope.category = RATE_LIMITED`.
+- Single-file read/export 429 with no prefix: `ErrorEnvelope` `RATE_LIMITED`.
+
+Prefix vs hard cap: usable prefix → `PARTIAL`; no prefix → `RESOURCE_LIMIT`.
+
+Google 404 after `ALLOW` uses Access Control’s `map_google_error()` — do not fork a second mapper.
+
+**Alternatives considered**: HTTP 429 only (agent cannot tell coverage). Silent retry until timeout (Art. X forbid). Always `ERROR`/`RATE_LIMITED` for walks (collapses “not fully searched” into failure and invites EMPTY-shaped handling).
 
 ## Decision: No document cache, including in-memory across tools
 

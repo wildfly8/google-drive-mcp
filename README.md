@@ -26,11 +26,11 @@ Cursor skills are installed under `.cursor/skills/`. Use them in this order:
 2. `/speckit-clarify` — optional; de-risk underspecified areas (done: session 2026-09-08)
 3. `/speckit-plan` — how to build it (done: access control + retrieval core)
 4. `/speckit-tasks` — actionable implementation tasks (done: both features)
-5. `/speckit-analyze` — optional; cross-artifact consistency
+5. `/speckit-analyze` — optional; cross-artifact consistency (done: 2026-09-08; remediations applied)
 6. `/speckit-implement` — execute the tasks
 7. `/speckit-converge` — compare the codebase to spec/plan/tasks and append remaining work
 
-Draft feature specs:
+Feature specs (ready for implementation):
 
 - [Access Control Boundary](specs/001-access-control/spec.md) — who may act, and on what authority
 - [Retrieval Core](specs/002-retrieval-core/spec.md) — discover, read, exact-search once a call is cleared

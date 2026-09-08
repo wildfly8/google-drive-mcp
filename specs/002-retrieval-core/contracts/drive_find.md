@@ -2,6 +2,8 @@
 
 Metadata / Drive-native **candidate** discovery. Recursive when `folder_id` is set. Results are not evidence.
 
+Must run Access Control chain first. Google-missing folder → `FILE_NOT_FOUND`. v1 does not emit `AUTHORIZATION_ERROR` for this tool.
+
 ## Input
 
 ```json
@@ -20,7 +22,9 @@ Metadata / Drive-native **candidate** discovery. Recursive when `folder_id` is s
 }
 ```
 
-Omitted `folder_id` → default RetrievalScope (whole Google grant), still bounded by `max_results` / `max_files`.
+Omitted `folder_id` → `default_whole_grant` (whole Google grant), still bounded by `max_results` / `max_files`. This universe MAY be larger than omitted-folder `drive_ls` (My Drive `root` children only).
+
+Invalid `max_results` or date-time → `INVALID_ARGUMENT`.
 
 ## Output (success)
 
@@ -47,6 +51,6 @@ Omitted `folder_id` → default RetrievalScope (whole Google grant), still bound
 }
 ```
 
-`file` is DriveFile metadata only (id, name, mime_type, modified_time, web_view_link, is_folder, trashed). No `content` field.
+`file` is DriveFile metadata only (id, name, mime_type, modified_time, `source_url`, is_folder, trashed). No `content` field.
 
-Zero matches after complete scan → `EMPTY`. Hitting `max_files` while descendants remain → `PARTIAL`.
+Zero matches after complete scan → `EMPTY`. Hitting `max_files` while descendants remain → `PARTIAL`. Walk cut by Google 429 → `PARTIAL`, `partial_reason: RATE_LIMITED`.
