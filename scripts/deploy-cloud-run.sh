@@ -36,13 +36,16 @@ gcloud services enable \
   drive.googleapis.com \
   --project="$PROJECT"
 
-for name in GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GOOGLE_REFRESH_TOKEN MCP_AUTH_TOKEN; do
+for name in GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET MCP_AUTH_TOKEN; do
   if ! secret_exists "$name"; then
     echo "Missing Secret Manager secret: ${name}" >&2
-    echo "Create it (value never belongs in git or chat) and retry." >&2
     exit 1
   fi
 done
+if ! secret_exists GOOGLE_AUTHORIZED_USER_JSON && ! secret_exists GOOGLE_REFRESH_TOKEN; then
+  echo "Need GOOGLE_AUTHORIZED_USER_JSON or GOOGLE_REFRESH_TOKEN in Secret Manager." >&2
+  exit 1
+fi
 
 if ! secret_exists MCP_PRINCIPAL_ID; then
   printf '%s' "${MCP_PRINCIPAL_ID:-throwaway-drive}" | gcloud secrets create MCP_PRINCIPAL_ID \
@@ -53,8 +56,19 @@ PROJECT_NUMBER="$(gcloud projects describe "$PROJECT" --format='value(projectNum
 RUNTIME_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
 CLOUDBUILD_SA="${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com"
 
+SECRET_BIND="GOOGLE_CLIENT_ID=GOOGLE_CLIENT_ID:latest,GOOGLE_CLIENT_SECRET=GOOGLE_CLIENT_SECRET:latest,MCP_AUTH_TOKEN=MCP_AUTH_TOKEN:latest,MCP_PRINCIPAL_ID=MCP_PRINCIPAL_ID:latest"
+GRANT_SECRETS=(GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET MCP_AUTH_TOKEN MCP_PRINCIPAL_ID)
+if secret_exists GOOGLE_AUTHORIZED_USER_JSON; then
+  SECRET_BIND="${SECRET_BIND},GOOGLE_AUTHORIZED_USER_JSON=GOOGLE_AUTHORIZED_USER_JSON:latest"
+  GRANT_SECRETS+=(GOOGLE_AUTHORIZED_USER_JSON)
+fi
+if secret_exists GOOGLE_REFRESH_TOKEN; then
+  SECRET_BIND="${SECRET_BIND},GOOGLE_REFRESH_TOKEN=GOOGLE_REFRESH_TOKEN:latest"
+  GRANT_SECRETS+=(GOOGLE_REFRESH_TOKEN)
+fi
+
 echo "Granting runtime SA Secret Manager access..."
-for name in GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GOOGLE_REFRESH_TOKEN MCP_AUTH_TOKEN MCP_PRINCIPAL_ID; do
+for name in "${GRANT_SECRETS[@]}"; do
   gcloud secrets add-iam-policy-binding "$name" \
     --project="$PROJECT" \
     --member="serviceAccount:${RUNTIME_SA}" \
@@ -73,7 +87,7 @@ gcloud run deploy "$SERVICE" \
   --region="$REGION" \
   --source="$(cd "$(dirname "$0")/.." && pwd)" \
   --allow-unauthenticated \
-  --set-secrets="GOOGLE_CLIENT_ID=GOOGLE_CLIENT_ID:latest,GOOGLE_CLIENT_SECRET=GOOGLE_CLIENT_SECRET:latest,GOOGLE_REFRESH_TOKEN=GOOGLE_REFRESH_TOKEN:latest,MCP_AUTH_TOKEN=MCP_AUTH_TOKEN:latest,MCP_PRINCIPAL_ID=MCP_PRINCIPAL_ID:latest" \
+  --set-secrets="${SECRET_BIND}" \
   --memory=512Mi \
   --timeout=60 \
   --quiet

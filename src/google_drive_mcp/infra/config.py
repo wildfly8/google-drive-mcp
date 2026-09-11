@@ -15,6 +15,7 @@ class Settings(BaseModel):
     google_client_id: str = ""
     google_client_secret: SecretStr = SecretStr("")
     google_refresh_token: SecretStr = SecretStr("")
+    google_authorized_user_json: SecretStr = SecretStr("")
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -26,6 +27,9 @@ class Settings(BaseModel):
             google_client_id=os.environ.get("GOOGLE_CLIENT_ID", ""),
             google_client_secret=SecretStr(os.environ.get("GOOGLE_CLIENT_SECRET", "")),
             google_refresh_token=SecretStr(os.environ.get("GOOGLE_REFRESH_TOKEN", "")),
+            google_authorized_user_json=SecretStr(
+                os.environ.get("GOOGLE_AUTHORIZED_USER_JSON", "")
+            ),
         )
 
     @classmethod
