@@ -2,15 +2,24 @@
 
 from __future__ import annotations
 
+from google.auth.exceptions import RefreshError
+from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from google.oauth2.credentials import Credentials
 
 from google_drive_mcp.domain.budgets import Budget
 from google_drive_mcp.domain.google_errors import GoogleApiError
 from google_drive_mcp.infra.google_drive.export import FileNotExportableError
 
 _FIELDS = "id,name,mimeType,parents,modifiedTime,createdTime,webViewLink,size,trashed"
+
+
+def _reraise_google(exc: BaseException) -> None:
+    if isinstance(exc, RefreshError):
+        raise GoogleApiError(401, "refresh_failed") from exc
+    if isinstance(exc, HttpError):
+        raise GoogleApiError(_status(exc)) from exc
+    raise exc
 
 
 def _status(exc: HttpError) -> int:
@@ -59,8 +68,9 @@ class GoogleDriveClient:
                 .get(fileId=file_id, fields=_FIELDS, supportsAllDrives=True)
                 .execute()
             )
-        except HttpError as exc:
-            raise GoogleApiError(_status(exc)) from exc
+        except (HttpError, RefreshError) as exc:
+            _reraise_google(exc)
+            raise
         return _meta(resource)
 
     def parent_lookup(self, file_id: str) -> list[str] | None:
@@ -109,8 +119,9 @@ class GoogleDriveClient:
                 page_token = response.get("nextPageToken")
                 if not page_token:
                     break
-        except HttpError as exc:
-            raise GoogleApiError(_status(exc)) from exc
+        except (HttpError, RefreshError) as exc:
+            _reraise_google(exc)
+            raise
         return items
 
     def export(self, file_id: str, mime: str) -> str:
@@ -121,6 +132,9 @@ class GoogleDriveClient:
                 .export(fileId=file_id, mimeType=mime)
                 .execute()
             )
+        except RefreshError as exc:
+            _reraise_google(exc)
+            raise
         except HttpError as exc:
             status = _status(exc)
             body = str(exc).lower()
@@ -135,8 +149,9 @@ class GoogleDriveClient:
         self.content_media_count += 1
         try:
             data = self._service.files().get_media(fileId=file_id).execute()
-        except HttpError as exc:
-            raise GoogleApiError(_status(exc)) from exc
+        except (HttpError, RefreshError) as exc:
+            _reraise_google(exc)
+            raise
         if isinstance(data, bytes):
             return data
         return str(data).encode("utf-8")

@@ -75,9 +75,22 @@ async def test_unknown_file_is_file_not_found(live_client: Client):
 
 
 @pytest.mark.asyncio
+async def test_live_ls_my_drive_root(live_client: Client):
+    listed = _tool_body(await live_client.call_tool("drive_ls", {"max_results": 5}))
+    assert listed.get("status") in {"COMPLETE", "PARTIAL", "EMPTY"}
+    dumped = json.dumps(listed)
+    assert LIVE_TOKEN not in dumped
+    for child in listed.get("children") or []:
+        assert "content" not in child
+        assert child.get("id")
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    not LIVE_DOC,
+    reason="Set LIVE_DOC_FILE_ID to a throwaway Doc the deployment identity can read",
+)
 async def test_live_read_and_grep_known_doc(live_client: Client):
-    if not LIVE_DOC:
-        pytest.skip("Set LIVE_DOC_FILE_ID to a throwaway Doc the deployment identity can read")
     read = _tool_body(await live_client.call_tool("drive_read", {"file_id": LIVE_DOC}))
     assert read.get("status") in {"COMPLETE", "PARTIAL"}
     assert read.get("file_id") == LIVE_DOC
@@ -100,9 +113,11 @@ async def test_live_read_and_grep_known_doc(live_client: Client):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(
+    not LIVE_FOLDER,
+    reason="Set LIVE_FOLDER_ID to a folder the deployment identity can list",
+)
 async def test_live_ls_folder(live_client: Client):
-    if not LIVE_FOLDER:
-        pytest.skip("Set LIVE_FOLDER_ID to a folder the deployment identity can list")
     listed = _tool_body(
         await live_client.call_tool("drive_ls", {"folder_id": LIVE_FOLDER})
     )

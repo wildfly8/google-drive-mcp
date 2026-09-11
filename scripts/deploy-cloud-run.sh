@@ -81,6 +81,18 @@ gcloud projects add-iam-policy-binding "$PROJECT" \
   --role="roles/run.admin" \
   --quiet >/dev/null || true
 
+echo "Granting Cloud Build compute SA storage and Artifact Registry access..."
+for role in \
+  roles/storage.objectViewer \
+  roles/artifactregistry.writer \
+  roles/logging.logWriter \
+  roles/cloudbuild.builds.builder; do
+  gcloud projects add-iam-policy-binding "$PROJECT" \
+    --member="serviceAccount:${RUNTIME_SA}" \
+    --role="$role" \
+    --quiet >/dev/null || true
+done
+
 echo "Deploying ${SERVICE} to Cloud Run (${REGION})..."
 gcloud run deploy "$SERVICE" \
   --project="$PROJECT" \

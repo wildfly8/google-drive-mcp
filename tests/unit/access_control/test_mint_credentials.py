@@ -28,10 +28,27 @@ def test_mint_prefers_authorized_user_json_over_three_field_refresh():
     creds = mint_readonly_credentials(settings)
     assert creds.client_id == "json-client-id"
     assert creds.refresh_token == "json-refresh-token"
-    assert creds.scopes == ["https://www.googleapis.com/auth/drive.readonly"]
+    assert creds.scopes is None
     dumped = repr(settings) + str(settings)
     assert "json-refresh-token" not in dumped
     assert "json-client-secret" not in dumped
+
+
+def test_mint_keeps_scopes_declared_on_authorized_user_json():
+    info = {
+        "type": "authorized_user",
+        "client_id": "json-client-id",
+        "client_secret": "json-client-secret",
+        "refresh_token": "json-refresh-token",
+        "scopes": ["https://www.googleapis.com/auth/drive.readonly"],
+    }
+    settings = Settings(
+        mcp_auth_token=SecretStr("test-token"),
+        mcp_principal_id="deployment-1",
+        google_authorized_user_json=SecretStr(json.dumps(info)),
+    )
+    creds = mint_readonly_credentials(settings)
+    assert creds.scopes == ["https://www.googleapis.com/auth/drive.readonly"]
 
 
 def test_mint_falls_back_to_refresh_token_fields():

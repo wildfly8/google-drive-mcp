@@ -27,10 +27,17 @@ def mint_readonly_credentials(settings: Settings) -> Credentials:
     blob = settings.google_authorized_user_json.get_secret_value().strip()
     if blob:
         info = json.loads(blob)
-        creds = Credentials.from_authorized_user_info(
-            info,
-            scopes=[DRIVE_READONLY_SCOPE],
-        )
+        # Do not override ADC scopes with drive.readonly: the Cloud SDK OAuth
+        # client rejects that unregistered scope on refresh. Use the grant
+        # already on the blob (or omit scopes so the token endpoint reuses it).
+        raw_scopes = info.get("scopes") or info.get("scope")
+        if isinstance(raw_scopes, str):
+            json_scopes = [item for item in raw_scopes.split() if item]
+        elif isinstance(raw_scopes, list):
+            json_scopes = [str(item) for item in raw_scopes if item]
+        else:
+            json_scopes = None
+        creds = Credentials.from_authorized_user_info(info, scopes=json_scopes)
     else:
         creds = Credentials(
             token=None,
