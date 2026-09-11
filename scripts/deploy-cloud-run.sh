@@ -103,16 +103,23 @@ for role in \
     --quiet >/dev/null || true
 done
 
-echo "Deploying ${SERVICE} to Cloud Run (${REGION})..."
-gcloud run deploy "$SERVICE" \
-  --project="$PROJECT" \
-  --region="$REGION" \
-  --source="$(cd "$(dirname "$0")/.." && pwd)" \
-  --allow-unauthenticated \
-  --set-secrets="${SECRET_BIND}" \
-  --memory=512Mi \
-  --timeout=60 \
+DEPLOY_ARGS=(
+  run deploy "$SERVICE"
+  --project="$PROJECT"
+  --region="$REGION"
+  --source="$(cd "$(dirname "$0")/.." && pwd)"
+  --allow-unauthenticated
+  --set-secrets="${SECRET_BIND}"
+  --memory=512Mi
+  --timeout=60
   --quiet
+)
+if [[ -n "${DRIVE_ALLOWED_FOLDER_ID:-}" ]]; then
+  DEPLOY_ARGS+=(--set-env-vars="DRIVE_ALLOWED_FOLDER_ID=${DRIVE_ALLOWED_FOLDER_ID}")
+fi
+
+echo "Deploying ${SERVICE} to Cloud Run (${REGION})..."
+gcloud "${DEPLOY_ARGS[@]}"
 
 URL="$(gcloud run services describe "$SERVICE" --project="$PROJECT" --region="$REGION" --format='value(status.url)')"
 echo "LIVE_MCP_URL=${URL}/mcp"

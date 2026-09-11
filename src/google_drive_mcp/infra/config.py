@@ -16,6 +16,7 @@ class Settings(BaseModel):
     google_client_secret: SecretStr = SecretStr("")
     google_refresh_token: SecretStr = SecretStr("")
     google_authorized_user_json: SecretStr = SecretStr("")
+    drive_allowed_folder_id: str = ""
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -30,6 +31,7 @@ class Settings(BaseModel):
             google_authorized_user_json=SecretStr(
                 os.environ.get("GOOGLE_AUTHORIZED_USER_JSON", "")
             ),
+            drive_allowed_folder_id=os.environ.get("DRIVE_ALLOWED_FOLDER_ID", "").strip(),
         )
 
     @classmethod
@@ -45,6 +47,7 @@ class Settings(BaseModel):
     def __repr__(self) -> str:
         return (
             f"Settings(mcp_principal_id={self.mcp_principal_id!r}, "
+            f"drive_allowed_folder_id={self.drive_allowed_folder_id!r}, "
             "mcp_auth_token=***, google_*=***)"
         )
 

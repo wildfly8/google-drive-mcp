@@ -10,6 +10,7 @@ from uuid import uuid4
 from google_drive_mcp.access_control.chain import evaluate_chain
 from google_drive_mcp.access_control.decisions import AuthorizationDecision
 from google_drive_mcp.domain.errors import DomainError, ErrorCategory, ErrorEnvelope
+from google_drive_mcp.domain.retrieval_scope import apply_allowed_folder
 from google_drive_mcp.infra.config import Settings
 from google_drive_mcp.infra.google_auth.refresh_token import mint_readonly_credentials
 from google_drive_mcp.infra.logging import log_chain_event
@@ -104,6 +105,10 @@ def authorize(
     def mint() -> object:
         return runtime.mint_and_bind()
 
+    allowed = runtime.settings.drive_allowed_folder_id.strip()
+    if allowed:
+        apply_allowed_folder(arguments, allowed)
+
     decision = evaluate_chain(
         authorization=auth,
         expected_token=runtime.settings.mcp_auth_token.get_secret_value(),
@@ -111,6 +116,7 @@ def authorize(
         folder_id=arguments.get("folder_id"),
         file_ids=arguments.get("file_ids"),
         file_id=arguments.get("file_id"),
+        allowed_folder_id=allowed or None,
         get_metadata=get_metadata,
         parent_lookup=parent_lookup,
         mint_credentials=mint,

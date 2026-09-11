@@ -10,6 +10,7 @@ import time
 from typing import Any
 
 from google_drive_mcp.domain.errors import DomainError, ErrorCategory, envelope
+from google_drive_mcp.domain.retrieval_scope import apply_allowed_folder
 from google_drive_mcp.infra.logging import log_chain_event, log_retrieval
 from google_drive_mcp.infra.mcp_auth.bearer import extract_bearer, verify_bearer
 from google_drive_mcp.mcp.middleware import Runtime, new_request_id, run_with_chain
@@ -34,6 +35,7 @@ def handle_tool(
     started = time.monotonic()
     rid = request_id or new_request_id()
     request_id = rid
+    apply_allowed_folder(args, runtime.settings.drive_allowed_folder_id)
     if not verify_bearer(
         extract_bearer(authorization),
         runtime.settings.mcp_auth_token.get_secret_value(),

@@ -12,7 +12,11 @@ from google_drive_mcp.access_control.decisions import (
 )
 from google_drive_mcp.domain.errors import ErrorCategory, DomainError
 from google_drive_mcp.domain.google_errors import GoogleApiError, map_google_error
-from google_drive_mcp.domain.retrieval_scope import RetrievalScope, is_within_scope
+from google_drive_mcp.domain.retrieval_scope import (
+    RetrievalScope,
+    apply_allowed_folder,
+    is_within_scope,
+)
 from google_drive_mcp.infra.mcp_auth.bearer import extract_bearer, verify_bearer
 
 MetadataGet = Callable[[str], Any]
@@ -28,6 +32,7 @@ def evaluate_chain(
     folder_id: str | None = None,
     file_ids: list[str] | None = None,
     file_id: str | None = None,
+    allowed_folder_id: str | None = None,
     get_metadata: MetadataGet | None = None,
     parent_lookup: ParentLookup | None = None,
     mint_credentials: GoogleMint | None = None,
@@ -45,10 +50,21 @@ def evaluate_chain(
         )
 
     # Step 3 — MCP authorization (argument-level only; no Drive I/O)
+    allowed = (allowed_folder_id or "").strip() or None
+    if allowed:
+        rewritten = {
+            "folder_id": folder_id,
+            "file_ids": file_ids,
+            "file_id": file_id,
+        }
+        apply_allowed_folder(rewritten, allowed)
+        folder_id = rewritten.get("folder_id")
+        file_ids = rewritten.get("file_ids")
+        file_id = rewritten.get("file_id")
+
     scope = RetrievalScope.from_tool_args(
         folder_id=folder_id, file_ids=file_ids, file_id=file_id
     )
-    # v1: no ambient allow-list; constructed scopes pass.
 
     # Step 4 — Google authorization
     if mint_credentials is not None:
@@ -89,6 +105,20 @@ def evaluate_chain(
         elif scope.folder_id:
             _get(scope.folder_id)
         # default_whole_grant: no resource-specific get
+
+        if allowed:
+            allow_scope = RetrievalScope(folder_id=allowed)
+            check_ids = list(named_files)
+            if scope.folder_id:
+                check_ids.append(scope.folder_id)
+            for fid in check_ids:
+                if not is_within_scope(fid, allow_scope, lookup):
+                    return AuthorizationDecision(
+                        outcome=DecisionOutcome.AUTHORIZATION_ERROR,
+                        step_failed=StepFailed.google_authorization,
+                        reason_code="outside_allowed_folder",
+                        principal_id=principal_id,
+                    )
     except DomainError as exc:
         if exc.error.category == ErrorCategory.FILE_NOT_FOUND:
             return AuthorizationDecision(

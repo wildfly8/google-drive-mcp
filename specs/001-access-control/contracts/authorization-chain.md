@@ -18,16 +18,19 @@ Every MCP tool invocation MUST run this sequence. Retrieval tools MUST NOT call 
 
 The type is defined in Retrieval Core (`specs/002-retrieval-core/data-model.md`). This context **enforces** it. Shared implementation: `src/google_drive_mcp/domain/retrieval_scope.py`.
 
-From **this call’s** tool arguments only (v1 has no deployment-narrower allow-list):
+From **this call’s** tool arguments, then optionally narrowed by deployment
+`DRIVE_ALLOWED_FOLDER_ID` (cannot grant more than Google):
 
 | Arguments | `default_whole_grant` | Scope |
 | --- | --- | --- |
-| Neither `folder_id` nor `file_ids` / `file_id` | `true` | Whole Google grant for this deployment identity |
+| Neither `folder_id` nor `file_ids` / `file_id` | `true` unless `DRIVE_ALLOWED_FOLDER_ID` is set | Whole Google grant, or that folder when the env var is set |
 | Only `folder_id` | `false` | That folder (ls: immediate children; find/grep: folder + descendants) |
 | Only `file_ids` or `file_id` | `false` | Exactly those ids |
 | Both `folder_id` and `file_ids` | `false` | Intersection: named files that lie in the folder (including the folder id itself) |
 
-`drive_ls` with omitted `folder_id` still uses `default_whole_grant = true`. Listing **projects** that grant onto My Drive `root`’s immediate children (Retrieval Core invariant). That projection is not an MCP authorization failure.
+When `DRIVE_ALLOWED_FOLDER_ID` is set, omitted `folder_id` on `drive_ls` / `drive_find` / `drive_grep` is rewritten to that folder (not My Drive `root`). Named folder or file ids that Google grants but that are not that folder or a descendant MUST return `AUTHORIZATION_ERROR` (`reason_code: outside_allowed_folder`) with no content.
+
+`drive_ls` with omitted `folder_id` and **no** deployment allow-list still uses `default_whole_grant = true`. Listing **projects** that grant onto My Drive `root`’s immediate children (Retrieval Core invariant). That projection is not an MCP authorization failure.
 
 ## Invariants
 
@@ -43,9 +46,9 @@ From **this call’s** tool arguments only (v1 has no deployment-narrower allow-
 Step 3 only builds the `RetrievalScope` object and rejects **argument-level** contradictions that do not require Drive:
 
 - Unknown extra resource ids that are not tool arguments cannot appear (tools have no side channel).
-- v1 has no ambient/deployment allow-list, so `default_whole_grant` and single-axis scopes **pass** step 3.
-- `drive_read` (`file_id` only) therefore **never** returns `AUTHORIZATION_ERROR` in v1. A Google miss is `FILE_NOT_FOUND`.
-- `drive_ls` / `drive_find` with only `folder_id` (or omitted folder) **never** return `AUTHORIZATION_ERROR` in v1 for “wrong folder.” A Google-missing folder is `FILE_NOT_FOUND`.
+- v1 without `DRIVE_ALLOWED_FOLDER_ID` has no ambient/deployment allow-list, so `default_whole_grant` and single-axis scopes **pass** step 3.
+- `drive_read` (`file_id` only) therefore **never** returns `AUTHORIZATION_ERROR` unless a deployment allow-list is configured and Google grants a file outside that folder.
+- `drive_ls` / `drive_find` with only `folder_id` (or omitted folder) **never** return `AUTHORIZATION_ERROR` in v1 for “wrong folder” unless a deployment allow-list is configured. A Google-missing folder is `FILE_NOT_FOUND`.
 
 Step 3 MUST NOT walk parents and MUST NOT call the Drive adapter.
 

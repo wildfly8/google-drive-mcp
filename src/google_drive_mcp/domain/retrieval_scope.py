@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, MutableMapping
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
@@ -47,6 +48,22 @@ class RetrievalScope(BaseModel):
             file_ids=ids or None,
             default_whole_grant=not (folder_id or ids),
         )
+
+
+def apply_allowed_folder(
+    arguments: MutableMapping[str, Any], allowed_folder_id: str
+) -> None:
+    """Narrow an omitted folder/file list to the deployment allow-list folder.
+
+    Named folder_id / file_id / file_ids are left unchanged; the chain refuses
+    those that are not this folder or a descendant.
+    """
+    allowed = (allowed_folder_id or "").strip()
+    if not allowed:
+        return
+    has_files = bool(arguments.get("file_id") or arguments.get("file_ids"))
+    if not arguments.get("folder_id") and not has_files:
+        arguments["folder_id"] = allowed
 
 
 def is_within_scope(file_id: str, scope: RetrievalScope, parent_lookup: ParentLookup) -> bool:
