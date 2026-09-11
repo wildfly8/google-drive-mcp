@@ -36,14 +36,16 @@ gcloud services enable \
   drive.googleapis.com \
   --project="$PROJECT"
 
-for name in GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET MCP_AUTH_TOKEN; do
-  if ! secret_exists "$name"; then
-    echo "Missing Secret Manager secret: ${name}" >&2
-    exit 1
-  fi
-done
-if ! secret_exists GOOGLE_AUTHORIZED_USER_JSON && ! secret_exists GOOGLE_REFRESH_TOKEN; then
-  echo "Need GOOGLE_AUTHORIZED_USER_JSON or GOOGLE_REFRESH_TOKEN in Secret Manager." >&2
+if ! secret_exists MCP_AUTH_TOKEN; then
+  echo "Missing Secret Manager secret: MCP_AUTH_TOKEN" >&2
+  exit 1
+fi
+if secret_exists GOOGLE_AUTHORIZED_USER_JSON; then
+  :
+elif secret_exists GOOGLE_REFRESH_TOKEN && secret_exists GOOGLE_CLIENT_ID && secret_exists GOOGLE_CLIENT_SECRET; then
+  :
+else
+  echo "Need GOOGLE_AUTHORIZED_USER_JSON, or GOOGLE_REFRESH_TOKEN plus OAuth client secrets." >&2
   exit 1
 fi
 
@@ -56,11 +58,19 @@ PROJECT_NUMBER="$(gcloud projects describe "$PROJECT" --format='value(projectNum
 RUNTIME_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
 CLOUDBUILD_SA="${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com"
 
-SECRET_BIND="GOOGLE_CLIENT_ID=GOOGLE_CLIENT_ID:latest,GOOGLE_CLIENT_SECRET=GOOGLE_CLIENT_SECRET:latest,MCP_AUTH_TOKEN=MCP_AUTH_TOKEN:latest,MCP_PRINCIPAL_ID=MCP_PRINCIPAL_ID:latest"
-GRANT_SECRETS=(GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET MCP_AUTH_TOKEN MCP_PRINCIPAL_ID)
+SECRET_BIND="MCP_AUTH_TOKEN=MCP_AUTH_TOKEN:latest,MCP_PRINCIPAL_ID=MCP_PRINCIPAL_ID:latest"
+GRANT_SECRETS=(MCP_AUTH_TOKEN MCP_PRINCIPAL_ID)
 if secret_exists GOOGLE_AUTHORIZED_USER_JSON; then
   SECRET_BIND="${SECRET_BIND},GOOGLE_AUTHORIZED_USER_JSON=GOOGLE_AUTHORIZED_USER_JSON:latest"
   GRANT_SECRETS+=(GOOGLE_AUTHORIZED_USER_JSON)
+fi
+if secret_exists GOOGLE_CLIENT_ID; then
+  SECRET_BIND="${SECRET_BIND},GOOGLE_CLIENT_ID=GOOGLE_CLIENT_ID:latest"
+  GRANT_SECRETS+=(GOOGLE_CLIENT_ID)
+fi
+if secret_exists GOOGLE_CLIENT_SECRET; then
+  SECRET_BIND="${SECRET_BIND},GOOGLE_CLIENT_SECRET=GOOGLE_CLIENT_SECRET:latest"
+  GRANT_SECRETS+=(GOOGLE_CLIENT_SECRET)
 fi
 if secret_exists GOOGLE_REFRESH_TOKEN; then
   SECRET_BIND="${SECRET_BIND},GOOGLE_REFRESH_TOKEN=GOOGLE_REFRESH_TOKEN:latest"

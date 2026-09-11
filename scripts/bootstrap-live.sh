@@ -51,11 +51,6 @@ put_secret_file() {
   fi
 }
 
-if ! secret_exists GOOGLE_CLIENT_ID || ! secret_exists GOOGLE_CLIENT_SECRET; then
-  echo "Expected GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in Secret Manager." >&2
-  exit 1
-fi
-
 if ! secret_exists MCP_AUTH_TOKEN; then
   openssl rand -base64 32 | tr -d '\n' | put_secret MCP_AUTH_TOKEN
 fi
