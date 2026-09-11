@@ -24,5 +24,8 @@ if ! command -v specify >/dev/null 2>&1; then
   exit 1
 fi
 
+# Project venv from the lockfile. Fake Drive pytest does not need GCP secrets.
+uv sync --frozen
+
 specify version
-echo "cloud-agent-install: specify-cli 1.0.4 ready"
+echo "cloud-agent-install: specify-cli 1.0.4 and project venv ready"
