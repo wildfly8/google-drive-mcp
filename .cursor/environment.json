@@ -1,4 +1,16 @@
 {
   "name": "google-drive-mcp",
-  "install": "bash scripts/cloud-agent-install.sh"
+  "install": "bash scripts/cloud-agent-install.sh",
+  "mcpServerAllowlist": [
+    {
+      "name": "google-drive-mcp",
+      "serverUrl": "https://google-drive-mcp-kxjtmypvfa-uc.a.run.app/mcp",
+      "toolAllowlist": [
+        "drive_ls",
+        "drive_find",
+        "drive_read",
+        "drive_grep"
+      ]
+    }
+  ]
 }
