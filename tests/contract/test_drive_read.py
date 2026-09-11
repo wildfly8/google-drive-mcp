@@ -27,6 +27,26 @@ def test_read_binary_is_unsupported_mime(runtime):
     assert result["category"] == "UNSUPPORTED_MIME_TYPE"
 
 
+def test_read_mdx_octet_stream_yields_markdown(runtime, fake_drive):
+    from fakes.fake_drive import FakeFile
+
+    fake_drive.add(
+        FakeFile(
+            id="essay-mdx",
+            name="godel-tilt-the-mirror.mdx",
+            mime_type="application/octet-stream",
+            parents=["folder-a"],
+            content="Axioms do not justify themselves.\n",
+        )
+    )
+    result = handle_tool(
+        runtime, "drive_read", {"file_id": "essay-mdx"}, "Bearer test-token"
+    )
+    assert result["status"] == "COMPLETE"
+    assert "Axioms do not justify themselves" in result["content"]
+    assert result["representation"] == "text/markdown"
+
+
 def test_unknown_content_format_is_invalid_argument(runtime):
     result = handle_tool(
         runtime,

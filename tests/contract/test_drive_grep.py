@@ -419,3 +419,31 @@ def test_text_blob_get_media_429_on_folder_grep_is_partial():
     assert result["status"] == "PARTIAL"
     assert result["partial_reason"] == "RATE_LIMITED"
     assert result.get("category") != "RATE_LIMITED"
+
+
+def test_grep_mdx_octet_stream_is_searchable(runtime, fake_drive):
+    from fakes.fake_drive import FakeFile
+
+    fake_drive.add(
+        FakeFile(
+            id="essay-mdx",
+            name="soundness-reflection-lob.mdx",
+            mime_type="application/octet-stream",
+            parents=["folder-a"],
+            content="A proof shows what follows from axioms.\n",
+        )
+    )
+    result = handle_tool(
+        runtime,
+        "drive_grep",
+        {
+            "pattern": "follows from axioms",
+            "file_ids": ["essay-mdx"],
+            "context_lines": 1,
+        },
+        "Bearer test-token",
+    )
+    assert result["status"] == "COMPLETE"
+    assert result["matches"]
+    assert result["matches"][0]["file_id"] == "essay-mdx"
+    assert "follows from axioms" in (result["matches"][0].get("context") or "")

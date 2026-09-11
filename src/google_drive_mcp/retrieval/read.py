@@ -33,7 +33,7 @@ def drive_read(
         meta = DriveFile.from_metadata(drive.get_metadata(file_id))
     except GoogleApiError as exc:
         raise DomainError(map_google_error(exc, request_id=request_id)) from exc
-    representation = representation_for(meta.mime_type, content_format)
+    representation = representation_for(meta.mime_type, content_format, name=meta.name)
     exported = fetch_text(
         drive,
         file_id,
@@ -41,6 +41,7 @@ def drive_read(
         representation,
         max_bytes=cap,
         request_id=request_id,
+        name=meta.name,
     )
     budget.note_bytes(exported.byte_length)
     retrieved_at = _now()

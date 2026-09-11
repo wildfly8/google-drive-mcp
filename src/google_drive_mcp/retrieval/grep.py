@@ -76,12 +76,12 @@ def drive_grep(
                 skipped_unsupported += 1
                 last_unsupported = ErrorCategory.UNSUPPORTED_MIME_TYPE
             continue
-        if default_representation(file.mime_type) is None:
+        if default_representation(file.mime_type, file.name) is None:
             skipped_unsupported += 1
             last_unsupported = ErrorCategory.UNSUPPORTED_MIME_TYPE
             continue
         try:
-            representation = representation_for(file.mime_type, None)
+            representation = representation_for(file.mime_type, None, name=file.name)
             exported = fetch_text(
                 drive,
                 file.id,
@@ -89,6 +89,7 @@ def drive_grep(
                 representation,
                 max_bytes=budget.max_bytes_per_file,
                 request_id=request_id,
+                name=file.name,
             )
         except DomainError as exc:
             if exc.error.category in (

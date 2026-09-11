@@ -16,6 +16,7 @@
 | `application/vnd.google-apps.spreadsheet` | export | `text/csv` |
 | `application/vnd.google-apps.presentation` | export | `text/plain` |
 | `text/*`, `application/json`, `application/csv`, markdown | download | as stored |
+| `application/octet-stream` (or empty MIME) whose filename has a known text extension (`.md`, `.mdx`, `.txt`, `.json`, `.csv`, `.yml`, `.yaml`, `.rst`) | download | mapped text MIME (e.g. `.mdx` → `text/markdown`) |
 | other | fail | `UNSUPPORTED_MIME_TYPE` / `FILE_NOT_EXPORTABLE` |
 
 Omitted `content_format` uses this table. A caller-supplied `content_format` MUST be a MIME that type can produce; unknown or incompatible → `INVALID_ARGUMENT`.

@@ -33,6 +33,29 @@ DOWNLOADABLE_EXACT = frozenset(
     }
 )
 
+# Drive often stores Markdown/MDX as application/octet-stream. Filename
+# extension is the signal that the blob is usable text (FR-021).
+TEXT_EXTENSION_REPRESENTATION = {
+    ".md": "text/markdown",
+    ".mdx": "text/markdown",
+    ".txt": "text/plain",
+    ".text": "text/plain",
+    ".rst": "text/plain",
+    ".json": "application/json",
+    ".csv": "text/csv",
+    ".yml": "text/plain",
+    ".yaml": "text/plain",
+}
+
+_GENERIC_BLOB_MIMES = frozenset(
+    {
+        "",
+        "application/octet-stream",
+        "application/x-octet-stream",
+        "binary/octet-stream",
+    }
+)
+
 
 class FileNotExportableError(Exception):
     """Workspace export refused with no usable prefix."""
@@ -42,20 +65,30 @@ def is_workspace(mime: str) -> bool:
     return mime in DEFAULT_EXPORT_MIME
 
 
-def is_text_blob(mime: str) -> bool:
-    return mime.startswith("text/") or mime in DOWNLOADABLE_EXACT
+def _extension_representation(name: str) -> str | None:
+    suffix = Path(name or "").suffix.lower()
+    return TEXT_EXTENSION_REPRESENTATION.get(suffix)
 
 
-def default_representation(mime: str) -> str | None:
+def is_text_blob(mime: str, name: str = "") -> bool:
+    if mime.startswith("text/") or mime in DOWNLOADABLE_EXACT:
+        return True
+    return mime in _GENERIC_BLOB_MIMES and _extension_representation(name) is not None
+
+
+def default_representation(mime: str, name: str = "") -> str | None:
     if mime in DEFAULT_EXPORT_MIME:
         return DEFAULT_EXPORT_MIME[mime]
-    if is_text_blob(mime):
+    if mime.startswith("text/") or mime in DOWNLOADABLE_EXACT:
         return mime
+    mapped = _extension_representation(name)
+    if mapped and mime in _GENERIC_BLOB_MIMES:
+        return mapped
     return None
 
 
-def representation_for(mime: str, content_format: str | None) -> str:
-    default = default_representation(mime)
+def representation_for(mime: str, content_format: str | None, name: str = "") -> str:
+    default = default_representation(mime, name)
     if content_format is None:
         if default is None:
             raise DomainError.of(ErrorCategory.UNSUPPORTED_MIME_TYPE)
@@ -66,7 +99,7 @@ def representation_for(mime: str, content_format: str | None) -> str:
         if content_format != default:
             raise DomainError.of(ErrorCategory.INVALID_ARGUMENT)
         return content_format
-    if is_text_blob(mime) and (
+    if is_text_blob(mime, name) and (
         content_format == mime or content_format.startswith("text/")
     ):
         return content_format
@@ -81,6 +114,7 @@ def fetch_text(
     *,
     max_bytes: int,
     request_id: str | None = None,
+    name: str = "",
 ) -> ExportResult:
     cap = min(max_bytes, MAX_EXPORT_SIZE)
     if getattr(drive, "fail_tempfile", False):
@@ -91,7 +125,7 @@ def fetch_text(
             try:
                 if is_workspace(mime_type):
                     text = drive.export(file_id, representation)
-                elif is_text_blob(mime_type):
+                elif is_text_blob(mime_type, name):
                     raw = drive.get_media(file_id)
                     text = raw.decode("utf-8", errors="replace")
                 else:
