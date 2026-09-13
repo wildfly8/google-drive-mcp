@@ -1,4 +1,8 @@
-"""Constant-time MCP bearer comparison. Never forwards the token to Google."""
+"""Constant-time comparison for the resource-owner consent password.
+
+MCP `/mcp` callers present an OAuth 2.1 access token, not this value.
+`MCP_AUTH_TOKEN` is compared only on the consent form. Never forwarded to Google.
+"""
 
 from __future__ import annotations
 

@@ -32,12 +32,12 @@ def test_invalid_bearer_is_authentication_error(runtime, fake_drive: FakeDrive):
     assert fake_drive.content_count == 0
 
 
-def test_google_miss_is_file_not_found_without_metadata(runtime, fake_drive: FakeDrive):
+def test_google_miss_is_file_not_found_without_metadata(runtime, fake_drive: FakeDrive, authz):
     fake_drive.reset_counters()
     result = _call(
         runtime,
         {"file_id": "missing-id"},
-        "Bearer test-token",
+        authz,
     )
     assert result["category"] == "FILE_NOT_FOUND"
     assert "name" not in result
@@ -47,20 +47,20 @@ def test_google_miss_is_file_not_found_without_metadata(runtime, fake_drive: Fak
 
 
 def test_folder_and_granted_file_outside_folder_is_authorization_error(
-    runtime, fake_drive: FakeDrive
+    runtime, fake_drive: FakeDrive, authz
 ):
     fake_drive.reset_counters()
     result = _call(
         runtime,
         {"folder_id": "folder-a", "file_ids": ["outside-doc"]},
-        "Bearer test-token",
+        authz,
     )
     assert result["category"] == "AUTHORIZATION_ERROR"
     assert fake_drive.content_count == 0
     assert fake_drive.metadata_get_count >= 1
 
 
-def test_file_id_only_google_miss_is_never_authorization_error(runtime, fake_drive: FakeDrive):
-    result = _call(runtime, {"file_id": "does-not-exist"}, "Bearer test-token")
+def test_file_id_only_google_miss_is_never_authorization_error(runtime, fake_drive: FakeDrive, authz):
+    result = _call(runtime, {"file_id": "does-not-exist"}, authz)
     assert result["category"] == "FILE_NOT_FOUND"
     assert result["category"] != "AUTHORIZATION_ERROR"

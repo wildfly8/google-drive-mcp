@@ -5,12 +5,12 @@ from __future__ import annotations
 from google_drive_mcp.mcp.tools import handle_tool
 
 
-def test_grep_idempotency_returns_match_with_provenance(runtime):
+def test_grep_idempotency_returns_match_with_provenance(runtime, authz):
     result = handle_tool(
         runtime,
         "drive_grep",
         {"pattern": "idempotency", "folder_id": "folder-a"},
-        "Bearer test-token",
+        authz,
     )
     assert result["status"] in {"COMPLETE", "PARTIAL"}
     assert result["matches"]
@@ -23,30 +23,30 @@ def test_grep_idempotency_returns_match_with_provenance(runtime):
     assert match["pattern"] == "idempotency"
 
 
-def test_grep_missing_phrase_is_empty(runtime):
+def test_grep_missing_phrase_is_empty(runtime, authz):
     result = handle_tool(
         runtime,
         "drive_grep",
         {"pattern": "no-such-phrase-xyz", "file_ids": ["nested-doc"]},
-        "Bearer test-token",
+        authz,
     )
     assert result["status"] == "EMPTY"
     assert result["matches"] == []
 
 
-def test_grep_twice_identical(runtime):
+def test_grep_twice_identical(runtime, authz):
     args = {"pattern": "idempotency", "file_ids": ["nested-doc"]}
-    first = handle_tool(runtime, "drive_grep", args, "Bearer test-token")
-    second = handle_tool(runtime, "drive_grep", args, "Bearer test-token")
+    first = handle_tool(runtime, "drive_grep", args, authz)
+    second = handle_tool(runtime, "drive_grep", args, authz)
     assert first["matches"] == second["matches"]
 
 
-def test_literal_vs_regex_and_case_flag(runtime):
+def test_literal_vs_regex_and_case_flag(runtime, authz):
     literal = handle_tool(
         runtime,
         "drive_grep",
         {"pattern": "Idempotency", "file_ids": ["nested-doc"], "regex": False},
-        "Bearer test-token",
+        authz,
     )
     assert literal["status"] == "EMPTY"
     insensitive = handle_tool(
@@ -58,26 +58,26 @@ def test_literal_vs_regex_and_case_flag(runtime):
             "regex": False,
             "case_sensitive": False,
         },
-        "Bearer test-token",
+        authz,
     )
     assert insensitive["matches"]
     regex = handle_tool(
         runtime,
         "drive_grep",
         {"pattern": "idempotency|widgets", "file_ids": ["nested-doc"], "regex": True},
-        "Bearer test-token",
+        authz,
     )
     assert regex["matches"]
     escaped = handle_tool(
         runtime,
         "drive_grep",
         {"pattern": "idempotency|widgets", "file_ids": ["nested-doc"], "regex": False},
-        "Bearer test-token",
+        authz,
     )
     assert escaped["status"] == "EMPTY"
 
 
-def test_slides_grep_uses_character_window_not_lines(runtime, fake_drive):
+def test_slides_grep_uses_character_window_not_lines(runtime, fake_drive, authz):
     fake_drive.update_content(
         "nested-slide",
         "intro line\n\nQuarterly update idempotency extra context",
@@ -86,7 +86,7 @@ def test_slides_grep_uses_character_window_not_lines(runtime, fake_drive):
         runtime,
         "drive_grep",
         {"pattern": "idempotency", "file_ids": ["nested-slide"]},
-        "Bearer test-token",
+        authz,
     )
     assert result["matches"]
     location = result["matches"][0]["location"]
@@ -94,30 +94,30 @@ def test_slides_grep_uses_character_window_not_lines(runtime, fake_drive):
     assert "line" not in location
 
 
-def test_mixed_folder_skips_unsupported_partial(runtime):
+def test_mixed_folder_skips_unsupported_partial(runtime, authz):
     result = handle_tool(
         runtime,
         "drive_grep",
         {"pattern": "idempotency", "folder_id": "folder-a"},
-        "Bearer test-token",
+        authz,
     )
     assert result["status"] == "PARTIAL"
     assert result["partial_reason"] == "unsupported_skipped"
     assert result["matches"]
 
 
-def test_grep_binary_by_id_is_classified_error(runtime):
+def test_grep_binary_by_id_is_classified_error(runtime, authz):
     result = handle_tool(
         runtime,
         "drive_grep",
         {"pattern": "idempotency", "file_ids": ["binary-file"]},
-        "Bearer test-token",
+        authz,
     )
     assert result["status"] == "ERROR"
     assert result["category"] in {"UNSUPPORTED_MIME_TYPE", "FILE_NOT_EXPORTABLE"}
 
 
-def test_rate_limited_walk_with_only_unsupported_is_partial():
+def test_rate_limited_walk_with_only_unsupported_is_partial(authz):
     from fakes.fake_drive import DOC_MIME, FOLDER_MIME, FakeDrive, FakeFile
     from google_drive_mcp.infra.config import Settings
     from google_drive_mcp.mcp.middleware import Runtime
@@ -151,7 +151,7 @@ def test_rate_limited_walk_with_only_unsupported_is_partial():
         runtime,
         "drive_grep",
         {"pattern": "idempotency", "folder_id": "top"},
-        "Bearer test-token",
+        authz,
     )
     assert result["status"] == "PARTIAL"
     assert result["partial_reason"] == "RATE_LIMITED"
@@ -204,7 +204,7 @@ def test_max_files_on_binaries_is_partial_not_unsupported():
     assert result.get("category") != "UNSUPPORTED_MIME_TYPE"
 
 
-def test_folders_are_not_unsupported_skips():
+def test_folders_are_not_unsupported_skips(authz):
     from fakes.fake_drive import DOC_MIME, FOLDER_MIME, FakeDrive, FakeFile
     from google_drive_mcp.infra.config import Settings
     from google_drive_mcp.mcp.middleware import Runtime
@@ -228,14 +228,14 @@ def test_folders_are_not_unsupported_skips():
         runtime,
         "drive_grep",
         {"pattern": "idempotency", "folder_id": "top"},
-        "Bearer test-token",
+        authz,
     )
     assert result["status"] == "COMPLETE"
     assert result.get("partial_reason") != "unsupported_skipped"
     assert result["matches"]
 
 
-def test_folder_only_tree_is_empty_not_unsupported():
+def test_folder_only_tree_is_empty_not_unsupported(authz):
     from fakes.fake_drive import FOLDER_MIME, FakeDrive, FakeFile
     from google_drive_mcp.infra.config import Settings
     from google_drive_mcp.mcp.middleware import Runtime
@@ -250,7 +250,7 @@ def test_folder_only_tree_is_empty_not_unsupported():
         runtime,
         "drive_grep",
         {"pattern": "idempotency", "folder_id": "top"},
-        "Bearer test-token",
+        authz,
     )
     assert result["status"] == "EMPTY"
     assert result["matches"] == []
@@ -295,13 +295,13 @@ def test_grep_max_files_does_not_count_folder_nodes():
     assert result["status"] == "COMPLETE"
 
 
-def test_folder_export_429_is_partial_not_envelope(runtime, fake_drive):
+def test_folder_export_429_is_partial_not_envelope(runtime, fake_drive, authz):
     fake_drive.rate_limit_export = True
     result = handle_tool(
         runtime,
         "drive_grep",
         {"pattern": "idempotency", "folder_id": "folder-a"},
-        "Bearer test-token",
+        authz,
     )
     assert result["status"] == "PARTIAL"
     assert result["partial_reason"] == "RATE_LIMITED"
@@ -309,20 +309,20 @@ def test_folder_export_429_is_partial_not_envelope(runtime, fake_drive):
     assert result["matches"] == []
 
 
-def test_whole_grant_export_429_is_partial(runtime, fake_drive):
+def test_whole_grant_export_429_is_partial(runtime, fake_drive, authz):
     fake_drive.rate_limit_export = True
     result = handle_tool(
         runtime,
         "drive_grep",
         {"pattern": "idempotency"},
-        "Bearer test-token",
+        authz,
     )
     assert result["status"] == "PARTIAL"
     assert result["partial_reason"] == "RATE_LIMITED"
     assert result.get("category") != "RATE_LIMITED"
 
 
-def test_multi_file_ids_export_429_is_partial(runtime, fake_drive):
+def test_multi_file_ids_export_429_is_partial(runtime, fake_drive, authz):
     fake_drive.rate_limit_export = True
     result = handle_tool(
         runtime,
@@ -331,14 +331,14 @@ def test_multi_file_ids_export_429_is_partial(runtime, fake_drive):
             "pattern": "idempotency",
             "file_ids": ["nested-doc", "nested-slide"],
         },
-        "Bearer test-token",
+        authz,
     )
     assert result["status"] == "PARTIAL"
     assert result["partial_reason"] == "RATE_LIMITED"
     assert result.get("category") != "RATE_LIMITED"
 
 
-def test_multi_file_ids_skip_then_export_429_is_partial(runtime, fake_drive):
+def test_multi_file_ids_skip_then_export_429_is_partial(runtime, fake_drive, authz):
     fake_drive.rate_limit_export = True
     result = handle_tool(
         runtime,
@@ -347,26 +347,26 @@ def test_multi_file_ids_skip_then_export_429_is_partial(runtime, fake_drive):
             "pattern": "idempotency",
             "file_ids": ["binary-file", "nested-doc"],
         },
-        "Bearer test-token",
+        authz,
     )
     assert result["status"] == "PARTIAL"
     assert result["partial_reason"] == "RATE_LIMITED"
     assert result.get("category") != "UNSUPPORTED_MIME_TYPE"
 
 
-def test_single_file_id_export_429_is_error_envelope(runtime, fake_drive):
+def test_single_file_id_export_429_is_error_envelope(runtime, fake_drive, authz):
     fake_drive.rate_limit_export = True
     result = handle_tool(
         runtime,
         "drive_grep",
         {"pattern": "idempotency", "file_ids": ["nested-doc"]},
-        "Bearer test-token",
+        authz,
     )
     assert result["status"] == "ERROR"
     assert result["category"] == "RATE_LIMITED"
 
 
-def test_folder_export_429_preserves_matches_already_found(runtime, fake_drive):
+def test_folder_export_429_preserves_matches_already_found(runtime, fake_drive, authz):
     from google_drive_mcp.domain.google_errors import GoogleApiError
 
     original = fake_drive.export
@@ -383,7 +383,7 @@ def test_folder_export_429_preserves_matches_already_found(runtime, fake_drive):
         runtime,
         "drive_grep",
         {"pattern": "idempotency", "folder_id": "folder-a"},
-        "Bearer test-token",
+        authz,
     )
     assert result["status"] == "PARTIAL"
     assert result["partial_reason"] == "RATE_LIMITED"
@@ -391,7 +391,7 @@ def test_folder_export_429_preserves_matches_already_found(runtime, fake_drive):
     assert {m["file_id"] for m in result["matches"]} == {"nested-doc"}
 
 
-def test_text_blob_get_media_429_on_folder_grep_is_partial():
+def test_text_blob_get_media_429_on_folder_grep_is_partial(authz):
     from fakes.fake_drive import FOLDER_MIME, FakeDrive, FakeFile
     from google_drive_mcp.infra.config import Settings
     from google_drive_mcp.mcp.middleware import Runtime
@@ -414,14 +414,14 @@ def test_text_blob_get_media_429_on_folder_grep_is_partial():
         runtime,
         "drive_grep",
         {"pattern": "idempotency", "folder_id": "top"},
-        "Bearer test-token",
+        authz,
     )
     assert result["status"] == "PARTIAL"
     assert result["partial_reason"] == "RATE_LIMITED"
     assert result.get("category") != "RATE_LIMITED"
 
 
-def test_grep_mdx_octet_stream_is_searchable(runtime, fake_drive):
+def test_grep_mdx_octet_stream_is_searchable(runtime, fake_drive, authz):
     from fakes.fake_drive import FakeFile
 
     fake_drive.add(
@@ -441,7 +441,7 @@ def test_grep_mdx_octet_stream_is_searchable(runtime, fake_drive):
             "file_ids": ["essay-mdx"],
             "context_lines": 1,
         },
-        "Bearer test-token",
+        authz,
     )
     assert result["status"] == "COMPLETE"
     assert result["matches"]

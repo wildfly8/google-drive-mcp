@@ -114,13 +114,15 @@ DEPLOY_ARGS=(
   --timeout=60
   --quiet
 )
-if [[ -n "${DRIVE_ALLOWED_FOLDER_ID:-}" ]]; then
-  DEPLOY_ARGS+=(--set-env-vars="DRIVE_ALLOWED_FOLDER_ID=${DRIVE_ALLOWED_FOLDER_ID}")
-fi
+DEPLOY_ENV="MCP_PUBLIC_URL=${MCP_PUBLIC_URL:-https://google-drive-mcp-kxjtmypvfa-uc.a.run.app}"
+ALLOWED_FOLDER="${DRIVE_ALLOWED_FOLDER_ID:-1qod47BRgPlRnXVboaJsElSNj1WkofLRQ}"
+DEPLOY_ENV="${DEPLOY_ENV},DRIVE_ALLOWED_FOLDER_ID=${ALLOWED_FOLDER}"
+DEPLOY_ARGS+=(--set-env-vars="${DEPLOY_ENV}")
 
 echo "Deploying ${SERVICE} to Cloud Run (${REGION})..."
 gcloud "${DEPLOY_ARGS[@]}"
 
 URL="$(gcloud run services describe "$SERVICE" --project="$PROJECT" --region="$REGION" --format='value(status.url)')"
 echo "LIVE_MCP_URL=${URL}/mcp"
-echo "Deploy complete. Run live E2E with LIVE_MCP_URL and MCP_AUTH_TOKEN (from Secret Manager, not chat)."
+echo "Deploy complete. Hosts use MCP OAuth 2.1 against this origin."
+echo "Set LIVE_MCP_URL and MCP_AUTH_TOKEN (consent password from Secret Manager, not chat) for live E2E."

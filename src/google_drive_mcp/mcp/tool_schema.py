@@ -24,9 +24,11 @@ Read-only Google Drive retrieval. You (the host agent) turn the user's question
 into structured tool calls. This server never extracts keywords and never writes
 the final answer.
 
-Authentication is configured by the MCP host as HTTP `Authorization: Bearer <token>`.
-Never pass tokens, OAuth codes, or Google credentials as tool arguments. This
-server does not implement MCP OAuth 2.1 (no authorization-code login, no DCR).
+Authentication is MCP OAuth 2.1 (authorization code + PKCE, dynamic client
+registration). Hosts discover metadata on this origin, then send
+`Authorization: Bearer <access_token>` on `/mcp`. Never pass tokens, OAuth
+codes, or Google credentials as tool arguments. `MCP_AUTH_TOKEN` is the
+resource-owner consent password, not an API bearer.
 
 Loop (repeat with different terms if needed):
 1. drive_ls or drive_find → file ids (candidates, not evidence)

@@ -13,7 +13,7 @@ from google_drive_mcp.infra.config import Settings
 TOKENS = ("test-token", "test-refresh-token", "test-client-secret")
 
 
-def test_error_and_success_omit_secrets(runtime: Runtime, fake_drive: FakeDrive, caplog):
+def test_error_and_success_omit_secrets(runtime: Runtime, fake_drive: FakeDrive, caplog, authz):
     caplog.set_level(logging.DEBUG)
     settings: Settings = runtime.settings
     secrets = [
@@ -25,10 +25,12 @@ def test_error_and_success_omit_secrets(runtime: Runtime, fake_drive: FakeDrive,
         runtime, "scope_probe", {"file_id": "nested-doc"}, "Bearer wrong-token"
     )
     ok = handle_tool(
-        runtime, "scope_probe", {"file_id": "nested-doc"}, "Bearer test-token"
+        runtime, "scope_probe", {"file_id": "nested-doc"}, authz
     )
     blob = str(denied) + str(ok) + caplog.text + repr(settings)
     for secret in secrets:
         assert secret not in blob
+    access = authz.split(" ", 1)[1]
+    assert access not in blob
     assert "Authorization" not in str(denied)
     assert ok["status"] == "COMPLETE"

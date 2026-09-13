@@ -17,7 +17,6 @@ from google_drive_mcp.domain.retrieval_scope import (
     apply_allowed_folder,
     is_within_scope,
 )
-from google_drive_mcp.infra.mcp_auth.bearer import extract_bearer, verify_bearer
 
 MetadataGet = Callable[[str], Any]
 ParentLookup = Callable[[str], list[str] | None]
@@ -27,7 +26,7 @@ GoogleMint = Callable[[], object]
 def evaluate_chain(
     *,
     authorization: str | None,
-    expected_token: str,
+    verify_caller: Callable[[str | None], bool],
     principal_id: str,
     folder_id: str | None = None,
     file_ids: list[str] | None = None,
@@ -39,13 +38,12 @@ def evaluate_chain(
 ) -> AuthorizationDecision:
     """Run MCP auth → MCP authz → Google auth. Document body is not a parameter."""
 
-    # Step 2 — MCP authentication
-    token = extract_bearer(authorization)
-    if not verify_bearer(token, expected_token):
+    # Step 2 — MCP authentication (OAuth 2.1 access token; not a shared secret)
+    if not verify_caller(authorization):
         return AuthorizationDecision(
             outcome=DecisionOutcome.AUTHENTICATION_ERROR,
             step_failed=StepFailed.mcp_authentication,
-            reason_code="mcp_bearer_rejected",
+            reason_code="mcp_access_token_rejected",
             principal_id=principal_id,
         )
 

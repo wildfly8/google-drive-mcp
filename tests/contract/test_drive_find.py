@@ -5,9 +5,9 @@ from __future__ import annotations
 from google_drive_mcp.mcp.tools import handle_tool
 
 
-def test_find_includes_nested_doc_as_candidate_not_evidence(runtime):
+def test_find_includes_nested_doc_as_candidate_not_evidence(runtime, authz):
     result = handle_tool(
-        runtime, "drive_find", {"folder_id": "folder-a"}, "Bearer test-token"
+        runtime, "drive_find", {"folder_id": "folder-a"}, authz
     )
     assert result["status"] in {"COMPLETE", "PARTIAL"}
     ids = {c["file"]["id"] for c in result["candidates"]}

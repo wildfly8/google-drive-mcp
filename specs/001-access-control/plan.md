@@ -16,7 +16,7 @@ Denial split (locked):
 - v1 `AUTHORIZATION_ERROR` only when the call names **both** `folder_id` and `file_ids` and Google **grants** a named file that `is_within_scope` rejects. `drive_read` / `drive_ls` / `drive_find` never emit `AUTHORIZATION_ERROR` in v1.
 - Access Control tests that AUTH case via `evaluate_chain` or a stub that accepts `folder_id` + `file_ids`. Do not implement `drive_grep` here; Retrieval replays the same case on the real tool.
 
-Technical approach: a Python hexagonal MCP server on Cloud Run. Access control is a domain package with no Google client types. MCP bearer auth and Google OAuth refresh-token use are infrastructure adapters. Retrieval tools (next feature) may run only after this chain returns `ALLOW`. Shared `map_google_error()` maps 404/403-as-404 (and single-file 429 with no prefix). Walk 429 is Retrieval completeness (`PARTIAL`), not this mapper.
+Technical approach: a Python hexagonal MCP server on Cloud Run. Access control is a domain package with no Google client types. MCP OAuth 2.1 and Google OAuth refresh-token use are infrastructure adapters. Retrieval tools (next feature) may run only after this chain returns `ALLOW`. Shared `map_google_error()` maps 404/403-as-404 (and single-file 429 with no prefix). Walk 429 is Retrieval completeness (`PARTIAL`), not this mapper.
 
 ## Technical Context
 
@@ -24,7 +24,7 @@ Technical approach: a Python hexagonal MCP server on Cloud Run. Access control i
 
 **Primary Dependencies**: Official MCP Python SDK (`mcp` 2.x, Streamable HTTP); `google-auth` + `google-api-python-client` (Google adapter only); `pydantic` for request-scoped models; `httpx` for Streamable HTTP contract tests
 
-**Storage**: None persistent. Google refresh token and MCP bearer secret live in the environment/secret manager, not in the app. Request-scoped objects only.
+**Storage**: None persistent for Drive content. Google refresh token and the resource-owner consent password live in Secret Manager. MCP access tokens are signed JWTs (re-derivable on any instance). DCR client records are in-memory auth protocol state (Article III exception; hosts re-register).
 
 **Testing**: pytest, pytest-asyncio; contract tests for auth failures via `evaluate_chain` / US1 stub (`folder_id` + `file_ids`); unit tests for chain order, `is_within_scope` with an injected parent map, and secret hygiene. Fake Drive counts **metadata** vs **content** I/O separately.
 
@@ -57,7 +57,7 @@ Technical approach: a Python hexagonal MCP server on Cloud Run. Access control i
 | agent reasoning and retrieval mechanics stay separate | PASS — agent justification cannot satisfy any step |
 | no RAG index is required for correctness | PASS — not used |
 
-**Post-Phase 1 re-check:** Still PASS. Contracts expose only read-side errors and a bearer-gated MCP surface. AUTH uses metadata get, not content I/O. No cache, no multi-tenant Google identities, no write tools.
+**Post-Phase 1 re-check:** Still PASS. Contracts expose only read-side errors and an OAuth 2.1-gated MCP surface. AUTH uses metadata get, not content I/O. No cache, no multi-tenant Google identities, no write tools.
 
 ## Project Structure
 
@@ -91,7 +91,7 @@ src/google_drive_mcp/
 │   ├── config.py
 │   ├── logging.py
 │   ├── mcp_auth/
-│   │   └── bearer.py          # MCP caller authentication adapter
+│   │   └── mcp_auth/          # OAuth 2.1 JWTs, DCR provider, consent, Bearer extract
 │   └── google_auth/
 │       └── refresh_token.py   # Drive credential adapter (readonly)
 ├── mcp/

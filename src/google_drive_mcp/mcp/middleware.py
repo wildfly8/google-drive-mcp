@@ -14,6 +14,7 @@ from google_drive_mcp.domain.retrieval_scope import apply_allowed_folder
 from google_drive_mcp.infra.config import Settings
 from google_drive_mcp.infra.google_auth.refresh_token import mint_readonly_credentials
 from google_drive_mcp.infra.logging import log_chain_event
+from google_drive_mcp.infra.mcp_auth.tokens import verify_authorization_header
 
 _authorization: ContextVar[str | None] = ContextVar("mcp_authorization", default=None)
 _request_id: ContextVar[str] = ContextVar("mcp_request_id", default="")
@@ -111,7 +112,7 @@ def authorize(
 
     decision = evaluate_chain(
         authorization=auth,
-        expected_token=runtime.settings.mcp_auth_token.get_secret_value(),
+        verify_caller=lambda header: verify_authorization_header(header, runtime.settings),
         principal_id=runtime.settings.mcp_principal_id,
         folder_id=arguments.get("folder_id"),
         file_ids=arguments.get("file_ids"),

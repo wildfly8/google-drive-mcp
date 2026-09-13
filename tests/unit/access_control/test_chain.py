@@ -10,6 +10,14 @@ from google_drive_mcp.access_control.chain import evaluate_chain
 from google_drive_mcp.access_control.decisions import DecisionOutcome, StepFailed
 from google_drive_mcp.domain.google_errors import GoogleApiError
 from google_drive_mcp.domain.retrieval_scope import RetrievalScope, is_within_scope
+from google_drive_mcp.infra.mcp_auth.bearer import extract_bearer
+
+
+def _accepts(*allowed: str):
+    def verify(authorization: str | None) -> bool:
+        return extract_bearer(authorization) in allowed
+
+    return verify
 
 
 def test_evaluate_chain_does_not_accept_document_content_parameter():
@@ -18,6 +26,8 @@ def test_evaluate_chain_does_not_accept_document_content_parameter():
     assert "document" not in params
     assert "body" not in params
     assert "rationale" not in params
+    assert "verify_caller" in params
+    assert "expected_token" not in params
 
 
 def test_authn_failure_never_calls_google():
@@ -29,7 +39,7 @@ def test_authn_failure_never_calls_google():
 
     decision = evaluate_chain(
         authorization=None,
-        expected_token="test-token",
+        verify_caller=_accepts("test-token"),
         principal_id="deployment-1",
         file_id="nested-doc",
         get_metadata=get_metadata,
@@ -49,7 +59,7 @@ def test_prior_allow_is_not_reused():
 
     first = evaluate_chain(
         authorization="Bearer test-token",
-        expected_token="test-token",
+        verify_caller=_accepts("test-token"),
         principal_id="deployment-1",
         file_id="child",
         get_metadata=get_metadata,
@@ -58,7 +68,7 @@ def test_prior_allow_is_not_reused():
     assert first.allowed
     second = evaluate_chain(
         authorization="Bearer other",
-        expected_token="test-token",
+        verify_caller=_accepts("test-token"),
         principal_id="deployment-1",
         file_id="child",
         get_metadata=get_metadata,
@@ -99,7 +109,7 @@ def test_google_500_during_chain_is_drive_api_error():
     with pytest.raises(DomainError) as caught:
         evaluate_chain(
             authorization="Bearer test-token",
-            expected_token="test-token",
+            verify_caller=_accepts("test-token"),
             principal_id="deployment-1",
             file_id="nested-doc",
             get_metadata=get_metadata,
@@ -107,7 +117,7 @@ def test_google_500_during_chain_is_drive_api_error():
     assert caught.value.error.category == ErrorCategory.DRIVE_API_ERROR
 
 
-def test_google_500_via_handle_tool_is_drive_api_error(runtime, fake_drive):
+def test_google_500_via_handle_tool_is_drive_api_error(runtime, fake_drive, authz):
     from google_drive_mcp.mcp.tools import handle_tool
 
     def boom(_fid: str):
@@ -115,7 +125,7 @@ def test_google_500_via_handle_tool_is_drive_api_error(runtime, fake_drive):
 
     fake_drive.get_metadata = boom  # type: ignore[method-assign]
     result = handle_tool(
-        runtime, "drive_read", {"file_id": "nested-doc"}, "Bearer test-token"
+        runtime, "drive_read", {"file_id": "nested-doc"}, authz
     )
     assert result["status"] == "ERROR"
     assert result["category"] == "DRIVE_API_ERROR"
@@ -127,7 +137,7 @@ def test_google_miss_on_named_file_is_file_not_found():
 
     decision = evaluate_chain(
         authorization="Bearer test-token",
-        expected_token="test-token",
+        verify_caller=_accepts("test-token"),
         principal_id="deployment-1",
         file_id="missing",
         get_metadata=get_metadata,

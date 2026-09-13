@@ -51,7 +51,8 @@ async def test_initialize_instructions_say_host_extracts_terms(runtime):
     text = server.instructions or ""
     assert text == SERVER_INSTRUCTIONS
     assert "never extracts keywords" in text
-    assert "does not implement MCP OAuth 2.1" in text
+    assert "MCP OAuth 2.1" in text
+    assert "does not implement MCP OAuth 2.1" not in text
     assert "natural-language" in SERVER_INSTRUCTIONS or "user question" in text
 
 

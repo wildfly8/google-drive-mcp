@@ -14,10 +14,10 @@ def test_map_google_error_404_and_403():
     assert map_google_error(GoogleApiError(500)).category == ErrorCategory.DRIVE_API_ERROR
 
 
-def test_walk_429_is_partial_not_mapped_rate_limited_envelope(runtime, fake_drive):
+def test_walk_429_is_partial_not_mapped_rate_limited_envelope(runtime, fake_drive, authz):
     fake_drive.rate_limit_lists_after = 0
     result = handle_tool(
-        runtime, "drive_ls", {"folder_id": "folder-a"}, "Bearer test-token"
+        runtime, "drive_ls", {"folder_id": "folder-a"}, authz
     )
     assert result["status"] == "PARTIAL"
     assert result["partial_reason"] == "RATE_LIMITED"

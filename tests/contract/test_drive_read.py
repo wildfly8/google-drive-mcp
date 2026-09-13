@@ -5,9 +5,9 @@ from __future__ import annotations
 from google_drive_mcp.mcp.tools import handle_tool
 
 
-def test_read_returns_body_and_provenance(runtime):
+def test_read_returns_body_and_provenance(runtime, authz):
     result = handle_tool(
-        runtime, "drive_read", {"file_id": "nested-doc"}, "Bearer test-token"
+        runtime, "drive_read", {"file_id": "nested-doc"}, authz
     )
     assert result["status"] == "COMPLETE"
     assert result["file_id"] == "nested-doc"
@@ -19,15 +19,15 @@ def test_read_returns_body_and_provenance(runtime):
     assert result["representation"] == "text/plain"
 
 
-def test_read_binary_is_unsupported_mime(runtime):
+def test_read_binary_is_unsupported_mime(runtime, authz):
     result = handle_tool(
-        runtime, "drive_read", {"file_id": "binary-file"}, "Bearer test-token"
+        runtime, "drive_read", {"file_id": "binary-file"}, authz
     )
     assert result["status"] == "ERROR"
     assert result["category"] == "UNSUPPORTED_MIME_TYPE"
 
 
-def test_read_mdx_octet_stream_yields_markdown(runtime, fake_drive):
+def test_read_mdx_octet_stream_yields_markdown(runtime, fake_drive, authz):
     from fakes.fake_drive import FakeFile
 
     fake_drive.add(
@@ -40,24 +40,24 @@ def test_read_mdx_octet_stream_yields_markdown(runtime, fake_drive):
         )
     )
     result = handle_tool(
-        runtime, "drive_read", {"file_id": "essay-mdx"}, "Bearer test-token"
+        runtime, "drive_read", {"file_id": "essay-mdx"}, authz
     )
     assert result["status"] == "COMPLETE"
     assert "Axioms do not justify themselves" in result["content"]
     assert result["representation"] == "text/markdown"
 
 
-def test_unknown_content_format_is_invalid_argument(runtime):
+def test_unknown_content_format_is_invalid_argument(runtime, authz):
     result = handle_tool(
         runtime,
         "drive_read",
         {"file_id": "nested-doc", "content_format": "application/pdf"},
-        "Bearer test-token",
+        authz,
     )
     assert result["category"] == "INVALID_ARGUMENT"
 
 
-def test_read_metadata_404_after_allow_is_file_not_found(runtime, fake_drive):
+def test_read_metadata_404_after_allow_is_file_not_found(runtime, fake_drive, authz):
     from google_drive_mcp.domain.google_errors import GoogleApiError
 
     original = fake_drive.get_metadata
@@ -71,13 +71,13 @@ def test_read_metadata_404_after_allow_is_file_not_found(runtime, fake_drive):
 
     fake_drive.get_metadata = second_get_misses  # type: ignore[method-assign]
     result = handle_tool(
-        runtime, "drive_read", {"file_id": "nested-doc"}, "Bearer test-token"
+        runtime, "drive_read", {"file_id": "nested-doc"}, authz
     )
     assert result["status"] == "ERROR"
     assert result["category"] == "FILE_NOT_FOUND"
 
 
-def test_read_metadata_429_after_allow_is_rate_limited(runtime, fake_drive):
+def test_read_metadata_429_after_allow_is_rate_limited(runtime, fake_drive, authz):
     from google_drive_mcp.domain.google_errors import GoogleApiError
 
     original = fake_drive.get_metadata
@@ -91,16 +91,16 @@ def test_read_metadata_429_after_allow_is_rate_limited(runtime, fake_drive):
 
     fake_drive.get_metadata = second_get_limited  # type: ignore[method-assign]
     result = handle_tool(
-        runtime, "drive_read", {"file_id": "nested-doc"}, "Bearer test-token"
+        runtime, "drive_read", {"file_id": "nested-doc"}, authz
     )
     assert result["status"] == "ERROR"
     assert result["category"] == "RATE_LIMITED"
 
 
-def test_read_export_429_is_rate_limited_envelope(runtime, fake_drive):
+def test_read_export_429_is_rate_limited_envelope(runtime, fake_drive, authz):
     fake_drive.rate_limit_export = True
     result = handle_tool(
-        runtime, "drive_read", {"file_id": "nested-doc"}, "Bearer test-token"
+        runtime, "drive_read", {"file_id": "nested-doc"}, authz
     )
     assert result["status"] == "ERROR"
     assert result["category"] == "RATE_LIMITED"

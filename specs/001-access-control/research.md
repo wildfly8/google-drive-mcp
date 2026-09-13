@@ -6,11 +6,11 @@
 
 **Alternatives considered**: FastMCP GoogleProvider (mixes Google user OAuth with MCP auth — would collapse chain steps 2 and 4). Homegrown JSON-RPC over Flask (reinvents the protocol).
 
-## Decision: Split MCP authentication from Google authorization
+## Decision: MCP OAuth 2.1 on this origin, split from Google authorization
 
-**Rationale**: Clarify session: one Drive identity per deployment, but the MCP endpoint must not be anonymous (AC-FR-010). MCP auth is a shared bearer secret (`MCP_AUTH_TOKEN`). Google access uses a separate OAuth refresh token (`GOOGLE_REFRESH_TOKEN` + client id/secret) with scope `drive.readonly`. Every tool call: validate bearer → evaluate RetrievalScope → call Google; Google 404/403-as-404 maps to `FILE_NOT_FOUND`.
+**Rationale**: Clarify session: one Drive identity per deployment, but the MCP endpoint must not be anonymous (AC-FR-010). MCP callers authenticate with OAuth 2.1 access tokens issued by this Cloud Run origin (authorization code + PKCE S256, DCR, RFC 9728). `MCP_AUTH_TOKEN` is the resource-owner consent password, not a long-lived `/mcp` Bearer. Google access uses a separate OAuth refresh token (`GOOGLE_REFRESH_TOKEN` + client id/secret, or authorized-user JSON) with scope `drive.readonly`. Every tool call: validate access token → evaluate RetrievalScope → call Google; Google 404/403-as-404 maps to `FILE_NOT_FOUND`.
 
-**Alternatives considered**: Google OAuth as the MCP login (FastMCP GoogleProvider) — couples agent login to Drive identity and invites multi-user Google tokens (MAJOR). Unauthenticated MCP on a private VPC — fails AC-FR-010 if the URL is reachable. mTLS-only — valid later; not required for v1 if bearer is present.
+**Alternatives considered**: Long-lived shared secret compared in-process as `/mcp` Bearer — cannot complete ChatGPT/Claude connector redirects against this origin. Google OAuth as the MCP login (FastMCP GoogleProvider) — couples agent login to Drive identity and invites multi-user Google tokens (MAJOR). Unauthenticated MCP on a private VPC — fails AC-FR-010 if the URL is reachable. mTLS-only — valid later; not required when OAuth 2.1 is present. Separate authorization server process — extra deploy surface; MCP hosts need `/authorize` `/token` `/register` on this origin.
 
 ## Decision: Google user OAuth refresh token as a Cloud Run secret, not a service account
 

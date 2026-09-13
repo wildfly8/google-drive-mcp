@@ -4,7 +4,7 @@ Validates discover → read → grep against the shared fake Drive (no RAG, no l
 
 ## Prerequisites
 
-- Access Control quickstart env (`MCP_AUTH_TOKEN`, `MCP_PRINCIPAL_ID`)
+- Access Control quickstart env (`MCP_AUTH_TOKEN` consent password, `MCP_PUBLIC_URL`, `MCP_PRINCIPAL_ID`)
 - Python 3.12, `uv`
 - Shared fixture `tests/fakes/fake_drive.py` with: a folder, a nested Doc containing `idempotency`, a binary file that cannot yield text
 
@@ -14,6 +14,8 @@ Validates discover → read → grep against the shared fake Drive (no RAG, no l
 uv sync
 export MCP_AUTH_TOKEN=test-token
 export MCP_PRINCIPAL_ID=deployment-1
+export MCP_PUBLIC_URL=http://127.0.0.1
+export MCP_OAUTH_AUTO_APPROVE=true
 ```
 
 ## Contract tests

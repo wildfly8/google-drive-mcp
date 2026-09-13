@@ -42,7 +42,8 @@ Shared implementation: `ErrorEnvelope` in `src/google_drive_mcp/domain/errors.py
 
 | Condition | category |
 | --- | --- |
-| Missing/invalid MCP bearer | `AUTHENTICATION_ERROR` |
+| Missing/invalid MCP OAuth access token (in-process) | `AUTHENTICATION_ERROR` |
+| Missing/invalid Bearer on HTTP `/mcp` | HTTP 401 + `WWW-Authenticate` (before JSON-RPC) |
 | Caller-named `file_id` outside this call’s `folder_id` after Google **grants** metadata (see [authorization-chain.md](./authorization-chain.md)) | `AUTHORIZATION_ERROR` |
 | Google grant does not include the resource (including Google 404 / permission-as-404), including post-`ALLOW` races | `FILE_NOT_FOUND` |
 

@@ -21,16 +21,16 @@ See the constitution for the full invariant set (Articles I–XV).
 
 This is standard **MCP Streamable HTTP** (`POST /mcp`). The host model — not this server — parses the user question and chooses `drive_ls` / `drive_find` / `drive_read` / `drive_grep` arguments. `tools/list` advertises when to use each tool and positive/negative examples.
 
-**Auth:** send `Authorization: Bearer <MCP_AUTH_TOKEN>`. That is a static MCP caller secret. It is not Google OAuth and not [MCP OAuth 2.1](https://modelcontextprotocol.io/specification/2025-03-26/basic/authorization) (no authorization-code login on this origin).
+**Auth:** [MCP OAuth 2.1](https://modelcontextprotocol.io/specification/2025-03-26/basic/authorization) on this origin (authorization code + PKCE, dynamic client registration, protected-resource metadata). Hosts send `Authorization: Bearer <access_token>` on `POST /mcp`. `MCP_AUTH_TOKEN` is the **consent password** shown at `/consent`, not a long-lived API key.
 
 | Host | How to attach this server |
 | --- | --- |
-| **Cursor** (Cloud Agent / HTTP MCP) | Server URL + encrypted `Authorization: Bearer` header. Repo allow-list in `.cursor/environment.json` is not the same as installing the header. |
-| **Claude Code** | `claude mcp add --transport http google-drive-mcp <url>/mcp --header "Authorization: Bearer <token>"` |
-| **ChatGPT Desktop / Codex** | Streamable HTTP `url` plus `bearer_token_env_var` pointing at an env var that holds `MCP_AUTH_TOKEN` |
-| **claude.ai / ChatGPT web custom connectors** | Only if that UI can send a static Bearer (request headers). Connectors that require an OAuth redirect against this Cloud Run URL will fail until MCP OAuth is specified (MAJOR, Article XIV). |
+| **ChatGPT / Claude custom connectors** | Server URL `…/mcp`. The host runs DCR + authorize; complete consent with the deployment password. |
+| **Cursor** (Cloud Agent / HTTP MCP) | Server URL plus OAuth (or a minted access token in `Authorization: Bearer` if the host cannot do the redirect). Repo allow-list in `.cursor/environment.json` is not the same as installing auth. |
+| **Claude Code** | `claude mcp add --transport http google-drive-mcp <url>/mcp` and complete the OAuth redirect when prompted. |
+| **MCP Inspector** | Open the Cloud Run `/mcp` URL; Inspector follows well-known metadata, `/register`, `/authorize`, `/token`. |
 
-Do not put the token in the MCP URL or in tool arguments.
+Do not put tokens in the MCP URL or in tool arguments. Do not send `MCP_AUTH_TOKEN` as the `/mcp` Bearer.
 
 ## Spec-Driven Development
 

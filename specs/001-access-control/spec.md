@@ -34,11 +34,11 @@ An agent asks the MCP to discover, read, or search Drive content. Before any Dri
 
 **Why this priority**: Without an independently evaluated chain, every other retrieval guarantee is bypassable. Article VII is the security invariant this story encodes.
 
-**Independent Test**: Issue an unauthenticated call (`AUTHENTICATION_ERROR`, no Drive I/O). Issue a call for a Google-ungranted file id (`FILE_NOT_FOUND`, no content). Call `evaluate_chain` (or the US1 stub tool) with both `folder_id` and a `file_ids` entry that Google grants but that is not in that folder (`AUTHORIZATION_ERROR`, metadata get allowed, no export). Confirm none return the target content — never empty successful retrieval. The agent-visible tool that uses this argument shape is later `drive_grep`; Access Control MUST NOT implement grep.
+**Independent Test**: Issue an unauthenticated HTTP call (401, no Drive I/O) and an in-process call without an access token (`AUTHENTICATION_ERROR`, no Drive I/O). Issue a call for a Google-ungranted file id (`FILE_NOT_FOUND`, no content). Call `evaluate_chain` (or the US1 stub tool) with both `folder_id` and a `file_ids` entry that Google grants but that is not in that folder (`AUTHORIZATION_ERROR`, metadata get allowed, no export). Confirm none return the target content — never empty successful retrieval. The agent-visible tool that uses this argument shape is later `drive_grep`; Access Control MUST NOT implement grep.
 
 **Acceptance Scenarios**:
 
-1. **Given** no authenticated principal, **When** any retrieval call is issued, **Then** the MCP refuses the call as `AUTHENTICATION_ERROR` before any Drive resource is accessed.
+1. **Given** no authenticated principal, **When** any retrieval call is issued, **Then** the MCP refuses the call as HTTP 401 on Streamable HTTP (or `AUTHENTICATION_ERROR` in-process) before any Drive resource is accessed.
 2. **Given** an authenticated caller whose Google grant does not include a requested file, **When** they ask to retrieve that file (however the request is phrased), **Then** the MCP denies the call as `FILE_NOT_FOUND` without confirming that the file exists or returning its content.
 3. **Given** an authenticated caller who passes **both** a `folder_id` and a `file_id` that Google grants but that is not that folder or a descendant (v1 agent-visible shape: `drive_grep`; Access Control tests this via `evaluate_chain` / US1 stub with the same arguments), **When** they request that resource, **Then** the MCP denies the call as `AUTHORIZATION_ERROR` without returning that resource’s content. (`drive_read` / `drive_ls` / `drive_find` do not emit `AUTHORIZATION_ERROR` in v1; Google misses are `FILE_NOT_FOUND`.)
 4. **Given** a prior successful retrieval by the same deployment identity, **When** a later call is issued for a resource Google does not grant, **Then** the prior success is not treated as a credential and the new call is evaluated from the first chain step.
@@ -103,6 +103,7 @@ The MCP holds Google authorization material for the deployment's single Drive id
 
 - **AC-FR-010**: The MCP endpoint MUST require authentication; unauthenticated arbitrary access MUST NOT be possible.
 - **AC-FR-011**: Raw Google refresh or access tokens MUST NOT be exposed to the agent or to language-model context. The MCP holds a dedicated credential representation for the principal.
+- **AC-FR-012**: Streamable HTTP callers MUST authenticate with an OAuth 2.1 access token issued by this origin (authorization code + PKCE S256, dynamic client registration, RFC 9728 protected-resource metadata). `MCP_AUTH_TOKEN` is the resource-owner consent password and MUST NOT be accepted as a `/mcp` Bearer value. Google OAuth remains a separate deployment-identity mechanism and MUST NOT be the MCP login.
 
 #### Authorization and scope
 

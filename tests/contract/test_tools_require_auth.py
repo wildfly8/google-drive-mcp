@@ -22,14 +22,14 @@ def test_unauthenticated_tools_do_not_hit_content(runtime, fake_drive: FakeDrive
 
 
 def test_drive_grep_folder_and_outside_file_is_authorization_error(
-    runtime, fake_drive: FakeDrive
+    runtime, fake_drive: FakeDrive, authz
 ):
     fake_drive.reset_counters()
     result = handle_tool(
         runtime,
         "drive_grep",
         {"pattern": "secret", "folder_id": "folder-a", "file_ids": ["outside-doc"]},
-        "Bearer test-token",
+        authz,
     )
     assert result["category"] == "AUTHORIZATION_ERROR"
     assert fake_drive.content_count == 0

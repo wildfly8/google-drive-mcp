@@ -9,9 +9,12 @@ from __future__ import annotations
 import os
 from typing import Annotated, Any
 
-from pydantic import Field
+from pydantic import AnyHttpUrl, Field
 
 from google_drive_mcp.infra.config import Settings
+from google_drive_mcp.infra.mcp_auth.consent import consent_get, consent_post
+from google_drive_mcp.infra.mcp_auth.provider import DriveMcpOAuthProvider
+from google_drive_mcp.infra.mcp_auth.tokens import MCP_OAUTH_SCOPE, issuer_url, resource_url
 from google_drive_mcp.mcp.middleware import (
     Runtime,
     get_authorization,
@@ -74,15 +77,48 @@ def _authorization_from_ctx(ctx: Any) -> str | None:
     return get_authorization()
 
 
+def _auth_settings(settings: Settings):
+    from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
+
+    issuer = issuer_url(settings)
+    if not issuer:
+        raise ValueError(
+            "MCP_PUBLIC_URL is required for Streamable HTTP OAuth "
+            "(HTTPS origin, no path, no /mcp suffix)"
+        )
+    return AuthSettings(
+        issuer_url=AnyHttpUrl(issuer),
+        resource_server_url=AnyHttpUrl(resource_url(settings)),
+        client_registration_options=ClientRegistrationOptions(
+            enabled=True,
+            valid_scopes=[MCP_OAUTH_SCOPE],
+            default_scopes=[MCP_OAUTH_SCOPE],
+        ),
+        revocation_options=RevocationOptions(enabled=True),
+        required_scopes=[MCP_OAUTH_SCOPE],
+        validate_token_resource=True,
+    )
+
+
 def create_server(runtime: Runtime | None = None) -> MCPServer:
     runtime = runtime or build_runtime()
+    settings = runtime.settings
+    provider = DriveMcpOAuthProvider(settings)
     server = MCPServer(
         SERVER_NAME,
         title=SERVER_TITLE,
         description=SERVER_DESCRIPTION,
         instructions=SERVER_INSTRUCTIONS,
         version=SERVER_VERSION,
+        auth=_auth_settings(settings),
+        auth_server_provider=provider,
     )
+
+    @server.custom_route("/consent", methods=["GET", "POST"])
+    async def consent(request):
+        if request.method == "POST":
+            return await consent_post(request, provider, settings)
+        return consent_get(request, settings)
 
     @server.tool(
         title=DRIVE_LS_TITLE,

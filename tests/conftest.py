@@ -15,6 +15,13 @@ def settings() -> Settings:
 
 
 @pytest.fixture
+def authz(settings: Settings) -> str:
+    from google_drive_mcp.infra.mcp_auth.tokens import authorization_header
+
+    return authorization_header(settings)
+
+
+@pytest.fixture
 def fake_drive() -> FakeDrive:
     return FakeDrive.sample()
 
