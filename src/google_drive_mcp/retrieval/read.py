@@ -64,14 +64,17 @@ def drive_read(
 
 
 def validate_read_args(arguments: dict) -> None:
-    from google_drive_mcp.mcp.validation import require_file_id
+    from google_drive_mcp.mcp.validation import MAX_BYTES_MAX, MAX_BYTES_MIN, require_file_id
 
     file_id = arguments.get("file_id")
     if not isinstance(file_id, str):
         raise DomainError.of(ErrorCategory.INVALID_ARGUMENT)
     require_file_id(file_id)
+
     max_bytes = arguments.get("max_bytes")
     if max_bytes is not None and (
-        not isinstance(max_bytes, int) or max_bytes < 1 or max_bytes > 5_000_000
+        not isinstance(max_bytes, int)
+        or max_bytes < MAX_BYTES_MIN
+        or max_bytes > MAX_BYTES_MAX
     ):
         raise DomainError.of(ErrorCategory.INVALID_ARGUMENT)

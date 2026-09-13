@@ -215,19 +215,30 @@ def drive_grep(
 
 
 def validate_grep_args(arguments: dict) -> None:
-    from google_drive_mcp.mcp.validation import require_file_id
+    from google_drive_mcp.mcp.validation import (
+        CONTEXT_LINES_MAX,
+        CONTEXT_LINES_MIN,
+        MAX_MATCHES_MAX,
+        MAX_MATCHES_MIN,
+        require_file_id,
+    )
 
     pattern = arguments.get("pattern")
     if not isinstance(pattern, str) or not pattern:
         raise DomainError.of(ErrorCategory.INVALID_ARGUMENT)
+
     max_matches = arguments.get("max_matches")
     if max_matches is not None and (
-        not isinstance(max_matches, int) or max_matches < 1 or max_matches > 50
+        not isinstance(max_matches, int)
+        or max_matches < MAX_MATCHES_MIN
+        or max_matches > MAX_MATCHES_MAX
     ):
         raise DomainError.of(ErrorCategory.INVALID_ARGUMENT)
     context_lines = arguments.get("context_lines")
     if context_lines is not None and (
-        not isinstance(context_lines, int) or context_lines < 0 or context_lines > 10
+        not isinstance(context_lines, int)
+        or context_lines < CONTEXT_LINES_MIN
+        or context_lines > CONTEXT_LINES_MAX
     ):
         raise DomainError.of(ErrorCategory.INVALID_ARGUMENT)
     folder_id = arguments.get("folder_id")

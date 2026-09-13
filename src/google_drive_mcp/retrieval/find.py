@@ -117,9 +117,13 @@ def drive_find(
 
 
 def validate_find_args(arguments: dict) -> None:
+    from google_drive_mcp.mcp.validation import MAX_RESULTS_MAX, MAX_RESULTS_MIN
+
     max_results = arguments.get("max_results")
     if max_results is not None and (
-        not isinstance(max_results, int) or max_results < 1 or max_results > 40
+        not isinstance(max_results, int)
+        or max_results < MAX_RESULTS_MIN
+        or max_results > MAX_RESULTS_MAX
     ):
         raise DomainError.of(ErrorCategory.INVALID_ARGUMENT)
     for key in ("modified_after", "modified_before"):
