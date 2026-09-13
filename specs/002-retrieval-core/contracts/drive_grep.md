@@ -12,7 +12,7 @@ Must run Access Control chain first.
   "additionalProperties": false,
   "required": ["pattern"],
   "properties": {
-    "pattern": { "type": "string", "minLength": 1 },
+    "pattern": { "type": "string", "minLength": 1, "description": "Exact phrase in exported bytes (literal unless regex=true). Short term of art, not the whole user question. Not Drive fullText." },
     "file_ids": { "type": "array", "items": { "type": "string" } },
     "folder_id": { "type": "string" },
     "case_sensitive": { "type": "boolean", "default": true },

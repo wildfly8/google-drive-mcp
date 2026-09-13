@@ -123,7 +123,7 @@ Drive is the only source of truth. After a document changes in Drive, a later re
 
 #### Discovery — `drive_find`
 
-- **FR-010**: MUST discover `SearchCandidate[]` using metadata and/or Drive-native discovery, filterable by `name_pattern, mime_type, folder_id, modified_after, modified_before, trashed, max_results`. When `folder_id` is omitted, discovery runs within the default `RetrievalScope` (the whole Google grant for this deployment identity). When `folder_id` is named, discovery MUST include descendants of that folder, not only its immediate children.
+- **FR-010**: MUST discover `SearchCandidate[]` using metadata and/or Drive-native discovery, filterable by `name_pattern, mime_type, folder_id, modified_after, modified_before, trashed, max_results`. `name_pattern` is a case-insensitive **filename substring**, not a glob and not file contents. When `folder_id` is omitted, discovery runs within the default `RetrievalScope` (the whole Google grant for this deployment identity). When `folder_id` is named, discovery MUST include descendants of that folder, not only its immediate children.
 - **FR-011**: MUST NOT represent returned candidates as verified evidence (Article VIII).
 
 #### Inspection — `drive_read`
@@ -168,6 +168,8 @@ Drive is the only source of truth. After a document changes in Drive, a later re
 #### Capability surface
 
 - **FR-090**: The exposed surface is read/search/enumerate only: `drive_ls`, `drive_find`, `drive_read`, `drive_grep`. There MUST be no capability (and no code path) to write, delete, share, move, create, or modify permissions (Article V). Drive state after a valid call MUST equal Drive state before.
+- **FR-091**: `tools/list` MUST advertise a non-empty description for each tool that states purpose, when to use, when not to use, and at least one positive and one negative call example. Input JSON Schema MUST include per-property descriptions and the same numeric / id-pattern bounds as validation. Descriptions MUST be host-agnostic (FR-102).
+- **FR-092**: MCP initialize `instructions` MUST state that the host agent extracts search terms from the user question; the server MUST NOT parse natural language, MUST NOT run semantic search, and MUST NOT synthesize a final answer (Article IV).
 
 #### Ephemerality, agnosticism, budgets
 

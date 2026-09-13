@@ -12,7 +12,7 @@ Must run Access Control chain first. Google-missing folder → `FILE_NOT_FOUND`.
   "additionalProperties": false,
   "properties": {
     "folder_id": { "type": "string", "description": "Omit for Drive root (`root`); projects default_whole_grant onto My Drive root children" },
-    "max_results": { "type": "integer", "minimum": 1, "maximum": 40 },
+    "max_results": { "type": "integer", "minimum": 1, "maximum": 40, "description": "Page size; remaining children → PARTIAL + next_page_token" },
     "page_token": { "type": "string" }
   }
 }

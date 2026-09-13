@@ -11,7 +11,7 @@ Must run Access Control chain first. Google-missing folder → `FILE_NOT_FOUND`.
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "name_pattern": { "type": "string" },
+    "name_pattern": { "type": "string", "description": "Case-insensitive substring of the filename only — not a glob, not file contents, not a natural-language question" },
     "mime_type": { "type": "string" },
     "folder_id": { "type": "string" },
     "modified_after": { "type": "string", "format": "date-time" },
