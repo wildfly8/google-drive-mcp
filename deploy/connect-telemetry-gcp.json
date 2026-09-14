@@ -1,0 +1,16 @@
+{
+  "dashboard_display_name": "onto-kb connect counter",
+  "service_name": "onto-kb",
+  "metrics": [
+    {
+      "name": "onto_kb_oauth_connects",
+      "event": "oauth_connect",
+      "description": "Successful MCP OAuth Connects (authorization-code token issuance). Not people. Label host_family only."
+    },
+    {
+      "name": "onto_kb_drive_first_uses",
+      "event": "drive_first_use",
+      "description": "First authenticated drive_* call per connect (log entry count). Not people. Label host_family only."
+    }
+  ]
+}

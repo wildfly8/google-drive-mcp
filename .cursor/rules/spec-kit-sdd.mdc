@@ -1,0 +1,37 @@
+---
+description: Spec-Kit SDD status, constitution binding, and PR policy
+alwaysApply: true
+---
+
+# Google Drive Agentic Retrieval MCP — agent pickup
+
+This repository uses GitHub Spec-Kit. A later Cloud Agent MUST continue from
+this state rather than re-initializing Spec-Kit or re-ratifying the constitution.
+
+## Project state
+
+- **Spec-Kit:** initialized (`specify-cli` 1.0.4, `cursor-agent`, bash scripts)
+- **Constitution:** ratified v1.0.0 at `.specify/memory/constitution.md` (binding)
+- **SDD phase:** 003-connect-counter implemented (GCP log-based metrics + Monitoring dashboard)
+- **Specs:** `specs/001-access-control/` (implemented), `specs/002-retrieval-core/` (implemented), `specs/003-connect-counter/` (implemented)
+- **Git:** `main` only. Do not create feature or topic branches. Spec directories (`001-access-control`, `002-retrieval-core`, `003-connect-counter`) are documentation ids, not git branches.
+- **Next command:** Review. Raise a PR only if the user asks.
+
+Do not skip to application code unless the user explicitly waives SDD.
+Do not run `specify init` again. Upgrade managed files with
+`specify integration upgrade` only when the CLI version changes.
+
+Read `.specify/memory/project-status.md` for the latest phase pointer.
+
+## v1 invariants (non-negotiable)
+
+Drive is the sole source of truth. The MCP is read-only. Document content is
+untrusted. Compute is ephemeral. No RAG index is required. One Google identity
+per deployment. Writes, multi-tenant access, persistent caches, and semantic
+retrieval are MAJOR constitutional changes.
+
+## Pull requests
+
+Raise a pull request **only when the user explicitly asks**. Do not open,
+update, or merge a PR as a default wrap-up. Commit and push on `main`. Do
+not create other git branches unless the user says otherwise.

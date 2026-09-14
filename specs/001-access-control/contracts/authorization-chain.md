@@ -1,0 +1,75 @@
+# Contract: Authorization chain
+
+Every MCP tool invocation MUST run this sequence. Retrieval tools MUST NOT call Drive **content** adapters (export, `get_media`, body-bearing list walks) until step 4 has passed.
+
+```text
+1. agent request
+2. MCP authentication     → fail AUTHENTICATION_ERROR (HTTP 401 on Streamable HTTP `/mcp`)
+     (OAuth 2.1 access token issued by this origin; see mcp-auth.md.
+      MCP_AUTH_TOKEN is the consent password and MUST fail this step if sent as Bearer.)
+3. MCP authorization      → fail AUTHORIZATION_ERROR (argument-level only; no Drive I/O)
+     (construct RetrievalScope from this call’s folder_id / file_ids / file_id)
+4. Google authorization   → fail FILE_NOT_FOUND
+     (metadata-only files.get as needed)
+     → fail AUTHORIZATION_ERROR if Google grants a caller-named file_id
+        that is outside this call’s folder_id (or outside DRIVE_ALLOWED_FOLDER_ID)
+5. resource (tool body: list / export / exact search)
+```
+
+## RetrievalScope construction
+
+The type is defined in Retrieval Core (`specs/002-retrieval-core/data-model.md`). This context **enforces** it. Shared implementation: `src/google_drive_mcp/domain/retrieval_scope.py`.
+
+From **this call’s** tool arguments, then optionally narrowed by deployment
+`DRIVE_ALLOWED_FOLDER_ID` (cannot grant more than Google):
+
+| Arguments | `default_whole_grant` | Scope |
+| --- | --- | --- |
+| Neither `folder_id` nor `file_ids` / `file_id` | `true` unless `DRIVE_ALLOWED_FOLDER_ID` is set | Whole Google grant, or that folder when the env var is set |
+| Only `folder_id` | `false` | That folder (ls: immediate children; find/grep: folder + descendants) |
+| Only `file_ids` or `file_id` | `false` | Exactly those ids |
+| Both `folder_id` and `file_ids` | `false` | Intersection: named files that lie in the folder (including the folder id itself) |
+
+When `DRIVE_ALLOWED_FOLDER_ID` is set, omitted `folder_id` on `drive_ls` / `drive_find` / `drive_grep` is rewritten to that folder (not My Drive `root`). Named folder or file ids that Google grants but that are not that folder or a descendant MUST return `AUTHORIZATION_ERROR` (`reason_code: outside_allowed_folder`) with no content.
+
+`drive_ls` with omitted `folder_id` and **no** deployment allow-list still uses `default_whole_grant = true`. Listing **projects** that grant onto My Drive `root`’s immediate children (Retrieval Core invariant). That projection is not an MCP authorization failure.
+
+## Invariants
+
+- Step N is not entered unless N-1 returned pass.
+- Document body, agent rationale, and prior `ALLOW` results are not inputs to any step.
+- Drive **content** adapters (export, `get_media`) are not invoked on steps 2–3 failure, nor on step-4 `FILE_NOT_FOUND` / `AUTHORIZATION_ERROR`.
+- Step 4 MAY call metadata-only `files.get` (id, name, mime, parents). Contract tests MUST count content I/O separately from metadata I/O.
+- Write/share/delete methods do not exist on the adapter (nothing to authorize).
+- Domain helper `is_within_scope(file_id, scope, parent_lookup)` is the single descendant check used by this chain **and** by retrieval walks. `parent_lookup` is a port; production uses Drive metadata, tests may inject a map.
+
+## MCP authorization (step 3) — no Drive I/O
+
+Step 3 only builds the `RetrievalScope` object and rejects **argument-level** contradictions that do not require Drive:
+
+- Unknown extra resource ids that are not tool arguments cannot appear (tools have no side channel).
+- v1 without `DRIVE_ALLOWED_FOLDER_ID` has no ambient/deployment allow-list, so `default_whole_grant` and single-axis scopes **pass** step 3.
+- `drive_read` (`file_id` only) therefore **never** returns `AUTHORIZATION_ERROR` unless a deployment allow-list is configured and Google grants a file outside that folder.
+- `drive_ls` / `drive_find` with only `folder_id` (or omitted folder) **never** return `AUTHORIZATION_ERROR` in v1 for “wrong folder” unless a deployment allow-list is configured. A Google-missing folder is `FILE_NOT_FOUND`.
+
+Step 3 MUST NOT walk parents and MUST NOT call the Drive adapter.
+
+## Google authorization (step 4)
+
+- Use only `drive.readonly`.
+- On Google not-found or permission-denied-as-not-found: `FILE_NOT_FOUND`, no name/link/content.
+- The MCP MUST NOT implement a second allow-list that could return **content** Google would deny.
+- When the call names **both** `folder_id` and `file_ids` (v1 agent-visible: `drive_grep`; Access Control `evaluate_chain` uses the same arguments): for each named `file_id`, metadata `files.get` then `is_within_scope`.
+  - Google does not grant the file → `FILE_NOT_FOUND` (no existence leak; do not mention the folder check).
+  - Google grants the file but it is not the folder and not a descendant → `AUTHORIZATION_ERROR`. The caller already named both ids; implying existence of that named id is allowed.
+- After `ALLOW`, later tool I/O can still 404 (race, export-only failure). Map those with the **same** `map_google_error()` as step 4 (`src/google_drive_mcp/domain/google_errors.py`). Retrieval Core MUST NOT invent a second 404 mapping.
+
+## Reachable `AUTHORIZATION_ERROR` in v1 (per tool)
+
+| Tool | `AUTHORIZATION_ERROR`? |
+| --- | --- |
+| `drive_read` | Yes, only when `DRIVE_ALLOWED_FOLDER_ID` is set and Google grants a file outside that folder |
+| `drive_ls` | Yes, only when `DRIVE_ALLOWED_FOLDER_ID` is set and Google grants a named folder outside that folder |
+| `drive_find` | Same as `drive_ls` for a named `folder_id` outside the allow-list |
+| `drive_grep` | Yes, when **both** `folder_id` and `file_ids` are set and a named file is outside that folder after a granted metadata get; also when a named id is outside `DRIVE_ALLOWED_FOLDER_ID` |
+| `evaluate_chain` (same args) | Same as `drive_grep` folder∩file_ids; used so Access Control can test AUTH without owning grep |
