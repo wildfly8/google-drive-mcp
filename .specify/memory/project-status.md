@@ -7,15 +7,16 @@ SDD phase changes (specify / plan / tasks / implement / converge).
 | --- | --- |
 | Spec-Kit | Initialized (specify-cli 1.0.4, cursor-agent, bash) |
 | Constitution | Ratified v1.0.0 (`.specify/memory/constitution.md`) |
-| Current phase | 003-connect-counter implemented |
-| Next command | Review. Push `main` only unless the user asks for a PR. |
-| Feature specs | `specs/001-access-control/spec.md`, `specs/002-retrieval-core/spec.md`, `specs/003-connect-counter/spec.md` |
-| Git branch | `main` only (spec dirs are not git branches) |
-| Implementation | Package in `src/google_drive_mcp/`; connect counter is `GET /stats` plus GCP log-based metrics / dashboard **onto-kb connect counter** |
+| Current phase | 004-paid-subscription implementing |
+| Next command | Finish Stripe Secret Manager keys on Cloud Run, then `/speckit-converge` |
+| Feature specs | `specs/001-access-control/spec.md`, `specs/002-retrieval-core/spec.md`, `specs/003-connect-counter/spec.md`, `specs/004-paid-subscription/spec.md` |
+| Git branch | Spec dirs are documentation ids |
+| Implementation | Package in `src/google_drive_mcp/`; paywall is Stripe Checkout $20/month + MCP OAuth entitlement |
 | Pull requests | Only when the user explicitly asks |
 
 v1 scope remains: one authenticated Google identity, read-only agentic
-retrieval over Google Drive, no application-owned RAG pipeline.
+retrieval over Google Drive, no application-owned RAG pipeline. 004 is a
+MINOR paywall on that identity, not per-subscriber Google accounts.
 
 `/speckit-analyze` is **not** the next step: it is a pre-implement artifact
 check. After implement, `/speckit-converge` is the spec-vs-code gate.

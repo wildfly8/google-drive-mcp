@@ -31,6 +31,7 @@ _PAGE = """\
 </head>
 <body>
   <h1>Add this connector in Claude</h1>
+  {pay_block}
   <p>Read-only Google Drive tools. This server cannot write, delete, or share.
      Claude still has two prompts this origin cannot skip: <strong>Always allow</strong>
      and enabling the connector in a chat.</p>
@@ -89,6 +90,14 @@ def setup_get(
         extras.append(f'<a href="{html.escape(str(logs), quote=True)}">Connect logs</a>')
     if extras:
         gcp_links = " · " + " · ".join(extras)
+    pay_block = ""
+    if settings.mcp_subscription_required:
+        pay_block = (
+            "<p><strong>$20 USD / month required.</strong> "
+            '<a href="/subscribe">Pay on Stripe Checkout</a> in this browser first, '
+            "then Connect. Cards are entered on Stripe, not here. "
+            "This page does not show the operator’s bank details.</p>"
+        )
     if settings.mcp_oauth_auto_approve:
         auth_step = "Your browser returns to Claude. There is no deployment password."
         auth_note = (
@@ -107,6 +116,7 @@ def setup_get(
     return HTMLResponse(
         _PAGE.format(
             mcp_url=html.escape(mcp_url, quote=True),
+            pay_block=pay_block,
             auth_step=auth_step,
             auth_note=auth_note,
             stats_line=html.escape(stats_line),

@@ -11,6 +11,14 @@ from typing import Annotated, Any
 
 from pydantic import AnyHttpUrl, Field
 
+from google_drive_mcp.infra.billing.entitlement import COOKIE_NAME, set_current_scid, verify_entitlement
+from google_drive_mcp.infra.billing.routes import (
+    stripe_webhook_post,
+    subscribe_checkout_post,
+    subscribe_complete_get,
+    subscribe_get,
+)
+from google_drive_mcp.infra.billing.stripe_api import StripeHttpGateway
 from google_drive_mcp.infra.config import Settings
 from google_drive_mcp.infra.mcp_auth.chatgpt_compat import (
     chatgpt_compat_routes,
@@ -68,7 +76,10 @@ except ImportError:  # mcp 1.x
 
 def build_runtime(settings: Settings | None = None, drive: Any | None = None) -> Runtime:
     settings = settings or Settings.from_env()
-    return Runtime(settings=settings, drive=drive)
+    billing = None
+    if settings.stripe_secret_key.get_secret_value().strip():
+        billing = StripeHttpGateway(settings)
+    return Runtime(settings=settings, drive=drive, billing=billing)
 
 
 def _authorization_from_ctx(ctx: Any) -> str | None:
@@ -111,7 +122,9 @@ def _auth_settings(settings: Settings):
 def create_server(runtime: Runtime | None = None) -> MCPServer:
     runtime = runtime or build_runtime()
     settings = runtime.settings
-    provider = DriveMcpOAuthProvider(settings, telemetry=runtime.telemetry)
+    provider = DriveMcpOAuthProvider(
+        settings, telemetry=runtime.telemetry, billing=runtime.billing
+    )
     server = MCPServer(
         SERVER_NAME,
         title=SERVER_TITLE,
@@ -131,6 +144,25 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
     @server.custom_route("/setup", methods=["GET"])
     async def claude_setup(request):
         return setup_get(request, settings, stats_snapshot(runtime.telemetry))
+
+    @server.custom_route("/subscribe", methods=["GET"])
+    async def subscribe_page(request):
+        from google_drive_mcp.infra.billing.gateway import InactiveBilling as _Inactive
+
+        configured = not isinstance(runtime.billing, _Inactive)
+        return subscribe_get(settings, configured=configured)
+
+    @server.custom_route("/subscribe/checkout", methods=["POST"])
+    async def subscribe_checkout(request):
+        return await subscribe_checkout_post(request, settings, runtime.billing)
+
+    @server.custom_route("/subscribe/complete", methods=["GET"])
+    async def subscribe_complete(request):
+        return await subscribe_complete_get(request, settings, runtime.billing)
+
+    @server.custom_route("/webhooks/stripe", methods=["POST"])
+    async def stripe_hook(request):
+        return await stripe_webhook_post(request, settings)
 
     @server.custom_route("/stats", methods=["GET"])
     async def connect_stats(request):
@@ -403,14 +435,34 @@ class _AuthorizationHeaderMiddleware:
     starts the MCP session manager.
     """
 
-    def __init__(self, app):
+    def __init__(self, app, settings: Settings | None = None):
         self.app = app
+        self.settings = settings
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "http":
             headers = {k.decode(): v.decode() for k, v in scope.get("headers", [])}
             set_authorization(headers.get("authorization"))
             reset_request_drive()
+            scid = None
+            if self.settings is not None:
+                from urllib.parse import parse_qs
+
+                cookies = headers.get("cookie") or ""
+                raw = None
+                for part in cookies.split(";"):
+                    if "=" not in part:
+                        continue
+                    name, value = part.strip().split("=", 1)
+                    if name == COOKIE_NAME:
+                        raw = value
+                        break
+                scid = verify_entitlement(raw, self.settings)
+                if scid is None:
+                    query = (scope.get("query_string") or b"").decode()
+                    token = (parse_qs(query).get("entitlement") or [None])[0]
+                    scid = verify_entitlement(token, self.settings)
+            set_current_scid(scid)
         await self.app(scope, receive, send)
 
 
@@ -424,7 +476,7 @@ def streamable_app(runtime: Runtime | None = None, *, json_response: bool = True
     runtime = runtime or getattr(server, "_runtime", None) or build_runtime()
     app.router.routes = [*chatgpt_compat_routes(runtime.settings), *app.router.routes]
     install_chatgpt_mcp_http(app, runtime.settings)
-    app.add_middleware(_AuthorizationHeaderMiddleware)
+    app.add_middleware(_AuthorizationHeaderMiddleware, settings=runtime.settings)
     return app
 
 

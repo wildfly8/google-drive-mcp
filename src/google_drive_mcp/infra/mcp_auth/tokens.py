@@ -78,10 +78,13 @@ def mint_access_token(
     client_id: str = "test-client",
     ttl: int | None = None,
     connect_id: str | None = None,
+    scid: str | None = None,
 ) -> str:
     extra: dict[str, Any] = {"resource": resource_url(settings)}
     if connect_id:
         extra["cid"] = connect_id
+    if scid:
+        extra["scid"] = scid
     claims = _base_claims(
         settings,
         typ=TYP_ACCESS,
@@ -94,11 +97,17 @@ def mint_access_token(
 
 
 def mint_refresh_token(
-    settings: Settings, *, client_id: str, connect_id: str | None = None
+    settings: Settings,
+    *,
+    client_id: str,
+    connect_id: str | None = None,
+    scid: str | None = None,
 ) -> str:
     extra: dict[str, Any] = {"resource": resource_url(settings)}
     if connect_id:
         extra["cid"] = connect_id
+    if scid:
+        extra["scid"] = scid
     claims = _base_claims(
         settings,
         typ=TYP_REFRESH,
@@ -118,19 +127,23 @@ def mint_authorization_code(
     redirect_uri_provided_explicitly: bool,
     code_challenge: str,
     resource: str,
+    scid: str | None = None,
 ) -> str:
+    extra: dict[str, Any] = {
+        "resource": resource,
+        "redirect_uri": redirect_uri,
+        "redirect_uri_provided_explicitly": redirect_uri_provided_explicitly,
+        "code_challenge": code_challenge,
+    }
+    if scid:
+        extra["scid"] = scid
     claims = _base_claims(
         settings,
         typ=TYP_CODE,
         aud=resource_url(settings),
         client_id=client_id,
         ttl=settings.mcp_authorization_code_ttl_seconds,
-        extra={
-            "resource": resource,
-            "redirect_uri": redirect_uri,
-            "redirect_uri_provided_explicitly": redirect_uri_provided_explicitly,
-            "code_challenge": code_challenge,
-        },
+        extra=extra,
     )
     return encode_jwt(claims, signing_key(settings))
 

@@ -23,12 +23,17 @@ class Settings(BaseModel):
     mcp_access_token_ttl_seconds: int = 3600
     mcp_refresh_token_ttl_seconds: int = 2592000
     mcp_authorization_code_ttl_seconds: int = 120
+    mcp_subscription_required: bool = False
+    stripe_secret_key: SecretStr = SecretStr("")
+    stripe_webhook_secret: SecretStr = SecretStr("")
+    stripe_price_id: str = ""
 
     @classmethod
     def from_env(cls) -> Settings:
         token = os.environ.get("MCP_AUTH_TOKEN", "")
         principal = os.environ.get("MCP_PRINCIPAL_ID", "deployment")
         auto = os.environ.get("MCP_OAUTH_AUTO_APPROVE", "").strip().lower()
+        paid = os.environ.get("MCP_SUBSCRIPTION_REQUIRED", "").strip().lower()
         return cls(
             mcp_auth_token=SecretStr(token),
             mcp_principal_id=principal,
@@ -42,6 +47,10 @@ class Settings(BaseModel):
             mcp_public_url=os.environ.get("MCP_PUBLIC_URL", "").strip(),
             mcp_oauth_auto_approve=auto in {"1", "true", "yes"},
             mcp_oauth_signing_key=SecretStr(os.environ.get("MCP_OAUTH_SIGNING_KEY", "")),
+            mcp_subscription_required=paid in {"1", "true", "yes"},
+            stripe_secret_key=SecretStr(os.environ.get("STRIPE_SECRET_KEY", "")),
+            stripe_webhook_secret=SecretStr(os.environ.get("STRIPE_WEBHOOK_SECRET", "")),
+            stripe_price_id=os.environ.get("STRIPE_PRICE_ID", "").strip(),
         )
 
     @classmethod

@@ -21,7 +21,7 @@ See the constitution for the full invariant set (Articles I–XV).
 
 This is standard **MCP Streamable HTTP** (`POST /mcp`). The host model — not this server — parses the user question and chooses `drive_ls` / `drive_find` / `drive_read` / `drive_grep` arguments. `tools/list` advertises when to use each tool and positive/negative examples.
 
-**Auth:** [MCP OAuth 2.1](https://modelcontextprotocol.io/specification/2025-03-26/basic/authorization) on this origin (authorization code + PKCE, dynamic client registration, protected-resource metadata). Hosts send `Authorization: Bearer <access_token>` on `POST /mcp`. Public Cloud Run auto-approves the OAuth redirect (no `/consent` password). `MCP_AUTH_TOKEN` is still not an API key.
+**Auth:** [MCP OAuth 2.1](https://modelcontextprotocol.io/specification/2025-03-26/basic/authorization) on this origin (authorization code + PKCE, dynamic client registration, protected-resource metadata). Hosts send `Authorization: Bearer <access_token>` on `POST /mcp`. **USD 20 / month** via [Stripe Checkout](https://onto-kb-kxjtmypvfa-uc.a.run.app/subscribe) is required before Connect. Public Cloud Run still auto-approves the OAuth consent step *after* a paid period. `MCP_AUTH_TOKEN` is still not an API key.
 
 ### Add this connector in Claude
 
@@ -33,7 +33,7 @@ Read-only Google Drive tools. This server cannot write, delete, or share. Claude
 https://onto-kb-kxjtmypvfa-uc.a.run.app/mcp
 ```
 
-The same steps are on one page: [https://onto-kb-kxjtmypvfa-uc.a.run.app/setup](https://onto-kb-kxjtmypvfa-uc.a.run.app/setup).
+The same steps are on one page: [https://onto-kb-kxjtmypvfa-uc.a.run.app/setup](https://onto-kb-kxjtmypvfa-uc.a.run.app/setup). Pay first: [https://onto-kb-kxjtmypvfa-uc.a.run.app/subscribe](https://onto-kb-kxjtmypvfa-uc.a.run.app/subscribe) ($20 USD/month on Stripe; this origin never shows the operator’s bank or collects card numbers).
 
 1. Claude Web → Customize → Connectors → **+** → Add custom connector.
 2. Name: **onto-kb**. Paste the URL above.
@@ -78,6 +78,7 @@ Feature specs (ready for implementation):
 - [Access Control Boundary](specs/001-access-control/spec.md) — who may act, and on what authority
 - [Retrieval Core](specs/002-retrieval-core/spec.md) — discover, read, exact-search once a call is cleared
 - [Non-PII Connect Counter](specs/003-connect-counter/spec.md) — Connect and first Drive-use counts on `/stats` and the GCP dashboard **onto-kb connect counter**
+- [Mandatory paid subscription](specs/004-paid-subscription/spec.md) — $20 USD/month Stripe Checkout before MCP Connect
 
 Repeat implement and converge until converge reports **Converged**.
 

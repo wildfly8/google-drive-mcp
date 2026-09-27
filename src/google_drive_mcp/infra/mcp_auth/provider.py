@@ -23,6 +23,8 @@ from mcp.server.auth.provider import (
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
 from google_drive_mcp.domain.connect_telemetry import host_family_from_client_id
+from google_drive_mcp.infra.billing.entitlement import current_scid
+from google_drive_mcp.infra.billing.gateway import BillingGateway, InactiveBilling
 from google_drive_mcp.infra.config import Settings
 from google_drive_mcp.infra.mcp_auth.cimd import fetch_cimd_client
 from google_drive_mcp.infra.telemetry.recorder import ConnectRecorder
@@ -48,10 +50,12 @@ class DriveMcpOAuthProvider(
     OAuthAuthorizationServerProvider[AuthorizationCode, RefreshToken, AccessToken]
 ):
     def __init__(
-        self, settings: Settings, telemetry: ConnectRecorder | None = None
+        self, settings: Settings, telemetry: ConnectRecorder | None = None,
+        billing: BillingGateway | None = None,
     ) -> None:
         self.settings = settings
         self.telemetry = telemetry or ConnectRecorder()
+        self.billing = billing or InactiveBilling()
         self.clients: dict[str, OAuthClientInformationFull] = {}
         self._used_code_jti: set[str] = set()
         self._revoked_jti: set[str] = set()
@@ -93,6 +97,11 @@ class DriveMcpOAuthProvider(
             raise AuthorizeError(error="invalid_scope", error_description="only drive.read is supported")
         resource = self._bound_resource(params.resource)
         redirect = str(params.redirect_uri)
+        scid: str | None = None
+        if self.settings.mcp_subscription_required:
+            scid = current_scid()
+            if not scid or not self.billing.is_subscription_active(scid):
+                return f"{issuer_url(self.settings).rstrip('/')}/subscribe"
         if self.settings.mcp_oauth_auto_approve:
             code = mint_authorization_code(
                 self.settings,
@@ -101,6 +110,7 @@ class DriveMcpOAuthProvider(
                 redirect_uri_provided_explicitly=params.redirect_uri_provided_explicitly,
                 code_challenge=params.code_challenge,
                 resource=resource,
+                scid=scid,
             )
             return construct_redirect_uri(
                 redirect,
@@ -130,6 +140,7 @@ class DriveMcpOAuthProvider(
             redirect_uri_provided_explicitly=bool(claims["redirect_uri_provided_explicitly"]),
             code_challenge=str(claims["code_challenge"]),
             resource=str(claims["resource"]),
+            scid=current_scid() if self.settings.mcp_subscription_required else None,
         )
         state = claims.get("state")
         return code, str(state) if state is not None else None
@@ -168,10 +179,15 @@ class DriveMcpOAuthProvider(
             raise TokenError(error="invalid_grant", error_description="authorization code does not exist")
         self._used_code_jti.add(jti)
         connect_id = str(uuid.uuid4())
+        scid = claims.get("scid")
+        sid = str(scid) if isinstance(scid, str) and scid else None
+        if self.settings.mcp_subscription_required:
+            if not sid or not self.billing.is_subscription_active(sid):
+                raise TokenError(error="invalid_grant", error_description="subscription inactive")
         self.telemetry.record_oauth_connect(
             connect_id, host_family_from_client_id(client.client_id)
         )
-        return self._issue_tokens(client.client_id, connect_id=connect_id)
+        return self._issue_tokens(client.client_id, connect_id=connect_id, scid=sid)
 
     async def load_refresh_token(
         self, client: OAuthClientInformationFull, refresh_token: str
@@ -207,7 +223,12 @@ class DriveMcpOAuthProvider(
             raise TokenError(error="invalid_scope", error_description="only drive.read is supported")
         connect_id = claims.get("cid")
         cid = str(connect_id) if isinstance(connect_id, str) and connect_id else None
-        return self._issue_tokens(client.client_id, connect_id=cid)
+        scid = claims.get("scid")
+        sid = str(scid) if isinstance(scid, str) and scid else None
+        if self.settings.mcp_subscription_required:
+            if not sid or not self.billing.is_subscription_active(sid):
+                raise TokenError(error="invalid_grant", error_description="subscription inactive")
+        return self._issue_tokens(client.client_id, connect_id=cid, scid=sid)
 
     async def load_access_token(self, token: str) -> AccessToken | None:
         claims = verify_access_claims(token, self.settings)
@@ -233,12 +254,14 @@ class DriveMcpOAuthProvider(
                 self._revoked_jti.add(str(claims["jti"]))
                 return
 
-    def _issue_tokens(self, client_id: str, *, connect_id: str | None = None) -> OAuthToken:
+    def _issue_tokens(
+        self, client_id: str, *, connect_id: str | None = None, scid: str | None = None
+    ) -> OAuthToken:
         access = mint_access_token(
-            self.settings, client_id=client_id, connect_id=connect_id
+            self.settings, client_id=client_id, connect_id=connect_id, scid=scid
         )
         refresh = mint_refresh_token(
-            self.settings, client_id=client_id, connect_id=connect_id
+            self.settings, client_id=client_id, connect_id=connect_id, scid=scid
         )
         return OAuthToken(
             access_token=access,

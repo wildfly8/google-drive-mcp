@@ -78,6 +78,18 @@ if secret_exists GOOGLE_REFRESH_TOKEN; then
   SECRET_BIND="${SECRET_BIND},GOOGLE_REFRESH_TOKEN=GOOGLE_REFRESH_TOKEN:latest"
   GRANT_SECRETS+=(GOOGLE_REFRESH_TOKEN)
 fi
+if secret_exists STRIPE_SECRET_KEY; then
+  SECRET_BIND="${SECRET_BIND},STRIPE_SECRET_KEY=STRIPE_SECRET_KEY:latest"
+  GRANT_SECRETS+=(STRIPE_SECRET_KEY)
+fi
+if secret_exists STRIPE_WEBHOOK_SECRET; then
+  SECRET_BIND="${SECRET_BIND},STRIPE_WEBHOOK_SECRET=STRIPE_WEBHOOK_SECRET:latest"
+  GRANT_SECRETS+=(STRIPE_WEBHOOK_SECRET)
+fi
+if secret_exists STRIPE_PRICE_ID; then
+  SECRET_BIND="${SECRET_BIND},STRIPE_PRICE_ID=STRIPE_PRICE_ID:latest"
+  GRANT_SECRETS+=(STRIPE_PRICE_ID)
+fi
 
 echo "Granting runtime SA Secret Manager access..."
 for name in "${GRANT_SECRETS[@]}"; do
@@ -128,9 +140,13 @@ DEPLOY_ENV="${DEPLOY_ENV},DRIVE_ALLOWED_FOLDER_ID=${ALLOWED_FOLDER}"
 DEPLOY_ENV="${DEPLOY_ENV},MCP_OAUTH_AUTO_APPROVE=true"
 DEPLOY_ENV="${DEPLOY_ENV},GOOGLE_CLOUD_PROJECT=${PROJECT}"
 DEPLOY_ENV="${DEPLOY_ENV},MCP_STATS_FROM_LOGS=true"
+DEPLOY_ENV="${DEPLOY_ENV},MCP_SUBSCRIPTION_REQUIRED=true"
 DEPLOY_ARGS+=(--set-env-vars="${DEPLOY_ENV}")
 
 echo "Deploying ${SERVICE} to Cloud Run (${REGION})..."
+if [[ "${DEPLOY_ENV}" == *MCP_SUBSCRIPTION_REQUIRED=true* ]] && ! secret_exists STRIPE_SECRET_KEY; then
+  echo "WARNING: Paywall is on but STRIPE_SECRET_KEY is missing. Connect will fail until Stripe secrets exist." >&2
+fi
 gcloud "${DEPLOY_ARGS[@]}"
 
 URL="$(gcloud run services describe "$SERVICE" --project="$PROJECT" --region="$REGION" --format='value(status.url)')"
