@@ -7,11 +7,11 @@ SDD phase changes (specify / plan / tasks / implement / converge).
 | --- | --- |
 | Spec-Kit | Initialized (specify-cli 1.0.4, cursor-agent, bash) |
 | Constitution | Ratified v1.0.0 (`.specify/memory/constitution.md`) |
-| Current phase | 004-paid-subscription implemented (live paywall on Cloud Run `onto-kb-00015-rh4`; every granted folder searchable; 20 MB per file) |
+| Current phase | 004-paid-subscription implemented (live paywall on Cloud Run `onto-kb-00016-tsq`; every granted folder searchable; 20 MB per file) |
 | Next command | `/speckit-converge` |
 | Feature specs | `specs/001-access-control/spec.md`, `specs/002-retrieval-core/spec.md`, `specs/003-connect-counter/spec.md`, `specs/004-paid-subscription/spec.md` |
 | Git branch | Spec dirs are documentation ids |
-| Implementation | Package in `src/google_drive_mcp/`; paywall is Stripe Checkout $20/month. Active subscriptions keep any connected AI chat app working; receipt email resumes a browser without a second charge. Public site: `https://wisdomspringtech.github.io/` |
+| Implementation | Package in `src/google_drive_mcp/`; paywall is Stripe Checkout $20/month. Active subscriptions keep any connected AI chat app working. A passkey saved in the paying browser continues that subscription in another browser, with no receipt email and no second charge. Public site: `https://wisdomspringtech.github.io/` |
 | Pull requests | Only when the user explicitly asks |
 
 v1 scope remains: one authenticated Google identity, read-only agentic
