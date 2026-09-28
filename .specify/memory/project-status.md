@@ -7,7 +7,7 @@ SDD phase changes (specify / plan / tasks / implement / converge).
 | --- | --- |
 | Spec-Kit | Initialized (specify-cli 1.0.4, cursor-agent, bash) |
 | Constitution | Ratified v1.0.0 (`.specify/memory/constitution.md`) |
-| Current phase | 004-paid-subscription implemented (live paywall on Cloud Run `onto-kb-00013-4fb`; every granted folder searchable; 20 MB per file) |
+| Current phase | 004-paid-subscription implemented (live paywall on Cloud Run `onto-kb-00014-f72`; every granted folder searchable; 20 MB per file) |
 | Next command | `/speckit-converge` |
 | Feature specs | `specs/001-access-control/spec.md`, `specs/002-retrieval-core/spec.md`, `specs/003-connect-counter/spec.md`, `specs/004-paid-subscription/spec.md` |
 | Git branch | Spec dirs are documentation ids |
