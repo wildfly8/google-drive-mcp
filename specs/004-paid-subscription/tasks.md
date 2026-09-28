@@ -25,9 +25,9 @@
 
 ## Phase 5: US5 public business page
 
-- [ ] T011 Static public page `docs/index.html` named WisdomSpringTech, $20/month onto-kb, link to connector setup, no bank/card
-- [ ] T012 Publish that page on free GitHub Pages and record the HTTPS URL in quickstart
-- [ ] T013 Test the page source contains the business name, price, and setup link
+- [x] T011 Static public page `docs/index.html` named WisdomSpringTech, $20/month onto-kb, link to connector setup, no bank/card
+- [x] T012 Push `gh-pages` (page at repo root) and record `https://wildfly8.github.io/google-drive-mcp/`. Enabling the Pages source is a repo setting this GitHub App cannot change (API 403).
+- [x] T013 Test the page source contains the business name, price, and setup link
 
 ## Phase 6: Pickup
 

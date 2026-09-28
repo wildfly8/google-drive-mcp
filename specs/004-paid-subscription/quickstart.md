@@ -1,6 +1,6 @@
 # Quickstart: 004 Paid Subscription
 
-0. Business website for Stripe (free GitHub Pages, no login): `https://wildfly8.github.io/google-drive-mcp/` — visible name **WisdomSpringTech**. Do not enter `www.example.com`.
+0. Business website for Stripe: `https://wildfly8.github.io/google-drive-mcp/` — visible name **WisdomSpringTech**. Do not enter `www.example.com`. One-time (repo admin): GitHub → Settings → Pages → Deploy from branch → `gh-pages` → `/ (root)` → Save. The page is already on that branch.
 1. Create a Stripe account. Complete identity + payout onboarding (Stripe Dashboard — not this repo). Use that Pages URL as the business website.
 2. Create a product **onto-kb** with a **USD 20 / month** recurring price. Copy `price_…`.
 3. Secret Manager (or env):
