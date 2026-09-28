@@ -2,7 +2,7 @@
 
 ## `GET /subscribe`
 
-HTML. States USD 20/month. Pay button. No owner bank, no card fields.
+HTML. States USD 20/month. Pay button is the only action. No Setup link, no owner bank, no card fields. After payment, `GET /subscribe/complete` links to `/setup`.
 
 ## `POST /subscribe/checkout`
 

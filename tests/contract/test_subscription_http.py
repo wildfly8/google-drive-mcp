@@ -65,6 +65,10 @@ def test_unpaid_authorize_redirects_to_subscribe(fake_drive: FakeDrive):
         assert authorize.status_code in {302, 303, 307}
         assert "/subscribe" in authorize.headers["location"]
         assert "code=" not in authorize.headers["location"]
+        page = client.get("/subscribe")
+        assert page.status_code == 200
+        assert "Pay $20 / month" in page.text
+        assert 'href="/setup"' not in page.text
 
 
 def test_entitled_cookie_allows_connect(fake_drive: FakeDrive):
@@ -136,6 +140,7 @@ def test_checkout_complete_sets_cookie(fake_drive: FakeDrive):
         assert done.status_code == 200
         assert COOKIE_NAME in done.cookies
         assert "Payment received" in done.text
+        assert 'href="/setup"' in done.text
 
 
 def test_webhook_rejects_bad_signature(fake_drive: FakeDrive):

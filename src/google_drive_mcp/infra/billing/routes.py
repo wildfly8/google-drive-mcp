@@ -40,7 +40,7 @@ _SUBSCRIBE = """\
      bank details are not shown here.</p>
   <p>{status}</p>
   {form}
-  <p class="note"><a href="/setup">Setup</a></p>
+  {setup}
 </body>
 </html>
 """
@@ -74,15 +74,18 @@ def subscribe_get(settings: Settings, *, configured: bool) -> HTMLResponse:
             "the Stripe price is not connected to this server. "
             "The connector setup page is available."
         )
-        form = '<p><a href="/setup">Connector setup</a></p>'
+        form = ""
+        setup = '<p class="note"><a href="/setup">Setup</a></p>'
     elif not configured:
         status = "Payments are not configured (missing processor keys)."
         form = ""
+        setup = ""
     else:
         status = "USD 20 each month until you cancel in the Stripe customer portal."
         form = '<form method="post" action="/subscribe/checkout"><button type="submit">Pay $20 / month</button></form>'
+        setup = ""
     return HTMLResponse(
-        _SUBSCRIBE.format(status=html.escape(status), form=form)
+        _SUBSCRIBE.format(status=html.escape(status), form=form, setup=setup)
     )
 
 
@@ -99,6 +102,7 @@ async def subscribe_checkout_post(
             _SUBSCRIBE.format(
                 status=html.escape("Checkout could not start. Try again later."),
                 form="",
+                setup="",
             ),
             status_code=503,
         )
@@ -115,6 +119,7 @@ async def subscribe_complete_get(
             _SUBSCRIBE.format(
                 status=html.escape("Payment not confirmed yet. Refresh after checkout completes."),
                 form="",
+                setup="",
             ),
             status_code=402,
         )
