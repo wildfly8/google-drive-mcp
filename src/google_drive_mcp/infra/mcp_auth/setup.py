@@ -16,7 +16,7 @@ _PAGE = """\
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Add onto-kb in Claude</title>
+  <title>Set up onto-kb</title>
   <style>
     body {{ font-family: system-ui, sans-serif; max-width: 36rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.45; }}
     code, input[readonly] {{ font-family: ui-monospace, monospace; }}
@@ -30,16 +30,17 @@ _PAGE = """\
   </style>
 </head>
 <body>
-  <h1>Add this connector in Claude</h1>
+  <h1>Set up onto-kb</h1>
   {pay_block}
   <p>Read-only Google Drive tools. This server cannot write, delete, or share.
-     Claude still has two prompts this origin cannot skip: <strong>Always allow</strong>
-     and enabling the connector in a chat.</p>
+     Connector setup is available only after payment, in this same browser.
+     Claude, ChatGPT, and Cursor each use the URL below and then ask you to allow the tools.</p>
   <p>Connector URL</p>
   <div class="url-row">
     <input id="mcp-url" readonly value="{mcp_url}">
     <button type="button" id="copy">Copy</button>
   </div>
+  <h2>Claude</h2>
   <ol>
     <li>Claude Web → Customize → Connectors → <strong>+</strong> → Add custom connector.</li>
     <li>Name: <strong>onto-kb</strong>. Paste the URL above.</li>
@@ -48,6 +49,20 @@ _PAGE = """\
     <li>Connect. {auth_step}</li>
     <li>When Claude asks <strong>Read-only tools, always allow?</strong>, choose <strong>Always allow</strong>.</li>
     <li>In a chat, <strong>+</strong> → Connectors → enable onto-kb.</li>
+  </ol>
+  <h2>ChatGPT</h2>
+  <ol>
+    <li>Use a ChatGPT plan that allows custom connectors. Settings → Security and login → turn on <strong>Developer mode</strong>.</li>
+    <li>Open ChatGPT connectors and choose <strong>+</strong>. Name: <strong>onto-kb</strong>. Paste the URL above.</li>
+    <li>Authentication: <strong>OAuth</strong>. Do not paste a static token or request header.</li>
+    <li>Connect in this same browser. In a new chat, enable onto-kb from the developer-mode menu.</li>
+  </ol>
+  <h2>Cursor</h2>
+  <ol>
+    <li>Cursor Settings → MCP → Add a new MCP server. Transport: <strong>Streamable HTTP</strong>.</li>
+    <li>Name: <strong>onto-kb</strong>. Paste the URL above.</li>
+    <li>When Cursor opens the browser to sign in, use this same browser and finish Connect. Do not paste a static token.</li>
+    <li>Enable the onto-kb server, then use it from chat.</li>
   </ol>
   <p class="note">{auth_note}</p>
   <p class="stats">{stats_line} <a href="/stats">JSON</a>{gcp_links}</p>
@@ -115,23 +130,29 @@ def setup_get(
         extras.append(f'<a href="{html.escape(str(metrics), quote=True)}">Metrics Explorer</a>')
     if logs:
         extras.append(f'<a href="{html.escape(str(logs), quote=True)}">Connect logs</a>')
-    if extras:
+    if extras and not settings.mcp_subscription_required:
         gcp_links = " · " + " · ".join(extras)
     pay_block = ""
     if settings.mcp_subscription_required:
         pay_block = (
-            "<p><strong>$20 USD / month required.</strong> "
-            '<a href="/subscribe">Pay on Stripe Checkout</a> in this browser first, '
-            "then Connect. Cards are entered on Stripe, not here. "
-            "This page does not show the operator’s bank details.</p>"
+            "<p><strong>Payment confirmed in this browser.</strong> "
+            "Set up Claude, ChatGPT, or Cursor only after payment, and start Connect "
+            "from this same browser. A different browser is sent back to checkout.</p>"
         )
     if settings.mcp_oauth_auto_approve:
-        auth_step = "Your browser returns to Claude. There is no deployment password."
-        auth_note = (
-            "Knowing this URL is enough to finish OAuth. Drive calls still require the "
-            "short-lived token Claude stores after Connect. Do not put MCP_AUTH_TOKEN "
-            "in Claude request headers."
-        )
+        auth_step = "Your browser returns to the assistant. There is no deployment password."
+        if settings.mcp_subscription_required:
+            auth_note = (
+                "There is no deployment password. After Connect, the assistant stores a "
+                "short-lived token and sends it on each tool call. Do not put MCP_AUTH_TOKEN "
+                "in request headers."
+            )
+        else:
+            auth_note = (
+                "Knowing this URL is enough to finish OAuth. Drive calls still require the "
+                "short-lived token the assistant stores after Connect. Do not put MCP_AUTH_TOKEN "
+                "in request headers."
+            )
     else:
         auth_step = (
             "On this origin’s consent page, enter the deployment password "

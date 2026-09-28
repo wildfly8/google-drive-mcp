@@ -57,8 +57,8 @@ _COMPLETE = """\
 </head>
 <body>
   <h1>Payment received</h1>
-  <p>Return to Claude (or your MCP host) and click <strong>Connect</strong> again
-     in this same browser.</p>
+  <p>Return to Claude, ChatGPT, or Cursor and click <strong>Connect</strong> again
+     in this same browser. Connector setup is available only after this payment.</p>
   <p>Fallback entitlement (do not share):</p>
   <p><code>{code}</code></p>
   <p><a href="/setup">Setup</a></p>

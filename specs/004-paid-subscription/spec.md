@@ -89,12 +89,12 @@ The payment processor requires a public, non-password-protected website whose vi
 
 **Why this priority**: Account activation blocks go-live until this URL exists. A placeholder such as `www.example.com` is rejected.
 
-**Independent Test**: Open the public business URL in a browser with no login. The page shows WisdomSpringTech, a hosted read-only MCP subscription at USD 20 per month (onto-kb), and a link to the connector setup page. No password prompt. No bank or card numbers.
+**Independent Test**: Open the public business URL in a browser with no login. The page shows WisdomSpringTech, a hosted read-only MCP subscription at USD 20 per month (onto-kb) for Claude, ChatGPT, or Cursor, one subscribe link, and the statement that connector setup is available only after payment. No password prompt. No bank or card numbers. No connector setup URL.
 
 **Acceptance Scenarios**:
 
 1. **Given** the published business page, **When** a reviewer loads it without credentials, **Then** the business name WisdomSpringTech is visible and the page describes the $20/month onto-kb subscription.
-2. **Given** that page, **When** inspected, **Then** it links to the public connector setup URL and does not contain owner bank accounts, card numbers, or a login wall.
+2. **Given** that page, **When** inspected, **Then** it has one link, to checkout, states that connector setup is available only after payment, and does not contain the connector setup URL, owner bank accounts, card numbers, or a login wall.
 3. **Given** the processor business-website field, **When** the owner pastes this URL, **Then** it is a real HTTPS page, not `www.example.com`.
 
 ---
@@ -126,7 +126,7 @@ The payment processor requires a public, non-password-protected website whose vi
 - **FR-010**: Processor webhook (or equivalent signed events) MUST update or confirm entitlement; spoofed unsigned POSTs MUST be rejected.
 - **FR-011**: After successful checkout in the subscriber's browser, that browser MUST be able to complete MCP OAuth (cookie or one-time entitlement bound to the checkout) without pasting a card. A displayed one-time code is allowed as fallback if the cookie is missing.
 - **FR-012**: The owner MUST be able to open the processor dashboard to see payouts. That dashboard is not this MCP. This origin MUST NOT print payout bank details.
-- **FR-013**: A free public HTTPS page MUST show the business name **WisdomSpringTech**, state that the product is a hosted read-only MCP subscription (onto-kb) at USD 20 per month, and link to the connector setup URL. The page MUST be viewable without a password and MUST NOT show owner bank or card details.
+- **FR-013**: A free public HTTPS page MUST show the business name **WisdomSpringTech**, state that the product is a hosted read-only MCP subscription (onto-kb) at USD 20 per month for Claude, ChatGPT, or Cursor, and state that connector setup is available only after payment. The page MUST contain one link, to checkout, and MUST be viewable without a password. It MUST NOT show the connector setup URL, owner bank, or card details.
 
 ### Key Entities
 
