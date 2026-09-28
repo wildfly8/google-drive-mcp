@@ -18,6 +18,7 @@ def test_business_page_names_wisdomspringtech_and_offer():
     assert "/setup" not in html
     lowered = html.lower()
     assert "only after payment" in lowered
+    assert "only if you switch browsers" in lowered
     assert "password" not in lowered
     assert "routing number" not in lowered
     assert "www.example.com" not in lowered

@@ -75,6 +75,7 @@ def test_unpaid_authorize_redirects_to_subscribe(fake_drive: FakeDrive):
         page = client.get("/subscribe")
         assert page.status_code == 200
         assert "Pay $20 / month" in page.text
+        assert "only if you switch browsers" in page.text
         assert 'href="/setup"' not in page.text
 
 

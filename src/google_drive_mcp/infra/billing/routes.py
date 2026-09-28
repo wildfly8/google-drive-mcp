@@ -62,7 +62,9 @@ _COMPLETE = """\
 <body>
   <h1>Payment received</h1>
   <p>Return to Claude, ChatGPT, or Cursor. While this subscription stays active,
-     those assistants keep calling onto-kb with no further payment.</p>
+     those assistants keep calling onto-kb with no email and no further payment.</p>
+  <p>Enter the email on your Stripe receipt only if you switch browsers and start
+     Connect again. That continues this subscription and does not charge you again.</p>
   <p>Fallback entitlement (do not share):</p>
   <p><code>{code}</code></p>
   <p><a href="/setup">Setup</a></p>
@@ -111,16 +113,20 @@ def subscribe_get(
     else:
         status = (
             "USD 20 each month until you cancel in the Stripe customer portal. "
-            "An assistant that already connected keeps working while Stripe shows "
-            "the subscription as active. A browser without that connection continues "
-            "an active subscription below and is not charged again."
+            "Claude, ChatGPT, or Cursor that already finished Connect keeps working "
+            "while the subscription is active. No email, and no second charge. "
+            "Enter the email on your Stripe receipt only if you switch browsers "
+            "and start Connect again. That continues the same subscription."
         )
         form = (
             '<form method="post" action="/subscribe/checkout">'
             '<button type="submit">Pay $20 / month</button></form>'
             '<form method="post" action="/subscribe/restore">'
-            "<p>Already paying? Enter the email on your Stripe receipt.</p>"
-            '<input type="email" name="email" required autocomplete="email">'
+            "<p>Switching browsers? Enter the email on your Stripe receipt "
+            "to keep using onto-kb without paying again. "
+            "An assistant that already finished Connect does not use this form.</p>"
+            '<input type="email" name="email" required autocomplete="email" '
+            'aria-label="Email on your Stripe receipt">'
             '<button type="submit">Continue active subscription</button></form>'
         )
         setup = ""
