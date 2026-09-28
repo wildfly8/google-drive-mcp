@@ -39,7 +39,7 @@ description: "Task list for Retrieval Core"
 - [X] T006 [P] Implement `SearchCandidate` (not evidence) in `src/google_drive_mcp/domain/candidates.py`
 - [X] T007 [P] Implement `SearchMatch` in `src/google_drive_mcp/domain/matches.py`
 - [X] T008 Implement operation status `COMPLETE|PARTIAL|EMPTY|ERROR` and `partial_reason` in `src/google_drive_mcp/domain/operation.py` per `specs/002-retrieval-core/contracts/result-status.md`
-- [X] T009 Implement default resource budgets in `src/google_drive_mcp/domain/budgets.py` (max_files=40, max_bytes_per_file=5_000_000, max_bytes_per_operation=20_000_000, max_matches=50, max_execution_time=25s, max_context_lines=2, max_export_size=5_000_000)
+- [X] T009 Implement default resource budgets in `src/google_drive_mcp/domain/budgets.py` (max_files=40, max_bytes_per_file=20_000_000, max_bytes_per_operation=20_000_000, max_matches=50, max_execution_time=25s, max_context_lines=2, max_export_size=20_000_000)
 - [X] T010 Define Drive list/export ports (no Google types) in `src/google_drive_mcp/retrieval/ports.py` (parent_lookup used by `is_within_scope`; do not reimplement descendant checks)
 - [X] T011 Register empty MCP tools module in `src/google_drive_mcp/mcp/tools.py` and mount it from existing `mcp/server.py` composition root through access-control middleware (do not create a second server)
 

@@ -14,7 +14,7 @@ Must run Access Control chain first. v1 does **not** emit `AUTHORIZATION_ERROR` 
   "properties": {
     "file_id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,128}$", "description": "Drive file id from ls/find/grep — not a filename or question" },
     "content_format": { "type": "string", "description": "Optional. Omit for the plan export map (Docs/Slides text/plain, Sheets text/csv, text blobs as stored). Unknown or type-incompatible value → INVALID_ARGUMENT" },
-    "max_bytes": { "type": "integer", "minimum": 1, "maximum": 5000000 }
+    "max_bytes": { "type": "integer", "minimum": 1, "maximum": 20000000 }
   }
 }
 ```

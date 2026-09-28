@@ -213,9 +213,8 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
                 default=None,
                 pattern=FILE_ID_PATTERN,
                 description=(
-                    "Drive folder id whose immediate children to list. Omit to use the "
-                    "deployment default scope (My Drive root, or DRIVE_ALLOWED_FOLDER_ID "
-                    "when configured). Not a filename."
+                    "Drive folder id whose immediate children to list. Omit to list My Drive "
+                    "root children. Every granted folder may be named. Not a filename."
                 ),
             ),
         ] = None,
@@ -392,7 +391,7 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
             | None,
             Field(
                 default=None,
-                description="Specific Drive file ids to search. Prefer this over a whole-folder walk when ids are known.",
+                description="Specific Drive file ids to search. Prefer one id when the file is many megabytes; a call stops at 20 MB.",
             ),
         ] = None,
         folder_id: Annotated[

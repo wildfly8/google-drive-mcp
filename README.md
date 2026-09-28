@@ -35,7 +35,7 @@ https://onto-kb-kxjtmypvfa-uc.a.run.app/mcp
 
 Paid setup steps for Claude, ChatGPT, and Cursor are on [https://onto-kb-kxjtmypvfa-uc.a.run.app/setup](https://onto-kb-kxjtmypvfa-uc.a.run.app/setup) after payment. Subscribe: [https://onto-kb-kxjtmypvfa-uc.a.run.app/subscribe](https://onto-kb-kxjtmypvfa-uc.a.run.app/subscribe) ($20 USD/month on Stripe; this origin never shows the operator’s bank or collects card numbers).
 
-A call that omits `folder_id` searches `kb/content/posts` only (`DRIVE_ALLOWED_FOLDER_ID`). Sibling `unfolding-*` and `*-export` folders are outside that default scope.
+A call that omits `folder_id` searches the whole Google grant. No folder is disallowed. `drive_ls` of an omitted folder lists My Drive root children; `drive_find` and `drive_grep` search every granted folder. One `drive_read` or `drive_grep` returns at most 20 MB, so a large year file is one `file_id` per call.
 
 Public business site for Stripe verification (free GitHub Pages): [https://wisdomspringtech.github.io/](https://wisdomspringtech.github.io/). That page has one subscribe link and does not publish the connector URL.
 

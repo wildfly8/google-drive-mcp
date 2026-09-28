@@ -44,6 +44,13 @@ def test_max_bytes_out_of_range(runtime, authz):
         authz,
     )
     assert result["category"] == "INVALID_ARGUMENT"
+    over = handle_tool(
+        runtime,
+        "drive_read",
+        {"file_id": "nested-doc", "max_bytes": 20_000_001},
+        authz,
+    )
+    assert over["category"] == "INVALID_ARGUMENT"
 
 
 def test_unknown_content_format(runtime, authz):

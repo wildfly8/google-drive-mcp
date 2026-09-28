@@ -129,16 +129,14 @@ DEPLOY_ARGS=(
   --timeout=60
   --quiet
 )
-# kb/content/posts. Bare find/grep stay inside posts and skip sibling
-# unfolding-* and *-export folders under kb.
-ALLOWED_FOLDER="${DRIVE_ALLOWED_FOLDER_ID:-1SqJB83CRE5acuFz4Tj0_fqzEnK5HCcXM}"
 # Prefer an already-deployed origin so OAuth issuer == the URL hosts paste.
 EXISTING_URL="$(gcloud run services describe "$SERVICE" --project="$PROJECT" --region="$REGION" --format='value(status.url)' 2>/dev/null || true)"
 DEFAULT_PUBLIC_URL="${EXISTING_URL:-https://${SERVICE}-kxjtmypvfa-uc.a.run.app}"
 CANONICAL_PUBLIC="${MCP_PUBLIC_URL:-${DEFAULT_PUBLIC_URL}}"
 CANONICAL_PUBLIC="${CANONICAL_PUBLIC%/}"
 DEPLOY_ENV="MCP_PUBLIC_URL=${CANONICAL_PUBLIC}"
-DEPLOY_ENV="${DEPLOY_ENV},DRIVE_ALLOWED_FOLDER_ID=${ALLOWED_FOLDER}"
+# Do not set DRIVE_ALLOWED_FOLDER_ID. --set-env-vars replaces the env set,
+# so a previous posts allow-list is removed and every granted folder is searchable.
 DEPLOY_ENV="${DEPLOY_ENV},MCP_OAUTH_AUTO_APPROVE=true"
 DEPLOY_ENV="${DEPLOY_ENV},GOOGLE_CLOUD_PROJECT=${PROJECT}"
 DEPLOY_ENV="${DEPLOY_ENV},MCP_STATS_FROM_LOGS=true"

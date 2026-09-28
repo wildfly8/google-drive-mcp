@@ -43,7 +43,8 @@ Hard rules:
 - drive_find name_pattern is a case-insensitive substring of the *filename*, not glob, not contents.
 - drive_grep pattern matches exported file *bytes* (literal, or regex if regex=true). Not Drive fullText.
 - drive_ls is immediate children only; drive_find / drive_grep on a folder include descendants.
-- Omit folder_id to use the deployment default scope (whole grant, or a configured allow-listed folder).
+- Omit folder_id to use the whole Google grant. This deployment disallows no folder. drive_ls then lists My Drive root children; drive_find and drive_grep search the whole grant.
+- One drive_grep or drive_read returns at most 20 MB. A file at or under that size is complete. Pass one file_id when a file is many megabytes so the next file waits for the next call.
 - Candidates from drive_find are not quotes. Evidence is drive_read content or drive_grep matches with provenance.
 - source_url is the locator drive:{file_id}, not an HTTP URL. Do not present it as a download or Cited Source link.
 - No write/delete/share tools exist. Do not ask for them.
@@ -114,7 +115,7 @@ Example (do): {"file_id": "1abcFileId"}
 Example (don't): {"file_id": "activity-2025.mdx"} — names are not ids. Example (don't): pass a user question; this tool does not search.
 
 Optional content_format: omit for the default export (Docs/Slides text/plain, Sheets csv, text blobs as stored). Unknown or incompatible format → INVALID_ARGUMENT.
-Optional max_bytes: 1..5000000; truncation → PARTIAL (prefix returned).
+Optional max_bytes: 1..20000000; truncation → PARTIAL (prefix returned).
 
 Returns: status, file_id, file_name, mime_type, modified_time, source_url (drive:{file_id}, not http), retrieved_at, content, optional representation / partial_reason. Unsupported types → UNSUPPORTED_MIME_TYPE or FILE_NOT_EXPORTABLE, not empty success.
 """
@@ -125,7 +126,7 @@ Deterministic exact match over bytes exported in this call. Not Drive fullText, 
 
 When to use:
 - Verify a claim with a short distinctive phrase, identifier, title, or term of art taken from the user question.
-- Search known file_ids (preferred) or all descendants of a folder_id.
+- Search known file_ids (preferred) or all descendants of a folder_id. For a file near 20 MB, pass that one file_id alone.
 - Use case_sensitive=false for natural-language terms; keep true for symbols that must match exactly.
 - Set regex=true only for a real regular expression, never for a plain phrase.
 

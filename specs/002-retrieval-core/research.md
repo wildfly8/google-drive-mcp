@@ -21,7 +21,7 @@
 
 Omitted `content_format` uses this table. A caller-supplied `content_format` MUST be a MIME that type can produce; unknown or incompatible → `INVALID_ARGUMENT`.
 
-Google export is capped at 10 MB; we cap at 5 MB (`max_export_size`). A usable prefix within `max_bytes` / `max_export_size` is `PARTIAL` (`partial_reason: max_bytes`). A hard refusal with **no** prefix is `RESOURCE_LIMIT`. PDF is not required in v1 (not reliably “usable text” without extra libraries); treat as unsupported unless a later MINOR adds a text extractor.
+Google Workspace export is capped at 10 MB by Drive. Downloaded text blobs use `max_export_size` and per-file `max_bytes` of 20_000_000, equal to the per-operation byte budget, so one file at that size is a complete read and a second large file in the same call is `PARTIAL` (`partial_reason: max_bytes`). A usable prefix within the cap is `PARTIAL`. A hard refusal with **no** prefix is `RESOURCE_LIMIT`. PDF is not required in v1 (not reliably “usable text” without extra libraries); treat as unsupported unless a later MINOR adds a text extractor.
 
 Wire field `source_url` is the locator `drive:{file_id}`, not Drive `webViewLink`. HTTP view links MUST NOT appear in tool JSON (hosts offer them as downloadable Cited Sources).
 

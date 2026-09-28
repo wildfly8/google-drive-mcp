@@ -30,7 +30,7 @@ Google 404/403-as-404 (and single-file 429 with no prefix) go through Access Con
 
 **Performance Goals**: Correctness → retrieval quality → security → simplicity, then latency. Default budgets below; a usable prefix or partial listing is `PARTIAL`; a hard export refusal with no prefix is `RESOURCE_LIMIT`; a walk cut by 429 is `PARTIAL` (`partial_reason: RATE_LIMITED`). Never silent.
 
-**Constraints**: Read-only adapter methods only. Drive export cap 10 MB; we cap below that. No embeddings. Tool names/meanings must not depend on a single LLM vendor.
+**Constraints**: Read-only adapter methods only. Google Workspace export is capped at 10 MB by Drive; downloaded text blobs (including `.mdx`) may be read up to 20 MB. No embeddings. Tool names/meanings must not depend on a single LLM vendor. The live deployment does not set `DRIVE_ALLOWED_FOLDER_ID`.
 
 **Scale/Scope**: One Drive identity; iterative tool calls; tens of files per operation by default, not a corpus index.
 
@@ -39,12 +39,12 @@ Google 404/403-as-404 (and single-file 429 with no prefix) go through Access Con
 | Budget | Default |
 | --- | --- |
 | `max_files` | 40 |
-| `max_bytes` per file / export | 5_000_000 |
+| `max_bytes` per file / export | 20_000_000 |
 | `max_bytes` per operation | 20_000_000 |
 | `max_matches` | 50 |
 | `max_execution_time` | 25 seconds |
 | `max_context_lines` | 2 |
-| `max_export_size` | 5_000_000 |
+| `max_export_size` | 20_000_000 |
 
 Sheets/Slides context: character window of 200 characters around a match when the representation is not line-oriented; Docs/plain text use `max_context_lines`.
 

@@ -65,6 +65,20 @@ def test_find_omitted_folder_stays_inside_allow_list(fake_drive: FakeDrive, auth
     assert "Notes" in names
 
 
+def test_unset_allow_list_reads_every_granted_file(fake_drive: FakeDrive, authz):
+    settings = Settings(
+        mcp_auth_token=SecretStr("test-token"),
+        mcp_principal_id="deployment-1",
+        drive_allowed_folder_id="",
+    )
+    runtime = Runtime(settings=settings, drive=fake_drive)
+    inside = handle_tool(runtime, "drive_read", {"file_id": "nested-doc"}, authz)
+    outside = handle_tool(runtime, "drive_read", {"file_id": "outside-doc"}, authz)
+    assert inside["status"] == "COMPLETE"
+    assert outside["status"] == "COMPLETE"
+    assert "secret other folder text" in outside["content"]
+
+
 def test_grep_outside_file_is_authorization_error(fake_drive: FakeDrive, authz):
     fake_drive.reset_counters()
     runtime = _runtime(fake_drive)
