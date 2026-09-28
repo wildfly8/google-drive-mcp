@@ -136,8 +136,7 @@ def test_setup_mentions_fee_when_paywall_on(fake_drive: FakeDrive):
         paid = client.get("/setup", cookies={COOKIE_NAME: token})
         assert "/mcp" in paid.text
         assert "Always allow" in paid.text
-        assert "ChatGPT" in paid.text
-        assert "Cursor" in paid.text
+        assert "AI chat app" in paid.text
         assert "only after payment" in paid.text.lower()
         billing.active.clear()
         inactive = client.get("/setup", cookies={COOKIE_NAME: token})

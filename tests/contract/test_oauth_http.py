@@ -495,7 +495,7 @@ def test_setup_page_lists_minimum_claude_clicks(runtime):
     assert setup.status_code == 200
     assert "http://127.0.0.1/mcp" in setup.text
     assert "Always allow" in setup.text
-    assert "Sign in when needed" in setup.text
+    assert "AI chat app" in setup.text
     assert "no deployment password" in setup.text.lower()
 
 

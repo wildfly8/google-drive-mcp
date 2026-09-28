@@ -90,7 +90,7 @@ The payment processor requires a public, non-password-protected website whose vi
 
 **Why this priority**: Account activation blocks go-live until this URL exists. A placeholder such as `www.example.com` is rejected.
 
-**Independent Test**: Open the public business URL in a browser with no login. The page shows WisdomSpringTech, a hosted read-only MCP subscription at USD 20 per month (onto-kb) for Claude, ChatGPT, or Cursor, one subscribe link, and the statement that connector setup is available only after payment. No password prompt. No bank or card numbers. No connector setup URL.
+**Independent Test**: Open the public business URL in a browser with no login. The page shows WisdomSpringTech, a hosted read-only MCP subscription at USD 20 per month (onto-kb) for any AI chat app that supports a remote MCP connector, one subscribe link, and the statement that connector setup is available only after payment. No password prompt. No bank or card numbers. No connector setup URL.
 
 **Acceptance Scenarios**:
 
@@ -129,7 +129,7 @@ The payment processor requires a public, non-password-protected website whose vi
 - **FR-010**: Processor webhook (or equivalent signed events) MUST update or confirm entitlement; spoofed unsigned POSTs MUST be rejected.
 - **FR-011**: After a successful payment, a connected Claude, ChatGPT, or Cursor MUST keep calling tools with no subscriber action while the processor reports that subscription active. Refresh MUST re-check the processor and MUST rotate a long-lived refresh token on success. A browser without the earlier connection MUST be able to continue an active subscription using the email already stored at the processor, with no second charge and without this origin logging, storing, or echoing that email. A new charge happens only when the processor has no active subscription for that email. Checkout in the paying browser MUST still be able to finish Connect without pasting a card.
 - **FR-012**: The owner MUST be able to open the processor dashboard to see payouts. That dashboard is not this MCP. This origin MUST NOT print payout bank details.
-- **FR-013**: A free public HTTPS page MUST show the business name **WisdomSpringTech**, state that the product is a hosted read-only MCP subscription (onto-kb) at USD 20 per month for Claude, ChatGPT, or Cursor, and state that connector setup is available only after payment. The page MUST contain one link, to checkout, and MUST be viewable without a password. It MUST NOT show the connector setup URL, owner bank, or card details.
+- **FR-013**: A free public HTTPS page MUST show the business name **WisdomSpringTech**, state that the product is a hosted read-only MCP subscription (onto-kb) at USD 20 per month for any AI chat app that supports a remote MCP connector, and state that connector setup is available only after payment. The page MUST contain one link, to checkout, and MUST be viewable without a password. It MUST NOT show the connector setup URL, owner bank, or card details.
 
 ### Key Entities
 

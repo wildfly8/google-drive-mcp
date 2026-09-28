@@ -17,15 +17,15 @@ does not require an application-owned RAG index.
 
 See the constitution for the full invariant set (Articles I–XV).
 
-## Connecting ChatGPT / Claude / Cursor
+## Connecting an AI chat app
 
 This is standard **MCP Streamable HTTP** (`POST /mcp`). The host model — not this server — parses the user question and chooses `drive_ls` / `drive_find` / `drive_read` / `drive_grep` arguments. `tools/list` advertises when to use each tool and positive/negative examples.
 
-**Auth:** [MCP OAuth 2.1](https://modelcontextprotocol.io/specification/2025-03-26/basic/authorization) on this origin (authorization code + PKCE, dynamic client registration, protected-resource metadata). Hosts send `Authorization: Bearer <access_token>` on `POST /mcp`. **USD 20 / month** via [Stripe Checkout](https://onto-kb-kxjtmypvfa-uc.a.run.app/subscribe) is required before the first Connect. After that, Claude, ChatGPT, and Cursor keep calling tools while Stripe reports the subscription active. No email, and no second charge. Enter the Stripe receipt email only if you switch browsers and start Connect again. That continues the same subscription. Public Cloud Run still auto-approves the OAuth consent step after a paid period. `MCP_AUTH_TOKEN` is still not an API key.
+**Auth:** [MCP OAuth 2.1](https://modelcontextprotocol.io/specification/2025-03-26/basic/authorization) on this origin (authorization code + PKCE, dynamic client registration, protected-resource metadata). Hosts send `Authorization: Bearer <access_token>` on `POST /mcp`. **USD 20 / month** via [Stripe Checkout](https://onto-kb-kxjtmypvfa-uc.a.run.app/subscribe) is required before the first Connect. After that, any AI chat app that finished Connect keeps calling tools while Stripe reports the subscription active. No email, and no second charge. Enter the Stripe receipt email only if you switch browsers and start Connect again. That continues the same subscription. Public Cloud Run still auto-approves the OAuth consent step after a paid period. `MCP_AUTH_TOKEN` is still not an API key.
 
-### Add this connector in Claude
+### Add this connector in an AI chat app
 
-Read-only Google Drive tools. This server cannot write, delete, or share. Claude still has two prompts this origin cannot skip: **Always allow**, and enabling the connector in a chat.
+Read-only Google Drive tools. This server cannot write, delete, or share. The app may still ask you to allow read-only tools and to enable the connector in a chat. Menu names differ by app.
 
 **Connector URL**
 
@@ -33,32 +33,23 @@ Read-only Google Drive tools. This server cannot write, delete, or share. Claude
 https://onto-kb-kxjtmypvfa-uc.a.run.app/mcp
 ```
 
-Paid setup steps for Claude, ChatGPT, and Cursor are on [https://onto-kb-kxjtmypvfa-uc.a.run.app/setup](https://onto-kb-kxjtmypvfa-uc.a.run.app/setup) after payment. Subscribe: [https://onto-kb-kxjtmypvfa-uc.a.run.app/subscribe](https://onto-kb-kxjtmypvfa-uc.a.run.app/subscribe) ($20 USD/month on Stripe; this origin never shows the operator’s bank or collects card numbers).
+Paid setup steps for any AI chat app are on [https://onto-kb-kxjtmypvfa-uc.a.run.app/setup](https://onto-kb-kxjtmypvfa-uc.a.run.app/setup) after payment. Subscribe: [https://onto-kb-kxjtmypvfa-uc.a.run.app/subscribe](https://onto-kb-kxjtmypvfa-uc.a.run.app/subscribe) ($20 USD/month on Stripe; this origin never shows the operator’s bank or collects card numbers).
 
 A call that omits `folder_id` searches the whole Google grant. No folder is disallowed. `drive_ls` of an omitted folder lists My Drive root children; `drive_find` and `drive_grep` search every granted folder. One `drive_read` or `drive_grep` returns at most 20 MB, so a large year file is one `file_id` per call.
 
 Public business site for Stripe verification (free GitHub Pages): [https://wisdomspringtech.github.io/](https://wisdomspringtech.github.io/). That page has one subscribe link and does not publish the connector URL.
 
-1. Claude Web → Customize → Connectors → **+** → Add custom connector.
-2. Name: **onto-kb**. Paste the URL above.
-3. Authentication: **Sign in when needed** (override Detected “No sign-in” if shown). OAuth client: **Use Claude’s published identity**. Leave request headers empty.
-4. Connect. Your browser returns to Claude. There is no deployment password.
-5. When Claude asks **Read-only tools, always allow?**, choose **Always allow**.
-6. In a chat, **+** → Connectors → enable onto-kb.
+1. In your AI chat app, add a remote MCP connector.
+2. Name: **onto-kb**. Paste the URL above. Transport, if asked: Streamable HTTP.
+3. Authentication: **Sign in** or **OAuth**. Leave extra request headers empty. Do not paste a static token.
+4. Connect. Your browser returns to the app. There is no deployment password.
+5. If the app asks you to **Always allow** read-only tools, allow them, then enable onto-kb in a chat.
 
-Knowing the connector URL is enough to finish OAuth. Drive calls still require the short-lived token Claude stores after Connect. Do not put `MCP_AUTH_TOKEN` in Claude request headers.
+Knowing the connector URL is enough to finish OAuth. Drive calls still require the short-lived token that app stores after Connect. Do not put `MCP_AUTH_TOKEN` in request headers.
 
 Tool results identify files with `file_id` and `source_url` as `drive:{file_id}` — not an HTTPS Drive link — so Cited Sources cannot offer a download. Document text is still returned as evidence; use `drive_read` for the body.
 
-| Host | How to attach this server |
-| --- | --- |
-| **ChatGPT custom connector / plugin** | Paid plan. Settings → **Security and login** → **Developer mode**. Open [ChatGPT Plugins](https://chatgpt.com/plugins) → **+**. Name: `onto-kb`. MCP server URL `https://onto-kb-kxjtmypvfa-uc.a.run.app/mcp`. Authentication **OAuth** (CIMD; not a static token / not `MCP_AUTH_TOKEN`). ChatGPT scans tools, then OAuth-links on the first tool call. Public Cloud Run auto-approves the redirect. New chat → Plus menu → **Developer mode** → enable the app. |
-| **Claude custom connectors** | Follow **Add this connector in Claude** above (GitHub README or `/setup` only). |
-| **Cursor** (Cloud Agent / HTTP MCP) | Server URL plus OAuth (or a minted access token in `Authorization: Bearer` if the host cannot do the redirect). Repo allow-list in `.cursor/environment.json` is not the same as installing auth. |
-| **Claude Code** | `claude mcp add --transport http onto-kb <url>/mcp` and complete the OAuth redirect when prompted. |
-| **MCP Inspector** | Open the Cloud Run `/mcp` URL; Inspector follows well-known metadata, `/register`, `/authorize`, `/token`. |
-
-Do not put tokens in the MCP URL or in tool arguments. Do not send `MCP_AUTH_TOKEN` as the `/mcp` Bearer.
+Any AI chat app that can add a remote MCP server uses that same URL and OAuth. Do not put tokens in the MCP URL or in tool arguments. Do not send `MCP_AUTH_TOKEN` as the `/mcp` Bearer.
 
 Non-PII usage totals (Connect completions and first Drive tool use — not unique people): [https://onto-kb-kxjtmypvfa-uc.a.run.app/stats](https://onto-kb-kxjtmypvfa-uc.a.run.app/stats). The same numbers appear on `/setup`.
 

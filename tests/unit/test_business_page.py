@@ -10,9 +10,7 @@ def test_business_page_names_wisdomspringtech_and_offer():
     html = PAGE.read_text(encoding="utf-8")
     assert "WisdomSpringTech" in html
     assert "onto-kb" in html
-    assert "Claude" in html
-    assert "ChatGPT" in html
-    assert "Cursor" in html
+    assert "AI chat app" in html
     assert "$20" in html or "USD 20" in html
     assert html.count(SUBSCRIBE) == 1
     assert "/setup" not in html

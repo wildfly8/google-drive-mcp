@@ -22,9 +22,9 @@ Stripe-Signature required. Invalid signature → 400. Valid → 200. Body not lo
 
 ## `GET /setup`
 
-When the paywall is on and the request has no active entitlement: HTML is only the $20 fee and a link to `/subscribe`. No connector URL, copy control, Claude / ChatGPT / Cursor steps, OAuth note, usage counts, or Google Cloud console links.
+When the paywall is on and the request has no active entitlement: HTML is only the $20 fee and a link to `/subscribe`. No connector URL, copy control, AI chat app steps, OAuth note, usage counts, or Google Cloud console links.
 
-When the entitlement verifies and Stripe reports the subscription active: connector URL and setup steps for Claude, ChatGPT, and Cursor. No operator Google Cloud console links.
+When the entitlement verifies and Stripe reports the subscription active: connector URL and setup steps for any AI chat app that can add a remote MCP server. No operator Google Cloud console links.
 
 ## `GET /authorize` (existing)
 

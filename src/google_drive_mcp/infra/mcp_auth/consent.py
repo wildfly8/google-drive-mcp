@@ -32,8 +32,8 @@ _PAGE = """\
   <h1>Authorize onto-kb</h1>
   <p>This client wants a short-lived token for read-only retrieval on this deployment.
      Enter the deployment password stored as <code>MCP_AUTH_TOKEN</code>.</p>
-  <p>After you allow access, Claude may ask <strong>Read-only tools, always allow?</strong>
-     Choose <strong>Always allow</strong>. These tools can only list, find, read, and search;
+  <p>After you allow access, your AI chat app may ask you to <strong>Always allow</strong>
+     read-only tools. These tools can only list, find, read, and search;
      they cannot write, delete, or share.</p>
   {error}
   <form method="post" action="/consent">

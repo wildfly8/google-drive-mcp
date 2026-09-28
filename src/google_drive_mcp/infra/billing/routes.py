@@ -39,7 +39,7 @@ _SUBSCRIBE = """\
 </head>
 <body>
   <h1>onto-kb — $20 USD / month</h1>
-  <p>Mandatory subscription to Connect this MCP (Claude, ChatGPT, or other hosts).
+  <p>Mandatory subscription to Connect this MCP from any AI chat app.
      You pay on Stripe’s checkout. This page never asks for a card. The operator’s
      bank details are not shown here.</p>
   <p>{status}</p>
@@ -61,8 +61,8 @@ _COMPLETE = """\
 </head>
 <body>
   <h1>Payment received</h1>
-  <p>Return to Claude, ChatGPT, or Cursor. While this subscription stays active,
-     those assistants keep calling onto-kb with no email and no further payment.</p>
+  <p>Return to your AI chat app. While this subscription stays active,
+     that app keeps calling onto-kb with no email and no further payment.</p>
   <p>Enter the email on your Stripe receipt only if you switch browsers and start
      Connect again. That continues this subscription and does not charge you again.</p>
   <p>Fallback entitlement (do not share):</p>
@@ -113,7 +113,7 @@ def subscribe_get(
     else:
         status = (
             "USD 20 each month until you cancel in the Stripe customer portal. "
-            "Claude, ChatGPT, or Cursor that already finished Connect keeps working "
+            "An AI chat app that already finished Connect keeps working "
             "while the subscription is active. No email, and no second charge. "
             "Enter the email on your Stripe receipt only if you switch browsers "
             "and start Connect again. That continues the same subscription."

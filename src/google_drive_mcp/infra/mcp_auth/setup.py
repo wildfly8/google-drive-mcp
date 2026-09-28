@@ -1,4 +1,4 @@
-"""Public Claude connector setup page. Remaining clicks are Claude UI, not this server."""
+"""Public connector setup page. Remaining clicks are in the AI chat app."""
 
 from __future__ import annotations
 
@@ -34,36 +34,20 @@ _PAGE = """\
   {pay_block}
   <p>Read-only Google Drive tools. This server cannot write, delete, or share.
      Connector setup is available only after payment.
-     Claude, ChatGPT, and Cursor keep calling onto-kb while the Stripe subscription stays active.
-     Each host uses the URL below and then asks you to allow the tools.</p>
+     Any AI chat app that already finished Connect keeps calling onto-kb while the Stripe subscription stays active.
+     The app uses the URL below and then asks you to allow the tools.</p>
   <p>Connector URL</p>
   <div class="url-row">
     <input id="mcp-url" readonly value="{mcp_url}">
     <button type="button" id="copy">Copy</button>
   </div>
-  <h2>Claude</h2>
+  <h2>Any AI chat app</h2>
   <ol>
-    <li>Claude Web → Customize → Connectors → <strong>+</strong> → Add custom connector.</li>
-    <li>Name: <strong>onto-kb</strong>. Paste the URL above.</li>
-    <li>Authentication: <strong>Sign in when needed</strong> (override Detected “No sign-in” if shown).
-        OAuth client: <strong>Use Claude’s published identity</strong>. Leave request headers empty.</li>
+    <li>In your AI chat app, add a remote MCP connector. Menu names differ by app.</li>
+    <li>Name: <strong>onto-kb</strong>. Paste the URL above. Transport, if asked: <strong>Streamable HTTP</strong>.</li>
+    <li>Authentication: <strong>Sign in</strong> or <strong>OAuth</strong>. Leave extra request headers empty. Do not paste a static token.</li>
     <li>Connect. {auth_step}</li>
-    <li>When Claude asks <strong>Read-only tools, always allow?</strong>, choose <strong>Always allow</strong>.</li>
-    <li>In a chat, <strong>+</strong> → Connectors → enable onto-kb.</li>
-  </ol>
-  <h2>ChatGPT</h2>
-  <ol>
-    <li>Use a ChatGPT plan that allows custom connectors. Settings → Security and login → turn on <strong>Developer mode</strong>.</li>
-    <li>Open ChatGPT connectors and choose <strong>+</strong>. Name: <strong>onto-kb</strong>. Paste the URL above.</li>
-    <li>Authentication: <strong>OAuth</strong>. Do not paste a static token or request header.</li>
-    <li>Connect. In a new chat, enable onto-kb from the developer-mode menu. An active subscription does not ask you to pay again.</li>
-  </ol>
-  <h2>Cursor</h2>
-  <ol>
-    <li>Cursor Settings → MCP → Add a new MCP server. Transport: <strong>Streamable HTTP</strong>.</li>
-    <li>Name: <strong>onto-kb</strong>. Paste the URL above.</li>
-    <li>Finish the sign-in Cursor opens. Do not paste a static token. An active subscription does not ask you to pay again.</li>
-    <li>Enable the onto-kb server, then use it from chat.</li>
+    <li>If the app asks you to <strong>Always allow</strong> read-only tools, allow them, then enable onto-kb in a chat.</li>
   </ol>
   <p class="note">{auth_note}</p>
   <p class="stats">{stats_line} <a href="/stats">JSON</a>{gcp_links}</p>
@@ -137,22 +121,22 @@ def setup_get(
     if settings.mcp_subscription_required:
         pay_block = (
             "<p><strong>Payment confirmed.</strong> "
-            "Set up Claude, ChatGPT, or Cursor only after payment. "
-            "While Stripe shows this subscription as active, those assistants keep "
+            "Set up your AI chat app only after payment. "
+            "While Stripe shows this subscription as active, that app keeps "
             "calling onto-kb with no further steps from you.</p>"
         )
     if settings.mcp_oauth_auto_approve:
-        auth_step = "Your browser returns to the assistant. There is no deployment password."
+        auth_step = "Your browser returns to the AI chat app. There is no deployment password."
         if settings.mcp_subscription_required:
             auth_note = (
-                "There is no deployment password. After Connect, the assistant stores a "
+                "There is no deployment password. After Connect, the AI chat app stores a "
                 "short-lived token and sends it on each tool call. Do not put MCP_AUTH_TOKEN "
                 "in request headers."
             )
         else:
             auth_note = (
                 "Knowing this URL is enough to finish OAuth. Drive calls still require the "
-                "short-lived token the assistant stores after Connect. Do not put MCP_AUTH_TOKEN "
+                "short-lived token the AI chat app stores after Connect. Do not put MCP_AUTH_TOKEN "
                 "in request headers."
             )
     else:
@@ -161,7 +145,7 @@ def setup_get(
             "(Secret Manager <code>MCP_AUTH_TOKEN</code>)."
         )
         auth_note = (
-            "Do not put MCP_AUTH_TOKEN in Claude request headers. It is only the consent password."
+            "Do not put MCP_AUTH_TOKEN in request headers. It is only the consent password."
         )
     return HTMLResponse(
         _PAGE.format(
