@@ -25,6 +25,14 @@ REQUIRED_DESCRIPTION_MARKERS = (
 )
 
 
+def _string_description(schema: dict, name: str) -> str:
+    prop = schema["properties"][name]
+    parts = [prop.get("description") or ""]
+    for arm in prop.get("anyOf", []):
+        parts.append(arm.get("description") or "")
+    return " ".join(parts)
+
+
 def _schema_bounds(schema: dict, name: str) -> tuple[int | None, int | None]:
     prop = schema["properties"][name]
     arm = next((a for a in prop.get("anyOf", [prop]) if a.get("type") == "integer"), prop)
@@ -61,6 +69,9 @@ async def test_initialize_instructions_say_host_extracts_terms(runtime):
     assert "initialize" in text and "tools/list" in text
     assert "does not implement MCP OAuth 2.1" not in text
     assert "natural-language" in SERVER_INSTRUCTIONS or "user question" in text
+    assert "No folder is disallowed" not in text
+    assert "only folder this server may read is kb" in text
+    assert "AUTHORIZATION_ERROR" in text
 
 
 async def test_drive_ls_and_find_schema_bounds(runtime):
@@ -77,6 +88,10 @@ async def test_drive_ls_and_find_schema_bounds(runtime):
     assert "pattern" not in find["properties"]
     assert find["properties"]["name_pattern"]["description"]
     assert "not glob" in find["properties"]["name_pattern"]["description"]
+    for tool_name in ("drive_ls", "drive_find"):
+        folder_text = _string_description(by_name[tool_name].input_schema, "folder_id")
+        assert "disallowed" not in folder_text.lower()
+        assert "kb" in folder_text
 
 
 async def test_drive_read_and_grep_required_fields_and_bounds(runtime):
@@ -99,3 +114,6 @@ async def test_drive_read_and_grep_required_fields_and_bounds(runtime):
     assert "next_cursor" in grep["properties"]["cursor"]["description"]
     assert "deferred_file_ids" in by_name["drive_grep"].description
     assert "next_cursor" in by_name["drive_grep"].description
+    grep_folder = _string_description(grep, "folder_id")
+    assert "disallowed" not in grep_folder.lower()
+    assert "kb" in grep_folder

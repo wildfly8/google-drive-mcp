@@ -286,3 +286,9 @@ Filename discovery and folder grep coverage (FR-012, FR-036, FR-038). No persist
 
 - [X] T061 When `DRIVE_DEFAULT_FOLDER_ID` is set, omitted `drive_find` and `drive_grep` search that folder (`kb` on this deployment) without disallowing a named folder or file id, and omitted `drive_ls` still lists My Drive root, in `domain/retrieval_scope.py`, `mcp/tools.py`, `infra/config.py`, and `scripts/deploy-cloud-run.sh` (FR-010, FR-030)
 - [X] T062 Advertise `next_cursor` as a `drive_grep` input (alias `cursor`) so a host can pass the previous result field back, in `mcp/server.py`, `retrieval/grep.py`, and `mcp/tool_schema.py` (FR-030)
+
+---
+
+## Phase 15: Allow only the kb folder
+
+- [X] T063 Set `DRIVE_ALLOWED_FOLDER_ID` to the `kb` folder on this deployment so omitted `drive_ls`, `drive_find`, and `drive_grep` run in `kb`, and a named `folder_id` or `file_id` outside `kb` is `AUTHORIZATION_ERROR`, in `scripts/deploy-cloud-run.sh`, `mcp/server.py`, `mcp/tool_schema.py`, and host copy (AC-FR-021, FR-001, FR-010, FR-030)

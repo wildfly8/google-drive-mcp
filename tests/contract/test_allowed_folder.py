@@ -113,6 +113,19 @@ def test_default_folder_scopes_find_and_grep_but_not_ls_or_named_targets(fake_dr
     assert {m["file_id"] for m in by_id["matches"]} == {"outside-doc"}
 
 
+def test_named_folder_outside_allow_list_is_authorization_error(fake_drive: FakeDrive, authz):
+    runtime = _runtime(fake_drive)
+    found = handle_tool(runtime, "drive_find", {"folder_id": "root"}, authz)
+    assert found["category"] == "AUTHORIZATION_ERROR"
+    grepped = handle_tool(
+        runtime,
+        "drive_grep",
+        {"pattern": "secret", "folder_id": "root"},
+        authz,
+    )
+    assert grepped["category"] == "AUTHORIZATION_ERROR"
+
+
 def test_grep_outside_file_is_authorization_error(fake_drive: FakeDrive, authz):
     fake_drive.reset_counters()
     runtime = _runtime(fake_drive)

@@ -228,8 +228,8 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
                 default=None,
                 pattern=FILE_ID_PATTERN,
                 description=(
-                    "Drive folder id whose immediate children to list. Omit to list My Drive "
-                    "root children. Every granted folder may be named. Not a filename."
+                    "Drive folder id whose immediate children to list. Omit to list the kb folder. "
+                    "A folder outside kb is AUTHORIZATION_ERROR. Not a filename."
                 ),
             ),
         ] = None,
@@ -292,8 +292,8 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
                 default=None,
                 pattern=FILE_ID_PATTERN,
                 description=(
-                    "Restrict to this folder and its descendants. Omit to use the deployment default "
-                    "folder (kb on this server). Pass another folder id to search that folder; no folder is disallowed."
+                    "Restrict to this folder and its descendants inside kb. Omit to search kb. "
+                    "A folder outside kb is AUTHORIZATION_ERROR."
                 ),
             ),
         ] = None,
@@ -418,9 +418,9 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
                 default=None,
                 pattern=FILE_ID_PATTERN,
                 description=(
-                    "Search this folder and descendants. Omit with no file_ids to use the deployment "
-                    "default folder (kb on this server). Pass another folder id to search that folder; "
-                    "no folder is disallowed. If set together with file_ids, each id must lie in that folder."
+                    "Search this folder and descendants inside kb. Omit with no file_ids to search kb. "
+                    "A folder or file outside kb is AUTHORIZATION_ERROR. "
+                    "If set together with file_ids, each id must lie in that folder."
                 ),
             ),
         ] = None,
@@ -430,7 +430,7 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
                 default="",
                 description=(
                     "Continue a previous drive_grep. Paste that result's next_cursor value here. "
-                    "Use the same pattern and the same folder_id (omit folder_id again for the default scope). "
+                    "Use the same pattern and the same folder_id (omit folder_id again to stay in kb). "
                     "Do not send this together with file_ids. Empty string starts at the first file."
                 ),
             ),

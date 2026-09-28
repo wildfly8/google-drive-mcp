@@ -11,7 +11,7 @@ Must run Access Control chain first. Google-missing folder → `FILE_NOT_FOUND`.
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "folder_id": { "type": "string", "description": "Omit for Drive root (`root`) unless Access Control rewrote omitted folder to DRIVE_ALLOWED_FOLDER_ID; projects default_whole_grant onto that folder’s (or My Drive root) children" },
+    "folder_id": { "type": "string", "description": "Omit to list DRIVE_ALLOWED_FOLDER_ID (kb on this deployment). A named folder outside that allow-list is AUTHORIZATION_ERROR. When the allow-list is unset, omit lists My Drive root children." },
     "max_results": { "type": "integer", "minimum": 1, "maximum": 40, "description": "Page size; remaining children → PARTIAL + next_page_token" },
     "page_token": { "type": "string" }
   }

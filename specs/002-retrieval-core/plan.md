@@ -30,7 +30,7 @@ Google 404/403-as-404 (and single-file 429 with no prefix) go through Access Con
 
 **Performance Goals**: Correctness → retrieval quality → security → simplicity, then latency. Default budgets below; a usable prefix or partial listing is `PARTIAL`; a hard export refusal with no prefix is `RESOURCE_LIMIT`; a walk cut by 429 is `PARTIAL` (`partial_reason: RATE_LIMITED`). Never silent.
 
-**Constraints**: Read-only adapter methods only. Google Workspace export is capped at 10 MB by Drive; downloaded text blobs (including `.mdx`) may be read up to 20 MB. No embeddings. Tool names/meanings must not depend on a single LLM vendor. The live deployment does not set `DRIVE_ALLOWED_FOLDER_ID`. It sets `DRIVE_DEFAULT_FOLDER_ID` to the My Drive folder named `kb`, so omitted `drive_find` / `drive_grep` search `kb`. Named folders stay reachable. Omitted `drive_ls` still lists My Drive root.
+**Constraints**: Read-only adapter methods only. Google Workspace export is capped at 10 MB by Drive; downloaded text blobs (including `.mdx`) may be read up to 20 MB. No embeddings. Tool names/meanings must not depend on a single LLM vendor. The live deployment sets `DRIVE_ALLOWED_FOLDER_ID` to the My Drive folder named `kb` and leaves `DRIVE_DEFAULT_FOLDER_ID` unset. Omitted `drive_ls`, `drive_find`, and `drive_grep` use `kb`. A named `folder_id` or `file_id` outside `kb` is `AUTHORIZATION_ERROR`.
 
 **Scale/Scope**: One Drive identity; iterative tool calls; tens of files per operation by default, not a corpus index.
 
@@ -52,7 +52,7 @@ Sheets/Slides context: character window of 200 characters around a match when th
 
 `drive_find` sends `name contains`, MIME, `modifiedTime`, and `trashed = false` in `files.list` (`pageSize` 1000). `max_results` counts matching files. Children of a listed folder are not `files.get`'d to walk parents.
 
-`drive_grep` on a folder or the whole grant sorts known-smaller files first. The 20 MB per-file cap stays, including for one named `file_id`. A known size that does not fit the remaining operation bytes is returned in `deferred_file_ids` and not downloaded. Results always include `files_scanned` and `bytes_scanned`. `next_cursor` is the last scanned file id only when the listing finished and more non-deferred files remain. The same value is an input property named `next_cursor` (`cursor` is an alias). There is no persistent folder cache, ripgrep store, or BM25 index. Omitted find/grep uses `kb` via `DRIVE_DEFAULT_FOLDER_ID`.
+`drive_grep` on a folder or the whole grant sorts known-smaller files first. The 20 MB per-file cap stays, including for one named `file_id`. A known size that does not fit the remaining operation bytes is returned in `deferred_file_ids` and not downloaded. Results always include `files_scanned` and `bytes_scanned`. `next_cursor` is the last scanned file id only when the listing finished and more non-deferred files remain. The same value is an input property named `next_cursor` (`cursor` is an alias). There is no persistent folder cache, ripgrep store, or BM25 index. This deployment’s omitted ls/find/grep uses `kb` via `DRIVE_ALLOWED_FOLDER_ID`.
 
 ### `content_format` (plan-level, spec FR-022)
 

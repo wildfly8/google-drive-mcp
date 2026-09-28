@@ -41,9 +41,11 @@ Descendant checks use domain `is_within_scope` (same helper as Access Control). 
 
 **Alternatives considered**: Require folder always (rejected in clarify). Shared-with-me as a second ls root — rejected; do not special-case a second source of truth. Treating omitted-folder ls and find as the same universe (false; would hide the projection).
 
-## Decision: Omitted find/grep defaults to the kb folder (2026-09-28)
+## Decision: This deployment allows only the kb folder (2026-09-28)
 
-**Rationale**: A whole-grant grep sorted smallest-first spent `max_files` on tiny files outside `kb` and never reached that folder. `DRIVE_DEFAULT_FOLDER_ID` points omitted `drive_find` and `drive_grep` at the My Drive folder named `kb`. A named `folder_id` or `file_ids` still searches any granted resource. Omitted `drive_ls` still lists My Drive root so those other folders stay visible. `DRIVE_ALLOWED_FOLDER_ID` stays unset. The grep input property `next_cursor` (alias `cursor`) accepts the previous result field of the same name.
+**Rationale**: A whole-grant grep sorted smallest-first spent `max_files` on tiny files outside `kb` and never reached that folder. A later default (`DRIVE_DEFAULT_FOLDER_ID`) pointed omitted find/grep at `kb` and still left every other granted folder reachable, including My Drive root via omitted `drive_ls`. This deployment sets `DRIVE_ALLOWED_FOLDER_ID` to the My Drive folder named `kb` and leaves `DRIVE_DEFAULT_FOLDER_ID` unset. Omitted `drive_ls`, `drive_find`, and `drive_grep` run in `kb`. A named `folder_id` or `file_id` outside `kb` is `AUTHORIZATION_ERROR` (`outside_allowed_folder`). Descendants of `kb` stay readable. The grep input property `next_cursor` (alias `cursor`) accepts the previous result field of the same name.
+
+**Alternatives considered**: Keep `DRIVE_DEFAULT_FOLDER_ID` as a non-deny default (rejected: other top-level folders stayed reachable). A persistent folder cache or BM25 index (rejected: Article III and Article XIV).
 
 ## Decision: Stdlib `re` with explicit literal vs regex modes
 

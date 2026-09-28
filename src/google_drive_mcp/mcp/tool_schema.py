@@ -46,7 +46,7 @@ Hard rules:
 - drive_find name_pattern is a case-insensitive substring of the *filename*, not glob, not contents.
 - drive_grep pattern matches exported file *bytes* (literal, or regex if regex=true). Not Drive fullText.
 - drive_ls is immediate children only; drive_find / drive_grep on a folder include descendants.
-- Omit folder_id on drive_find and drive_grep to search the deployment default folder (kb). Pass another folder id to search that folder. No folder is disallowed. drive_ls of an omitted folder still lists My Drive root children, including kb and the other top-level folders.
+- The only folder this server may read is kb and its descendants. Omit folder_id to list or search kb. A folder_id or file_id outside kb is AUTHORIZATION_ERROR. Do not request My Drive root or any other top-level folder.
 - One drive_grep or drive_read returns at most 20 MB. A file at or under that size is complete when you pass that one file_id. A folder grep scans smaller files first. A known size that does not fit the remaining bytes is listed in deferred_file_ids and is not downloaded.
 - Candidates from drive_find are not quotes. Evidence is drive_read content or drive_grep matches with provenance.
 - source_url is the locator drive:{file_id}, not an HTTP URL. Do not present it as a download or Cited Source link.
@@ -65,7 +65,7 @@ DRIVE_LS_DESCRIPTION = """\
 List the immediate children of one Drive folder. Metadata only — no file bodies.
 
 When to use:
-- Orient: what folders/files sit directly under a known folder_id (or the default scope).
+- Orient: what folders/files sit directly under kb, or under a folder_id inside kb.
 - Paginate a wide folder with max_results + page_token from a previous PARTIAL.
 
 When not to use:
@@ -86,7 +86,7 @@ Recursive metadata discovery. Returns SearchCandidate records (file + reason). N
 When to use:
 - Locate files whose *filename* contains a short stem (name_pattern is a case-insensitive substring).
 - Filter by mime_type, modified_after / modified_before (ISO-8601), or trashed.
-- Walk descendants of a folder_id (unlike drive_ls, which is one level). Omit folder_id to search kb.
+- Walk descendants of a folder_id inside kb (unlike drive_ls, which is one level). Omit folder_id to search kb. A folder outside kb is AUTHORIZATION_ERROR.
 
 When not to use:
 - Searching file *contents* (use drive_grep).
@@ -129,7 +129,7 @@ Deterministic exact match over bytes exported in this call. Not Drive fullText, 
 
 When to use:
 - Verify a claim with a short distinctive phrase, identifier, title, or term of art taken from the user question.
-- Search known file_ids (preferred) or all descendants of a folder_id. Omit folder_id to search kb. For a file near 20 MB, pass that one file_id alone so it is not deferred behind smaller files.
+- Search known file_ids inside kb (preferred) or all descendants of a folder_id inside kb. Omit folder_id to search kb. A folder or file outside kb is AUTHORIZATION_ERROR. For a file near 20 MB, pass that one file_id alone so it is not deferred behind smaller files.
 - Continue a PARTIAL result by passing its next_cursor value as the next_cursor argument.
 - Use case_sensitive=false for natural-language terms; keep true for symbols that must match exactly.
 - Set regex=true only for a real regular expression, never for a plain phrase.

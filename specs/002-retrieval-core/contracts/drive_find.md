@@ -2,7 +2,7 @@
 
 Metadata / Drive-native **candidate** discovery. Recursive when `folder_id` is set. Results are not evidence.
 
-Must run Access Control chain first. Google-missing folder → `FILE_NOT_FOUND`. v1 does not emit `AUTHORIZATION_ERROR` for this tool.
+Must run Access Control chain first. Google-missing folder → `FILE_NOT_FOUND`. A Google-granted folder outside `DRIVE_ALLOWED_FOLDER_ID` → `AUTHORIZATION_ERROR`.
 
 ## Input
 
@@ -22,7 +22,7 @@ Must run Access Control chain first. Google-missing folder → `FILE_NOT_FOUND`.
 }
 ```
 
-Omitted `folder_id` with `DRIVE_DEFAULT_FOLDER_ID` set → that folder (`kb` on this deployment) and its descendants, still bounded by `max_results` / `max_files`. A named `folder_id` searches that folder instead. When the variable is unset, omitted `folder_id` is `default_whole_grant` (whole Google grant), **unless** Access Control rewrote it to `DRIVE_ALLOWED_FOLDER_ID`. Omitted-folder `drive_ls` stays My Drive `root` children (or the allow-list folder’s children) and is not the same universe as omitted-folder find.
+On this deployment, omitted `folder_id` is `DRIVE_ALLOWED_FOLDER_ID` (`kb`) and its descendants, still bounded by `max_results` / `max_files`. A named `folder_id` outside `kb` is `AUTHORIZATION_ERROR`. When the allow-list is unset, omitted `folder_id` uses `DRIVE_DEFAULT_FOLDER_ID` if set, otherwise `default_whole_grant`. Omitted `drive_ls` lists the same allow-list folder’s immediate children.
 
 Invalid `max_results` or date-time → `INVALID_ARGUMENT`.
 

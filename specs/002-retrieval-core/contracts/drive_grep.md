@@ -14,7 +14,7 @@ Must run Access Control chain first.
   "properties": {
     "pattern": { "type": "string", "minLength": 1, "description": "Exact phrase in exported bytes (literal unless regex=true). Short term of art, not the whole user question. Not Drive fullText." },
     "file_ids": { "type": "array", "items": { "type": "string" } },
-    "folder_id": { "type": "string", "description": "Omit to search DRIVE_DEFAULT_FOLDER_ID (the kb folder on this deployment). A named id searches that folder, including one other than kb." },
+    "folder_id": { "type": "string", "description": "Omit to search DRIVE_ALLOWED_FOLDER_ID (kb on this deployment). A named id outside kb is AUTHORIZATION_ERROR." },
     "next_cursor": { "type": "string", "description": "Previous result field next_cursor. Empty starts at the first file. Alias: cursor." },
     "cursor": { "type": "string", "description": "Alias of next_cursor." },
     "case_sensitive": { "type": "boolean", "default": true },
@@ -25,7 +25,7 @@ Must run Access Control chain first.
 }
 ```
 
-If both `file_ids` and `folder_id` are omitted and `DRIVE_DEFAULT_FOLDER_ID` is set, grep searches that folder (`kb` on this deployment). If it is unset, the call is `default_whole_grant`, still budgeted. `regex=false` → literal (`re.escape`). Invalid regex, out-of-range budgets, `next_cursor` or `cursor` combined with `file_ids`, or a continuation id that is not a file id in a finished listing → `INVALID_ARGUMENT`. An empty `next_cursor` starts at the first file. Runtime engine failure after a valid compile → `SEARCH_ERROR`.
+If both `file_ids` and `folder_id` are omitted, grep searches `DRIVE_ALLOWED_FOLDER_ID` (`kb` on this deployment). When the allow-list is unset, omitted grep uses `DRIVE_DEFAULT_FOLDER_ID` if set, otherwise `default_whole_grant`, still budgeted. A named folder or file outside the allow-list is `AUTHORIZATION_ERROR`. `regex=false` → literal (`re.escape`). Invalid regex, out-of-range budgets, `next_cursor` or `cursor` combined with `file_ids`, or a continuation id that is not a file id in a finished listing → `INVALID_ARGUMENT`. An empty `next_cursor` starts at the first file. Runtime engine failure after a valid compile → `SEARCH_ERROR`.
 
 A folder or whole-grant call scans known-smaller files first. The per-file cap stays 20 MB, so one named `file_id` (including a ~19 MB `.mdx`) is exported in that call and is never placed in `deferred_file_ids`. A known size that does not fit the bytes left in the operation is not downloaded; that id and the larger tail are `deferred_file_ids`. Unknown size is not deferred only because remaining bytes are below 20 MB.
 

@@ -6,7 +6,7 @@
 
 **Created**: 2026-09-08
 
-**Status**: Implemented (Cloud Run `onto-kb-00023-8ph`; omitted find/grep search `kb`; grep input `next_cursor`)
+**Status**: Implemented (Cloud Run `onto-kb-00023-8ph`; only `kb` is allowed via `DRIVE_ALLOWED_FOLDER_ID`; grep input `next_cursor`)
 
 **Input**: User description: "Bounded context for discovery, inspection, and exact-match verification over live Google Drive content. Agent-controlled iterative retrieval with Drive as the sole persistent source of truth. No embedding index or application-owned document replica. Access Control is upstream; this spec never makes authorization decisions."
 
@@ -22,7 +22,7 @@
 
 - Q: In v1, who is the principal that every Drive call runs as, given the constitution allows only one Google identity per deployment? → A: One Drive identity per deployment. MCP authentication is still required so anonymous callers cannot use it. Concurrent requests share that identity; isolation is no leaked credential state, not multiple Google users. (Owned by Access Control; consumed here.)
 - Q: When a call is denied, should the agent be told the file is forbidden, or only that it was not found? → A: Outside the call’s stated retrieval boundary → `AUTHORIZATION_ERROR`. Google does not grant the file → `FILE_NOT_FOUND` (no existence leak). (Owned by Access Control; consumed here.)
-- Q: If the agent does not name a folder or file list, what may the call search? → A: On this deployment, omitted `folder_id` for `drive_find` and `drive_grep` is the Drive folder named `kb` (`DRIVE_DEFAULT_FOLDER_ID`). That is a default, not a deny-list: a named `folder_id` or `file_ids` still searches any granted resource. `drive_ls` of an omitted folder still lists My Drive `root` children. When `DRIVE_DEFAULT_FOLDER_ID` is unset, omitted find/grep remains the whole Google grant. Optional `DRIVE_ALLOWED_FOLDER_ID` is a separate hard narrow.
+- Q: If the agent does not name a folder or file list, what may the call search? → A: This deployment sets `DRIVE_ALLOWED_FOLDER_ID` to the Drive folder named `kb`. Omitted `folder_id` on `drive_ls`, `drive_find`, and `drive_grep` is `kb`. A named `folder_id` or `file_id` outside `kb` is `AUTHORIZATION_ERROR`. `DRIVE_DEFAULT_FOLDER_ID` is unset here. When the allow-list is unset, omitted find/grep uses `DRIVE_DEFAULT_FOLDER_ID` if that variable is set, and otherwise the whole Google grant, and omitted `drive_ls` lists My Drive `root`.
 - Q: When the agent names a folder for find or exact search, does that include files in nested subfolders? → A: Find and grep on a folder include nested subfolders. List is immediate children only.
 - Q: Which file kinds must v1 be able to read and exact-search, and what happens for everything else? → A: Required: Docs, Sheets, Slides. Also: other Drive files that yield usable text. Non-text/unreadable types → unsupported error (never empty success).
 
@@ -106,7 +106,7 @@ Drive is the only source of truth. After a document changes in Drive, a later re
 
 - Pagination (`max_results`, `page_token`) MUST NOT report `COMPLETE` when results were silently truncated (FR-003, FR-041).
 - `drive_ls` enumerates immediate children only; `drive_find` and `drive_grep` on a `folder_id` include nested descendants. A recursive search that hits a limit MUST report `PARTIAL`, not a silent miss.
-- Unspecified `RetrievalScope` (`default_whole_grant`) means the whole Google grant when `DRIVE_DEFAULT_FOLDER_ID` is unset. On this deployment that variable is the `kb` folder, and omitted `drive_find` / `drive_grep` search that folder and its descendants. A named `folder_id` or `file_ids` still addresses any granted resource. `drive_ls` **projects** an omitted folder onto the immediate children of My Drive `root`, **unless** Access Control rewrote the omitted `folder_id` to `DRIVE_ALLOWED_FOLDER_ID` (then ls is that folder’s immediate children). Agents MUST NOT assume omitted-folder `ls` and omitted-folder `find` return the same universe.
+- This deployment sets `DRIVE_ALLOWED_FOLDER_ID` to `kb`. Access Control rewrites an omitted `folder_id` on `drive_ls`, `drive_find`, and `drive_grep` to that folder before retrieval runs. `drive_ls` then lists `kb`’s immediate children; find and grep search `kb` and its descendants. A Google-granted `folder_id` or `file_id` outside `kb` is `AUTHORIZATION_ERROR`. When the allow-list is unset, unspecified `RetrievalScope` (`default_whole_grant`) is the whole Google grant, omitted find/grep use `DRIVE_DEFAULT_FOLDER_ID` when that variable is set, and omitted `drive_ls` lists the immediate children of My Drive `root`.
 - `drive_ls` MUST NOT return document bodies.
 - Discovery results MUST NOT be presented as verified evidence.
 - Unsupported or non-exportable content: **single-id** read or grep → classified error (`UNSUPPORTED_MIME_TYPE` / `FILE_NOT_EXPORTABLE`), not empty success. **Folder or whole-grant grep** with mixed types → skip unsupported, search the rest, `PARTIAL`; if every target is unsupported → classified error. v1 required types are Google Docs, Sheets, and Slides; other Drive files are supported only when they yield usable text. Drive often labels Markdown/MDX as `application/octet-stream`; those blobs MUST still yield usable text when the filename has a known text extension (FR-021).
@@ -128,7 +128,7 @@ Drive is the only source of truth. After a document changes in Drive, a later re
 
 #### Discovery — `drive_find`
 
-- **FR-010**: MUST discover `SearchCandidate[]` using metadata and/or Drive-native discovery, filterable by `name_pattern, mime_type, folder_id, modified_after, modified_before, trashed, max_results`. `name_pattern` is a case-insensitive **filename substring**, not a glob and not file contents. When `folder_id` is omitted and `DRIVE_DEFAULT_FOLDER_ID` is set, discovery runs in that folder (the `kb` folder on this deployment). When that variable is unset, discovery runs within the whole Google grant, **unless** Access Control rewrote the omitted folder to `DRIVE_ALLOWED_FOLDER_ID`. When `folder_id` is named, discovery MUST include descendants of that folder, not only its immediate children, including a folder other than `kb`.
+- **FR-010**: MUST discover `SearchCandidate[]` using metadata and/or Drive-native discovery, filterable by `name_pattern, mime_type, folder_id, modified_after, modified_before, trashed, max_results`. `name_pattern` is a case-insensitive **filename substring**, not a glob and not file contents. On this deployment Access Control rewrites an omitted `folder_id` to `DRIVE_ALLOWED_FOLDER_ID` (`kb`) before discovery runs. When the allow-list is unset and `DRIVE_DEFAULT_FOLDER_ID` is set, omitted discovery runs in that folder. When both are unset, omitted discovery runs within the whole Google grant. When `folder_id` is named and Access Control allows it, discovery MUST include descendants of that folder, not only its immediate children. A named folder outside the allow-list is `AUTHORIZATION_ERROR`.
 - **FR-011**: MUST NOT represent returned candidates as verified evidence (Article VIII).
 - **FR-012**: `drive_find` MUST push `name contains`, `mimeType`, `modifiedTime` bounds, and `trashed = false` (unless `trashed` is true) into the Drive `files.list` query. `max_results` counts matching non-folder files only. Children returned by listing a folder are already in that folder: the walk MUST NOT `files.get` each child to re-check parents. A finished scan with zero matches is `EMPTY`. Hitting the cap while more matching files remain is `PARTIAL` with `partial_reason: max_files`.
 
@@ -142,7 +142,7 @@ Drive is the only source of truth. After a document changes in Drive, a later re
 
 #### Verification — `drive_grep`
 
-- **FR-030**: MUST perform deterministic exact-content search over one or more files, identified by `file_ids` and/or `folder_id`, given `pattern, case_sensitive?, regex?, context_lines?, max_matches?, next_cursor?`. When neither `file_ids` nor `folder_id` is named and `DRIVE_DEFAULT_FOLDER_ID` is set, grep runs in that folder (the `kb` folder on this deployment). When that variable is unset, grep runs within the whole Google grant, subject to resource limits and `PARTIAL` completeness (FR-041). When `folder_id` is named, grep MUST search that folder’s descendants, not only its immediate children, including a folder other than `kb`. The input properties `next_cursor` and `cursor` both accept the previous result’s `next_cursor` value and continue after that file. Combining either with `file_ids` is `INVALID_ARGUMENT`. A continuation id that is not in a finished listing is `INVALID_ARGUMENT`. An empty string starts at the first file.
+- **FR-030**: MUST perform deterministic exact-content search over one or more files, identified by `file_ids` and/or `folder_id`, given `pattern, case_sensitive?, regex?, context_lines?, max_matches?, next_cursor?`. On this deployment Access Control rewrites an omitted `folder_id` (and no `file_ids`) to `DRIVE_ALLOWED_FOLDER_ID` (`kb`) before grep runs. When the allow-list is unset and `DRIVE_DEFAULT_FOLDER_ID` is set, omitted grep runs in that folder. When both are unset, omitted grep runs within the whole Google grant, subject to resource limits and `PARTIAL` completeness (FR-041). When `folder_id` is named and Access Control allows it, grep MUST search that folder’s descendants, not only its immediate children. A named folder or file outside the allow-list is `AUTHORIZATION_ERROR`. The input properties `next_cursor` and `cursor` both accept the previous result’s `next_cursor` value and continue after that file. Combining either with `file_ids` is `INVALID_ARGUMENT`. A continuation id that is not in a finished listing is `INVALID_ARGUMENT`. An empty string starts at the first file.
 - **FR-031**: For identical retrieved bytes and identical parameters, results MUST be identical (Article IX) within the current request. A changed Drive document MAY change results on a subsequent call.
 - **FR-032**: When `case_sensitive = false`, matching MUST be case-insensitive; when `true`, case MUST be respected exactly.
 - **FR-033**: When `regex = true`, `pattern` MUST be interpreted as a regular expression, not a literal string; literal and regex modes MUST be unambiguously distinguished.
@@ -195,7 +195,7 @@ Drive is the only source of truth. After a document changes in Drive, a later re
 - **SearchCandidate**: A DriveFile surfaced as possibly relevant: `file, reason, discovery_method`. `discovery_method` is `find` (`drive_ls` returns children, not candidates). **Not evidence.**
 - **SearchMatch**: A deterministic exact match found in retrieved content: `file_id, file_name, pattern, matched_text, location, context`. A SearchMatch with provenance **is** evidence.
 - **Evidence** (conceptual role, not a separate wire type or Python class): content returned to the agent to support reasoning. `DocumentContent` from `drive_read` and `SearchMatch` from `drive_grep` play this role when they carry provenance. `SearchCandidate` never does. Agent inference is not evidence.
-- **RetrievalScope**: The bounded set of Drive resources an operation may touch. Field `default_whole_grant` is true when the call names no `folder_id` or `file_ids` (everything the deployment’s Google grant already allows). Access Control MAY rewrite an omitted folder to `DRIVE_ALLOWED_FOLDER_ID` before this context runs (narrow-only, AC-FR-021). A named folder or file list narrows that call only. Enforced by Access Control via `is_within_scope`. `drive_ls` with true `default_whole_grant` (no allow-list rewrite) lists immediate children of My Drive `root` only.
+- **RetrievalScope**: The bounded set of Drive resources an operation may touch. Field `default_whole_grant` is true when the call names no `folder_id` or `file_ids` (everything the deployment’s Google grant already allows). This deployment sets `DRIVE_ALLOWED_FOLDER_ID` to `kb`, and Access Control rewrites an omitted folder to that id before this context runs (narrow-only, AC-FR-021). A named folder or file outside that folder is `AUTHORIZATION_ERROR`. Enforced by Access Control via `is_within_scope`. When the allow-list is unset, `drive_ls` with true `default_whole_grant` lists immediate children of My Drive `root` only.
 - **RetrievalOperation**: One MCP invocation: `operation_id, tool, scope, query/pattern, start_time, end_time, result_count, status`.
 
 Domain relationships that MUST hold:
@@ -219,7 +219,7 @@ Domain relationships that MUST hold:
 | I6 | Deterministic grep for identical bytes and parameters, within a request | Article IX |
 | I7 | A new read or grep never relies on a stale persistent copy | Articles I, IX |
 | I8 | Discovery results are never represented as verified evidence | Article VIII |
-| I9 | Omitted find/grep uses `DRIVE_DEFAULT_FOLDER_ID` when set (`kb` on this deployment) and otherwise the whole grant, or `DRIVE_ALLOWED_FOLDER_ID` when Access Control rewrote it; `drive_ls` projects an omitted folder onto My Drive `root` (or the allow-list folder) | Articles I, VII |
+| I9 | This deployment’s omitted ls/find/grep use `DRIVE_ALLOWED_FOLDER_ID` (`kb`); a named resource outside that folder is `AUTHORIZATION_ERROR`. When the allow-list is unset, omitted find/grep use `DRIVE_DEFAULT_FOLDER_ID` if set and otherwise the whole grant, and omitted `drive_ls` lists My Drive `root` | Articles I, VII |
 
 Scope enforcement and credential use are Access Control invariants AI3/AI4, not retrieval invariants.
 
@@ -255,7 +255,7 @@ Scope enforcement and credential use are Access Control invariants AI3/AI4, not 
 - Vector database, semantic search, or reranking
 - Persistent document cache, folder cache, or offline mirror
 - A local ripgrep store, BM25 index, or any semantic / vector retrieval
-- Hiding export folders, disallowing folders other than `kb`, or lowering the per-file cap below 20 MB
+- Hiding export folders, or lowering the per-file cap below 20 MB
 - Rewriting Drive activity logs whose bodies are import shells; that text lives in Drive
 - Full-text indexing independent of live Drive content
 - Authentication and authorization (see `specs/001-access-control/spec.md`)
