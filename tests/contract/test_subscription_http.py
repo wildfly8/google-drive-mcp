@@ -111,12 +111,27 @@ def test_entitled_cookie_allows_connect(fake_drive: FakeDrive):
 
 def test_setup_mentions_fee_when_paywall_on(fake_drive: FakeDrive):
     settings = _paid_settings()
-    runtime = Runtime(settings=settings, drive=fake_drive, billing=FakeBilling())
+    billing = FakeBilling()
+    runtime = Runtime(settings=settings, drive=fake_drive, billing=billing)
     with _client(runtime) as client:
         page = client.get("/setup")
         assert page.status_code == 200
         assert "$20" in page.text
-        assert "/subscribe" in page.text
+        assert 'href="/subscribe"' in page.text
+        assert "/mcp" not in page.text
+        assert "Always allow" not in page.text
+        assert "Knowing this URL" not in page.text
+        assert "Copy" not in page.text
+        assert "console.cloud.google.com" not in page.text
+        billing.active.add("cus_live1")
+        token = mint_entitlement(settings, customer_id="cus_live1")
+        paid = client.get("/setup", cookies={COOKIE_NAME: token})
+        assert "/mcp" in paid.text
+        assert "Always allow" in paid.text
+        billing.active.clear()
+        inactive = client.get("/setup", cookies={COOKIE_NAME: token})
+        assert "/mcp" not in inactive.text
+        assert 'href="/subscribe"' in inactive.text
         stats = client.get("/stats")
         body = stats.json()
         assert "stripe" not in json.dumps(body).lower()

@@ -64,10 +64,37 @@ _PAGE = """\
 </html>
 """
 
+_LOCKED = """\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Subscribe to onto-kb</title>
+  <style>
+    body {{ font-family: system-ui, sans-serif; max-width: 36rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.45; }}
+    a {{ color: #0b57d0; }}
+  </style>
+</head>
+<body>
+  <h1>Subscribe to onto-kb</h1>
+  <p><strong>$20 USD / month required.</strong> Connector setup is shown in this browser after Stripe Checkout.</p>
+  <p><a href="/subscribe">Pay on Stripe Checkout</a></p>
+  <p>Cards are entered on Stripe, not here. This page does not show the operator’s bank details.</p>
+</body>
+</html>
+"""
+
 
 def setup_get(
-    _request: Request, settings: Settings, stats: dict | None = None
+    _request: Request,
+    settings: Settings,
+    stats: dict | None = None,
+    *,
+    entitled: bool = True,
 ) -> HTMLResponse:
+    if settings.mcp_subscription_required and not entitled:
+        return HTMLResponse(_LOCKED.format())
     mcp_url = resource_url(settings)
     stats = stats or {}
     connects = int(stats.get("oauth_connects") or 0)

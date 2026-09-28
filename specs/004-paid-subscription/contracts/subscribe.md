@@ -18,7 +18,9 @@ Stripe-Signature required. Invalid signature → 400. Valid → 200. Body not lo
 
 ## `GET /setup`
 
-Includes $20/month + link to `/subscribe` when paywall is on.
+When the paywall is on and the request has no valid entitlement cookie, or Stripe says that subscription is inactive: HTML is only the $20 fee and a link to `/subscribe`. No connector URL, copy control, Claude steps, OAuth note, usage counts, or Google Cloud console links.
+
+When the entitlement cookie verifies and Stripe reports the subscription active: existing connector instructions, including the URL.
 
 ## `GET /authorize` (existing)
 

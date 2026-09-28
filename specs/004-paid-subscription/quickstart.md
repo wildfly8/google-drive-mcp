@@ -13,7 +13,7 @@ MCP_SUBSCRIPTION_REQUIRED=true
 ```
 
 4. Webhook endpoint: `https://<origin>/webhooks/stripe` events: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`.
-5. Deploy. Open `/setup` — pay wall copy + `/subscribe`.
+5. Deploy. Open `/setup` with no payment cookie — fee and `/subscribe` only. After Checkout, the same browser shows the connector URL.
 6. Test mode: pay, then Claude Connect. Unpaid Connect must fail.
 
 Automated: `uv run pytest tests/contract/test_subscription_http.py tests/unit/billing -q`

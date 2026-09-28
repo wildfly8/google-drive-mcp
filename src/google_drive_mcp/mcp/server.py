@@ -13,6 +13,7 @@ from pydantic import AnyHttpUrl, Field
 
 from google_drive_mcp.infra.billing.entitlement import COOKIE_NAME, set_current_scid, verify_entitlement
 from google_drive_mcp.infra.billing.routes import (
+    entitlement_from_request,
     stripe_webhook_post,
     subscribe_checkout_post,
     subscribe_complete_get,
@@ -143,7 +144,16 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
 
     @server.custom_route("/setup", methods=["GET"])
     async def claude_setup(request):
-        return setup_get(request, settings, stats_snapshot(runtime.telemetry))
+        scid = entitlement_from_request(request, settings)
+        entitled = True
+        if settings.mcp_subscription_required:
+            entitled = bool(scid and runtime.billing.is_subscription_active(scid))
+        return setup_get(
+            request,
+            settings,
+            stats_snapshot(runtime.telemetry),
+            entitled=entitled,
+        )
 
     @server.custom_route("/subscribe", methods=["GET"])
     async def subscribe_page(request):

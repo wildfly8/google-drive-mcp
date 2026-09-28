@@ -69,7 +69,7 @@ A subscriber can cancel renewal on the processor's customer portal. Access conti
 
 ### User Story 4 - Setup page tells hosts to pay first (Priority: P2)
 
-`GET /setup` (and a dedicated subscribe page) state that onto-kb is **$20 USD per month**, link to checkout, then the existing Claude/ChatGPT connector steps. Public `/stats` stays non-PII and MUST NOT list subscribers.
+`GET /setup` states that onto-kb is **$20 USD per month** and links to checkout. The connector URL, copy control, Claude steps, OAuth notes, usage counts, and Google Cloud console links are shown only when the request has a valid entitlement cookie and Stripe reports that subscription active. Public `/stats` stays non-PII and MUST NOT list subscribers.
 
 **Why this priority**: Claude users will otherwise Connect and fail without explanation.
 
@@ -77,8 +77,9 @@ A subscriber can cancel renewal on the processor's customer portal. Access conti
 
 **Acceptance Scenarios**:
 
-1. **Given** `/setup`, **When** loaded, **Then** it states the mandatory $20/month fee and how to pay before Connect.
-2. **Given** `/stats`, **When** loaded, **Then** it is unchanged in kind (no emails, customer ids, or payment fields).
+1. **Given** `/setup` without an active entitlement, **When** loaded, **Then** it states the mandatory $20/month fee and links to checkout, and it does not include the connector URL or Claude steps.
+2. **Given** `/setup` with a valid entitlement cookie for an active subscription, **When** loaded, **Then** it shows the connector URL and Claude steps.
+3. **Given** `/stats`, **When** loaded, **Then** it is unchanged in kind (no emails, customer ids, or payment fields).
 
 ---
 
@@ -118,7 +119,7 @@ The payment processor requires a public, non-password-protected website whose vi
 - **FR-003**: Card collection MUST occur on the processor's hosted checkout (PCI). This origin MUST NOT accept card numbers, CVC, or bank account numbers in its own forms.
 - **FR-004**: Pages, JSON, logs, metrics, and `/stats` MUST NOT expose owner bank/card/KYC, subscriber PAN/bank, subscriber email, or processor customer ids.
 - **FR-005**: Unpaid `/authorize` MUST NOT mint an authorization code. Unpaid refresh MUST NOT mint a new access token.
-- **FR-006**: `GET /setup` MUST describe the fee and link to checkout **before** connector steps. A `GET /subscribe` (or equivalent) MUST start checkout.
+- **FR-006**: When the paywall is on, `GET /setup` without a valid entitlement cookie for an active subscription MUST show only the fee and a link to checkout. It MUST NOT include the connector URL, copy control, host connection steps, the “knowing this URL is enough” note, usage counts, or Google Cloud console links. Those appear only for an active entitlement. A `GET /subscribe` (or equivalent) MUST start checkout.
 - **FR-007**: Drive tools, one deployment Google identity, and Retrieval Core contracts MUST remain as in 001–002. Payment does not expand Google grant.
 - **FR-008**: Connect telemetry (003) MUST still count only successful paid Connects (authorization-code token issuance after entitlement).
 - **FR-009**: Go-live deploy MUST run with the paywall **on**. `MCP_OAUTH_AUTO_APPROVE` MUST NOT bypass the paywall.
