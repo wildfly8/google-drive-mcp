@@ -6,7 +6,7 @@
 
 **Created**: 2026-09-27
 
-**Status**: Implemented (live Stripe secrets bound on Cloud Run revision `onto-kb-00018-t2k`; Connect requires an active subscription)
+**Status**: Implemented (live Stripe secrets bound on Cloud Run revision `onto-kb-00019-7t5`; Connect requires an active subscription)
 
 **Input**: User description: "Add brand new feat 004 to get ready go live to accept mandatory $20 monthly subscription fee via Stripe/PayPal or whatever secure payment approach you recommend as the best payment approach based on the entire context while I don't want to disclose my credit card/bank account or any other PII data to receive mandatory $20/month subscription fee to use my MCP Server."
 
