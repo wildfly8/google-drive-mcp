@@ -114,11 +114,11 @@ def subscribe_get(
             page = HTMLResponse(
                 _SUBSCRIBE.format(
                     status=html.escape(
-                        "This subscription is already active. Remember it in this browser "
-                        "so a different browser can continue Connect."
+                        "This subscription is already active. Continue saves it for this "
+                        "browser account, including a new device signed into that account."
                     ),
                     form=remember_controls(nxt),
-                    setup=f'<p><a href="{html.escape(nxt, quote=True)}">Continue</a></p>',
+                    setup="",
                 )
             )
         set_entitlement_cookie(page, settings, scid)
@@ -141,16 +141,21 @@ def subscribe_get(
             "USD 20 each month until you cancel in the Stripe customer portal. "
             "An AI chat app that already finished Connect keeps working "
             "while the subscription is active. No email, and no second charge. "
-            "Switching browsers continues the same subscription automatically. "
-            "You do not type a receipt email."
+            "Switching browsers on the same browser account continues the same subscription. "
+            "You do not type a receipt email, and you are not charged again."
         )
         form = (
             '<form method="post" action="/subscribe/checkout">'
             '<button type="submit">Pay $20 / month</button></form>'
-            '<p class="note" id="passkey-status">If you already pay, this browser continues '
-            "that subscription when it has been remembered. You do not type a receipt email.</p>"
-            '<button type="button" id="continue-sub" hidden onclick="ontoKbContinue()">'
-            "Continue subscription</button>"
+            '<p class="note" id="passkey-status">Already paying? Continue subscription. '
+            "A new device signed into the same browser account is included.</p>"
+            '<p><button type="button" id="continue-sub" onclick="ontoKbContinue()">'
+            "Continue subscription</button></p>"
+            '<form id="device-email" hidden method="post" action="/subscribe/restore">'
+            "<p>This device is not on the browser account you paid with. "
+            "Enter the email on your Stripe receipt. This does not charge you again.</p>"
+            '<input type="email" name="email" autocomplete="email" aria-label="Email on your Stripe receipt">'
+            '<button type="submit">Continue on this device</button></form>'
             '<div id="passkey-auto" hidden></div>'
             + passkey_script()
         )

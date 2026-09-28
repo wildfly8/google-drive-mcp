@@ -270,7 +270,9 @@ def passkey_script() -> str:
   window.ontoKbContinue = function () {
     login().catch(function () {
       var el = document.getElementById("passkey-status");
-      if (el) el.textContent = "This browser does not have the subscription yet. Open Subscribe in the browser you paid with and choose Remember this subscription.";
+      if (el) el.textContent = "This device is not on the browser account that paid. Enter the receipt email below. This does not charge you again.";
+      var form = document.getElementById("device-email");
+      if (form) form.hidden = false;
     });
   };
   if (document.getElementById("passkey-auto")) {
@@ -288,9 +290,9 @@ def remember_controls(next_url: str) -> str:
     return (
         '<p><button type="button" id="remember-sub" onclick="ontoKbRemember('
         + safe
-        + ')">Remember this subscription</button></p>'
-        "<p class=\"note\">Choose this once in the browser you paid with. "
-        "Your other browsers then continue the same subscription. "
+        + ')">Continue</button></p>'
+        "<p class=\"note\">Continue saves this subscription for this browser account. "
+        "A new device signed into that same account continues it. "
         "You do not type a receipt email, and you are not charged again.</p>"
         + passkey_script()
     )
