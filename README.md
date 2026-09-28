@@ -35,6 +35,8 @@ https://onto-kb-kxjtmypvfa-uc.a.run.app/mcp
 
 The same steps are on one page: [https://onto-kb-kxjtmypvfa-uc.a.run.app/setup](https://onto-kb-kxjtmypvfa-uc.a.run.app/setup). Pay first: [https://onto-kb-kxjtmypvfa-uc.a.run.app/subscribe](https://onto-kb-kxjtmypvfa-uc.a.run.app/subscribe) ($20 USD/month on Stripe; this origin never shows the operator’s bank or collects card numbers).
 
+Public business site for Stripe verification (free GitHub Pages): [https://wildfly8.github.io/google-drive-mcp/](https://wildfly8.github.io/google-drive-mcp/).
+
 1. Claude Web → Customize → Connectors → **+** → Add custom connector.
 2. Name: **onto-kb**. Paste the URL above.
 3. Authentication: **Sign in when needed** (override Detected “No sign-in” if shown). OAuth client: **Use Claude’s published identity**. Leave request headers empty.

@@ -82,6 +82,22 @@ A subscriber can cancel renewal on the processor's customer portal. Access conti
 
 ---
 
+### User Story 5 - Public business page for processor verification (Priority: P1)
+
+The payment processor requires a public, non-password-protected website whose visible name matches the business **WisdomSpringTech** and that describes what is sold. That page is free to host, separate from the MCP origin, and does not show bank or card details.
+
+**Why this priority**: Account activation blocks go-live until this URL exists. A placeholder such as `www.example.com` is rejected.
+
+**Independent Test**: Open the public business URL in a browser with no login. The page shows WisdomSpringTech, a hosted read-only MCP subscription at USD 20 per month (onto-kb), and a link to the connector setup page. No password prompt. No bank or card numbers.
+
+**Acceptance Scenarios**:
+
+1. **Given** the published business page, **When** a reviewer loads it without credentials, **Then** the business name WisdomSpringTech is visible and the page describes the $20/month onto-kb subscription.
+2. **Given** that page, **When** inspected, **Then** it links to the public connector setup URL and does not contain owner bank accounts, card numbers, or a login wall.
+3. **Given** the processor business-website field, **When** the owner pastes this URL, **Then** it is a real HTTPS page, not `www.example.com`.
+
+---
+
 ### Edge Cases
 
 - Processor webhook delayed: `/authorize` MUST ask the processor for current status (or a short-lived signed entitlement from a completed checkout), not trust only an in-memory flag.
@@ -109,6 +125,7 @@ A subscriber can cancel renewal on the processor's customer portal. Access conti
 - **FR-010**: Processor webhook (or equivalent signed events) MUST update or confirm entitlement; spoofed unsigned POSTs MUST be rejected.
 - **FR-011**: After successful checkout in the subscriber's browser, that browser MUST be able to complete MCP OAuth (cookie or one-time entitlement bound to the checkout) without pasting a card. A displayed one-time code is allowed as fallback if the cookie is missing.
 - **FR-012**: The owner MUST be able to open the processor dashboard to see payouts. That dashboard is not this MCP. This origin MUST NOT print payout bank details.
+- **FR-013**: A free public HTTPS page MUST show the business name **WisdomSpringTech**, state that the product is a hosted read-only MCP subscription (onto-kb) at USD 20 per month, and link to the connector setup URL. The page MUST be viewable without a password and MUST NOT show owner bank or card details.
 
 ### Key Entities
 
@@ -126,6 +143,7 @@ A subscriber can cancel renewal on the processor's customer portal. Access conti
 - **SC-003**: A reviewer of `/setup`, `/subscribe`, `/stats`, and application logs finds zero owner bank/card numbers and zero subscriber card numbers.
 - **SC-004**: After the processor marks a subscription inactive, new Connect and token refresh fail within one token lifetime (≤ 1 hour for access tokens).
 - **SC-005**: 100% of production Connects that mint tokens have an active paid period at issuance time when the paywall is on.
+- **SC-006**: A reviewer can open the public business page with no login and see WisdomSpringTech plus the $20/month onto-kb offer within one page load.
 
 ## Assumptions
 

@@ -23,6 +23,12 @@
 - [x] T008 `/setup` paywall copy + README + `.env.example` + deploy env/secrets
 - [x] T009 Tests that `/setup` mentions $20 and `/stats` has no billing PII
 
-## Phase 5: Pickup
+## Phase 5: US5 public business page
+
+- [ ] T011 Static public page `docs/index.html` named WisdomSpringTech, $20/month onto-kb, link to connector setup, no bank/card
+- [ ] T012 Publish that page on free GitHub Pages and record the HTTPS URL in quickstart
+- [ ] T013 Test the page source contains the business name, price, and setup link
+
+## Phase 6: Pickup
 
 - [x] T010 Update `.specify/memory/project-status.md` and `.cursor/rules/spec-kit-sdd.mdc`
