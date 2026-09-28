@@ -75,9 +75,9 @@ def test_unpaid_authorize_redirects_to_subscribe(fake_drive: FakeDrive):
         page = client.get("/subscribe")
         assert page.status_code == 200
         assert "Pay $20 / month" in page.text
-        assert "do not type a receipt email" in page.text
-        assert "Continue subscription" in page.text
-        assert 'id="device-email" hidden' in page.text
+        assert "No email, and no second charge." in page.text
+        assert "Continue subscription" not in page.text
+        assert "device-email" not in page.text
         assert 'href="/setup"' not in page.text
 
 

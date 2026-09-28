@@ -31,7 +31,7 @@ A person who wants onto-kb in Claude (or any MCP host) must complete a **mandato
 1. **Given** no active paid period, **When** a host starts MCP OAuth `/authorize`, **Then** the browser is sent to pay (or shown a pay wall) and no authorization code is issued.
 2. **Given** an active $20/month period, **When** the host completes authorization-code + PKCE, **Then** an access token is issued as in 001.
 3. **Given** a paid subscriber whose assistant already connected, **When** days pass and Stripe still reports the subscription active, **Then** token refresh succeeds and `drive_*` keeps working with no subscriber action.
-4. **Given** an active subscription and a browser that does not have the earlier connection, **When** the visitor submits the email already stored at the processor, **Then** Connect continues and no second charge is created.
+4. **Given** an AI chat app that already finished Connect, **When** the processor still reports that subscription active, **Then** the app keeps calling tools with no extra button and no second charge.
 5. **Given** a probe of `/authorize` that never pays, **When** it stops, **Then** `oauth_connects` does not increase.
 
 ---
@@ -110,7 +110,7 @@ The payment processor requires a public, non-password-protected website whose vi
 - Refunds: treated as not entitled once the processor marks the subscription inactive.
 - Currency: USD 20; no other prices in this feature.
 - One Google identity: paying does not attach the subscriber's own Drive.
-- A connected assistant keeps working after the old 30-day cookie window, for as long as the processor reports the subscription active. Refresh re-checks the processor. A missing browser cookie does not start a second charge when that email already has an active subscription.
+- A connected assistant keeps working after the old 30-day cookie window, for as long as the processor reports the subscription active. Refresh re-checks the processor. `/subscribe` does not add a Continue or Remember button.
 - The public business site is `https://wisdomspringtech.github.io/`. `https://wildfly8.github.io/google-drive-mcp/` is not the business site.
 
 ## Requirements *(mandatory)*
@@ -127,7 +127,7 @@ The payment processor requires a public, non-password-protected website whose vi
 - **FR-008**: Connect telemetry (003) MUST still count only successful paid Connects (authorization-code token issuance after entitlement).
 - **FR-009**: Go-live deploy MUST run with the paywall **on**. `MCP_OAUTH_AUTO_APPROVE` MUST NOT bypass the paywall.
 - **FR-010**: Processor webhook (or equivalent signed events) MUST update or confirm entitlement; spoofed unsigned POSTs MUST be rejected.
-- **FR-011**: After a successful payment, a connected Claude, ChatGPT, or Cursor MUST keep calling tools with no subscriber action while the processor reports that subscription active. Refresh MUST re-check the processor and MUST rotate a long-lived refresh token on success. A browser without the earlier connection MUST be able to continue an active subscription using the email already stored at the processor, with no second charge and without this origin logging, storing, or echoing that email. A new charge happens only when the processor has no active subscription for that email. Checkout in the paying browser MUST still be able to finish Connect without pasting a card.
+- **FR-011**: After a successful payment, a connected AI chat app MUST keep calling tools with no subscriber action while the processor reports that subscription active. Refresh MUST re-check the processor and MUST rotate a long-lived refresh token on success. `/subscribe` shows only the Pay button. Checkout in the paying browser MUST still be able to finish Connect without pasting a card.
 - **FR-012**: The owner MUST be able to open the processor dashboard to see payouts. That dashboard is not this MCP. This origin MUST NOT print payout bank details.
 - **FR-013**: A free public HTTPS page MUST show the business name **WisdomSpringTech**, state that the product is a hosted read-only MCP subscription (onto-kb) at USD 20 per month for any AI chat app that supports a remote MCP connector, and state that connector setup is available only after payment. The page MUST contain one link, to checkout, and MUST be viewable without a password. It MUST NOT show the connector setup URL, owner bank, or card details.
 

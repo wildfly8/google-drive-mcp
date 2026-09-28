@@ -24,10 +24,8 @@ from google_drive_mcp.infra.billing.passkey import (
     authentication_options,
     merge_passkey,
     mint_challenge,
-    passkey_script,
     read_challenge,
     registration_options,
-    remember_controls,
     signature_matches,
     verify_authentication,
     verify_registration,
@@ -77,7 +75,6 @@ _COMPLETE = """\
   <h1>Payment received</h1>
   <p>Return to your AI chat app. While this subscription stays active,
      that app keeps calling onto-kb with no email and no further payment.</p>
-  {controls}
   <p>Fallback entitlement (do not share):</p>
   <p><code>{code}</code></p>
   <p><a href="/setup">Setup</a></p>
@@ -107,20 +104,7 @@ def subscribe_get(
         and scid
         and billing.is_subscription_active(scid)
     ):
-        nxt = _resume_target(request)
-        if billing.get_passkey(scid):
-            page = RedirectResponse(nxt, status_code=303)
-        else:
-            page = HTMLResponse(
-                _SUBSCRIBE.format(
-                    status=html.escape(
-                        "This subscription is already active. Continue saves it for this "
-                        "browser account, including a new device signed into that account."
-                    ),
-                    form=remember_controls(nxt),
-                    setup="",
-                )
-            )
+        page = RedirectResponse(_resume_target(request), status_code=303)
         set_entitlement_cookie(page, settings, scid)
         page.delete_cookie(RESUME_COOKIE, path="/")
         return page
@@ -140,24 +124,11 @@ def subscribe_get(
         status = (
             "USD 20 each month until you cancel in the Stripe customer portal. "
             "An AI chat app that already finished Connect keeps working "
-            "while the subscription is active. No email, and no second charge. "
-            "Switching browsers on the same browser account continues the same subscription. "
-            "You do not type a receipt email, and you are not charged again."
+            "while the subscription is active. No email, and no second charge."
         )
         form = (
             '<form method="post" action="/subscribe/checkout">'
             '<button type="submit">Pay $20 / month</button></form>'
-            '<p class="note" id="passkey-status">Already paying? Continue subscription. '
-            "A new device signed into the same browser account is included.</p>"
-            '<p><button type="button" id="continue-sub" onclick="ontoKbContinue()">'
-            "Continue subscription</button></p>"
-            '<form id="device-email" hidden method="post" action="/subscribe/restore">'
-            "<p>This device is not on the browser account you paid with. "
-            "Enter the email on your Stripe receipt. This does not charge you again.</p>"
-            '<input type="email" name="email" autocomplete="email" aria-label="Email on your Stripe receipt">'
-            '<button type="submit">Continue on this device</button></form>'
-            '<div id="passkey-auto" hidden></div>'
-            + passkey_script()
         )
         setup = ""
     return HTMLResponse(
@@ -200,10 +171,11 @@ async def subscribe_complete_get(
             status_code=402,
         )
     token = mint_entitlement(settings, customer_id=customer)
-    nxt = _resume_target(request)
-    page = HTMLResponse(
-        _COMPLETE.format(code=html.escape(token), controls=remember_controls(nxt))
-    )
+    resume = _resume_or_none(request)
+    if resume:
+        page = RedirectResponse(resume, status_code=303)
+    else:
+        page = HTMLResponse(_COMPLETE.format(code=html.escape(token)))
     set_entitlement_cookie(page, settings, customer)
     page.delete_cookie(RESUME_COOKIE, path="/")
     return page

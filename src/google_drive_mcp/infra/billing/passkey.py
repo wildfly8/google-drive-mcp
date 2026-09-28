@@ -1,8 +1,7 @@
-"""Discoverable passkey so a new browser continues an active subscription.
+"""Passkey records stored on the Stripe customer.
 
-The public key is stored on the Stripe customer. This server keeps no passkey
-database. The browser password manager syncs the private key across that
-person's browsers. The receipt email is not required.
+This server keeps no passkey database. The public subscribe page does not
+show a Continue or Remember button.
 """
 
 from __future__ import annotations
@@ -187,115 +186,6 @@ def merge_passkey(existing: list[dict] | None, record: dict) -> list[dict]:
     keys = [item for item in (existing or []) if item.get("id") != record["id"]]
     keys.append(record)
     return keys[-_MAX_KEYS:]
-
-
-def passkey_script() -> str:
-    return """<script>
-(function () {
-  function b64urlToBuf(s) {
-    var pad = "=".repeat((4 - (s.length % 4)) % 4);
-    var b = atob(s.replace(/-/g, "+").replace(/_/g, "/") + pad);
-    var u = new Uint8Array(b.length);
-    for (var i = 0; i < b.length; i++) u[i] = b.charCodeAt(i);
-    return u.buffer;
-  }
-  function bufToB64url(buf) {
-    var u = new Uint8Array(buf);
-    var s = "";
-    for (var i = 0; i < u.length; i++) s += String.fromCharCode(u[i]);
-    return btoa(s).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/g, "");
-  }
-  function prep(pk) {
-    pk.challenge = b64urlToBuf(pk.challenge);
-    if (pk.user) pk.user.id = b64urlToBuf(pk.user.id);
-    (pk.excludeCredentials || []).forEach(function (c) { c.id = b64urlToBuf(c.id); });
-    return pk;
-  }
-  function options() {
-    return fetch("/subscribe/passkey/options", {method: "POST"}).then(function (res) {
-      if (!res.ok) throw new Error("options");
-      return res.json();
-    });
-  }
-  function register(nextUrl) {
-    return options().then(function (data) {
-      return navigator.credentials.create({publicKey: prep(data.publicKey)}).then(function (cred) {
-        return fetch("/subscribe/passkey/register", {
-          method: "POST",
-          headers: {"content-type": "application/json"},
-          body: JSON.stringify({
-            id: cred.id,
-            response: {
-              clientDataJSON: bufToB64url(cred.response.clientDataJSON),
-              attestationObject: bufToB64url(cred.response.attestationObject)
-            }
-          })
-        });
-      });
-    }).then(function () {
-      if (nextUrl) location.href = nextUrl;
-    });
-  }
-  function login(mediation) {
-    return options().then(function (data) {
-      var args = {publicKey: prep(data.publicKey)};
-      if (mediation) args.mediation = mediation;
-      return navigator.credentials.get(args);
-    }).then(function (cred) {
-      return fetch("/subscribe/passkey/finish", {
-        method: "POST",
-        headers: {"content-type": "application/json"},
-        body: JSON.stringify({
-          id: cred.id,
-          response: {
-            clientDataJSON: bufToB64url(cred.response.clientDataJSON),
-            authenticatorData: bufToB64url(cred.response.authenticatorData),
-            signature: bufToB64url(cred.response.signature),
-            userHandle: cred.response.userHandle ? bufToB64url(cred.response.userHandle) : null
-          }
-        })
-      });
-    }).then(function (res) {
-      if (!res.ok) throw new Error("finish");
-      return res.json();
-    }).then(function (out) { location.href = out.redirect; });
-  }
-  window.ontoKbRemember = function (nextUrl) {
-    if (!window.PublicKeyCredential) {
-      if (nextUrl) location.href = nextUrl;
-      return;
-    }
-    register(nextUrl).catch(function () { if (nextUrl) location.href = nextUrl; });
-  };
-  window.ontoKbContinue = function () {
-    login().catch(function () {
-      var el = document.getElementById("passkey-status");
-      if (el) el.textContent = "This device is not on the browser account that paid. Enter the receipt email below. This does not charge you again.";
-      var form = document.getElementById("device-email");
-      if (form) form.hidden = false;
-    });
-  };
-  if (document.getElementById("passkey-auto")) {
-    login("immediate").catch(function () {
-      var btn = document.getElementById("continue-sub");
-      if (btn) btn.hidden = false;
-    });
-  }
-})();
-</script>"""
-
-
-def remember_controls(next_url: str) -> str:
-    safe = json.dumps(next_url)
-    return (
-        '<p><button type="button" id="remember-sub" onclick="ontoKbRemember('
-        + safe
-        + ')">Continue</button></p>'
-        "<p class=\"note\">Continue saves this subscription for this browser account. "
-        "A new device signed into that same account continues it. "
-        "You do not type a receipt email, and you are not charged again.</p>"
-        + passkey_script()
-    )
 
 
 def _registration_parts(body: dict) -> tuple[dict, bytes]:

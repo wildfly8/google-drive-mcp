@@ -160,13 +160,11 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
         entitled = True
         if settings.mcp_subscription_required:
             entitled = bool(scid and runtime.billing.is_subscription_active(scid))
-        remember = bool(entitled and scid and not runtime.billing.get_passkey(scid))
         return setup_get(
             request,
             settings,
             stats_snapshot(runtime.telemetry),
             entitled=entitled,
-            remember=remember and settings.mcp_subscription_required,
         )
 
     @server.custom_route("/subscribe", methods=["GET"])

@@ -74,11 +74,10 @@ def test_passkey_from_one_browser_sets_cookie_on_another(fake_drive: FakeDrive):
 
     with TestClient(streamable_app(runtime, json_response=True)) as client:
         client.cookies.set(COOKIE_NAME, token)
-        page = client.get("/subscribe")
-        assert page.status_code == 200
-        assert ">Continue</button>" in page.text
+        page = client.get("/subscribe", follow_redirects=False)
+        assert page.status_code == 303
+        assert ">Continue</button>" not in page.text
         assert "Remember this subscription" not in page.text
-        assert 'type="email"' not in page.text
         options = client.post("/subscribe/passkey/options")
         challenge = options.json()["publicKey"]["challenge"]
         reg_client = _client_data("webauthn.create", challenge, origin)
@@ -109,8 +108,8 @@ def test_passkey_from_one_browser_sets_cookie_on_another(fake_drive: FakeDrive):
         client.cookies.clear()
         fresh = client.get("/subscribe")
         assert "Pay $20 / month" in fresh.text
-        assert "Continue subscription" in fresh.text
-        assert 'id="device-email" hidden' in fresh.text
+        assert "Continue subscription" not in fresh.text
+        assert "device-email" not in fresh.text
         login_options = client.post("/subscribe/passkey/options")
         login_challenge = login_options.json()["publicKey"]["challenge"]
         login_client = _client_data("webauthn.get", login_challenge, origin)

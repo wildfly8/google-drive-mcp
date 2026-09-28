@@ -92,7 +92,6 @@ def setup_get(
     stats: dict | None = None,
     *,
     entitled: bool = True,
-    remember: bool = False,
 ) -> HTMLResponse:
     if settings.mcp_subscription_required and not entitled:
         return HTMLResponse(_LOCKED.format())
@@ -126,10 +125,6 @@ def setup_get(
             "While Stripe shows this subscription as active, that app keeps "
             "calling onto-kb with no further steps from you.</p>"
         )
-        if remember:
-            from google_drive_mcp.infra.billing.passkey import remember_controls
-
-            pay_block += remember_controls("")
     if settings.mcp_oauth_auto_approve:
         auth_step = "Your browser returns to the AI chat app. There is no deployment password."
         if settings.mcp_subscription_required:
