@@ -4,6 +4,7 @@ from pathlib import Path
 
 PAGE = Path(__file__).resolve().parents[2] / "docs" / "index.html"
 SETUP = "https://onto-kb-kxjtmypvfa-uc.a.run.app/setup"
+SUBSCRIBE = "https://onto-kb-kxjtmypvfa-uc.a.run.app/subscribe"
 
 
 def test_business_page_names_wisdomspringtech_and_offer():
@@ -11,7 +12,9 @@ def test_business_page_names_wisdomspringtech_and_offer():
     assert "WisdomSpringTech" in html
     assert "onto-kb" in html
     assert "$20" in html or "USD 20" in html
+    assert SUBSCRIBE in html
     assert SETUP in html
+    assert html.index(SUBSCRIBE) < html.index(SETUP)
     lowered = html.lower()
     assert "password" not in lowered
     assert "routing number" not in lowered
