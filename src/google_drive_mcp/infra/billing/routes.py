@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import json
 import logging
 from urllib.parse import unquote
 
@@ -18,6 +19,19 @@ from google_drive_mcp.infra.billing.entitlement import (
     verify_entitlement,
 )
 from google_drive_mcp.infra.billing.gateway import BillingGateway
+from google_drive_mcp.infra.billing.passkey import (
+    CHALLENGE_COOKIE,
+    authentication_options,
+    merge_passkey,
+    mint_challenge,
+    passkey_script,
+    read_challenge,
+    registration_options,
+    remember_controls,
+    signature_matches,
+    verify_authentication,
+    verify_registration,
+)
 from google_drive_mcp.infra.billing.stripe_api import verify_stripe_signature
 from google_drive_mcp.infra.config import Settings
 from google_drive_mcp.infra.mcp_auth.tokens import issuer_url
@@ -63,8 +77,7 @@ _COMPLETE = """\
   <h1>Payment received</h1>
   <p>Return to your AI chat app. While this subscription stays active,
      that app keeps calling onto-kb with no email and no further payment.</p>
-  <p>Enter the email on your Stripe receipt only if you switch browsers and start
-     Connect again. That continues this subscription and does not charge you again.</p>
+  {controls}
   <p>Fallback entitlement (do not share):</p>
   <p><code>{code}</code></p>
   <p><a href="/setup">Setup</a></p>
@@ -94,7 +107,20 @@ def subscribe_get(
         and scid
         and billing.is_subscription_active(scid)
     ):
-        page = RedirectResponse(_resume_target(request), status_code=303)
+        nxt = _resume_target(request)
+        if billing.get_passkey(scid):
+            page = RedirectResponse(nxt, status_code=303)
+        else:
+            page = HTMLResponse(
+                _SUBSCRIBE.format(
+                    status=html.escape(
+                        "This subscription is already active. Remember it in this browser "
+                        "so a different browser can continue Connect."
+                    ),
+                    form=remember_controls(nxt),
+                    setup=f'<p><a href="{html.escape(nxt, quote=True)}">Continue</a></p>',
+                )
+            )
         set_entitlement_cookie(page, settings, scid)
         page.delete_cookie(RESUME_COOKIE, path="/")
         return page
@@ -115,19 +141,18 @@ def subscribe_get(
             "USD 20 each month until you cancel in the Stripe customer portal. "
             "An AI chat app that already finished Connect keeps working "
             "while the subscription is active. No email, and no second charge. "
-            "Enter the email on your Stripe receipt only if you switch browsers "
-            "and start Connect again. That continues the same subscription."
+            "Switching browsers continues the same subscription automatically. "
+            "You do not type a receipt email."
         )
         form = (
             '<form method="post" action="/subscribe/checkout">'
             '<button type="submit">Pay $20 / month</button></form>'
-            '<form method="post" action="/subscribe/restore">'
-            "<p>Switching browsers? Enter the email on your Stripe receipt "
-            "to keep using onto-kb without paying again. "
-            "An assistant that already finished Connect does not use this form.</p>"
-            '<input type="email" name="email" required autocomplete="email" '
-            'aria-label="Email on your Stripe receipt">'
-            '<button type="submit">Continue active subscription</button></form>'
+            '<p class="note" id="passkey-status">If you already pay, this browser continues '
+            "that subscription when it has been remembered. You do not type a receipt email.</p>"
+            '<button type="button" id="continue-sub" hidden onclick="ontoKbContinue()">'
+            "Continue subscription</button>"
+            '<div id="passkey-auto" hidden></div>'
+            + passkey_script()
         )
         setup = ""
     return HTMLResponse(
@@ -170,11 +195,10 @@ async def subscribe_complete_get(
             status_code=402,
         )
     token = mint_entitlement(settings, customer_id=customer)
-    resume = _resume_or_none(request)
-    if resume:
-        page = RedirectResponse(resume, status_code=303)
-    else:
-        page = HTMLResponse(_COMPLETE.format(code=html.escape(token)))
+    nxt = _resume_target(request)
+    page = HTMLResponse(
+        _COMPLETE.format(code=html.escape(token), controls=remember_controls(nxt))
+    )
     set_entitlement_cookie(page, settings, customer)
     page.delete_cookie(RESUME_COOKIE, path="/")
     return page
@@ -215,6 +239,84 @@ async def stripe_webhook_post(request: Request, settings: Settings) -> Response:
         return JSONResponse({"ok": False}, status_code=400)
     _LOG.info("stripe_webhook")
     return JSONResponse({"ok": True})
+
+
+def _challenge_cookie(response: Response, settings: Settings, token: str) -> None:
+    response.set_cookie(
+        CHALLENGE_COOKIE,
+        token,
+        httponly=True,
+        samesite="lax",
+        max_age=300,
+        secure=issuer_url(settings).startswith("https://"),
+        path="/",
+    )
+
+
+async def passkey_options_post(
+    request: Request, settings: Settings, billing: BillingGateway
+) -> Response:
+    scid = entitlement_from_request(request, settings)
+    challenge, token = mint_challenge(settings)
+    if scid and billing.is_subscription_active(scid):
+        public_key = registration_options(settings, scid, challenge, billing.get_passkey(scid))
+    else:
+        public_key = authentication_options(settings, challenge)
+    page = JSONResponse({"publicKey": public_key})
+    _challenge_cookie(page, settings, token)
+    return page
+
+
+async def passkey_register_post(
+    request: Request, settings: Settings, billing: BillingGateway
+) -> Response:
+    scid = entitlement_from_request(request, settings)
+    if not scid or not billing.is_subscription_active(scid):
+        return JSONResponse({"ok": False}, status_code=401)
+    challenge = read_challenge(request.cookies.get(CHALLENGE_COOKIE), settings)
+    if not challenge:
+        return JSONResponse({"ok": False}, status_code=400)
+    try:
+        body = await request.json()
+        record = verify_registration(settings, challenge, scid, body)
+        billing.save_passkey(scid, merge_passkey(billing.get_passkey(scid), record))
+    except (ValueError, json.JSONDecodeError, RuntimeError):
+        return JSONResponse({"ok": False}, status_code=400)
+    page = JSONResponse({"ok": True})
+    page.delete_cookie(CHALLENGE_COOKIE, path="/")
+    return page
+
+
+async def passkey_finish_post(
+    request: Request, settings: Settings, billing: BillingGateway
+) -> Response:
+    challenge = read_challenge(request.cookies.get(CHALLENGE_COOKIE), settings)
+    if not challenge:
+        return JSONResponse({"ok": False}, status_code=400)
+    try:
+        body = await request.json()
+        customer_id, material = verify_authentication(settings, challenge, body)
+    except (ValueError, json.JSONDecodeError):
+        return JSONResponse({"ok": False}, status_code=400)
+    if not billing.is_subscription_active(customer_id):
+        return JSONResponse({"ok": False}, status_code=403)
+    updated = None
+    keys = billing.get_passkey(customer_id)
+    for record in keys:
+        updated = signature_matches(record, material)
+        if updated:
+            break
+    if updated is None:
+        return JSONResponse({"ok": False}, status_code=400)
+    try:
+        billing.save_passkey(customer_id, merge_passkey(keys, updated))
+    except RuntimeError:
+        pass
+    page = JSONResponse({"redirect": _resume_target(request)})
+    set_entitlement_cookie(page, settings, customer_id)
+    page.delete_cookie(CHALLENGE_COOKIE, path="/")
+    page.delete_cookie(RESUME_COOKIE, path="/")
+    return page
 
 
 def entitlement_from_request(request: Request, settings: Settings) -> str | None:

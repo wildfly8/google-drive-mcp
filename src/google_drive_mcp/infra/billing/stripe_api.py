@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import time
 from urllib.parse import urlencode
 
@@ -150,6 +151,50 @@ class StripeHttpGateway:
             return None
         except httpx.HTTPError:
             return None
+        finally:
+            if owns:
+                http.close()
+
+    def get_passkey(self, customer_id: str) -> list[dict]:
+        if not customer_id.startswith("cus_") or not self._key():
+            return []
+        owns = self._client is None
+        http = self._http()
+        try:
+            response = http.get(f"{_STRIPE}/v1/customers/{customer_id}", auth=self._auth())
+            if response.status_code != 200:
+                return []
+            raw = (response.json().get("metadata") or {}).get("pk")
+            if not isinstance(raw, str) or not raw:
+                return []
+            data = json.loads(raw)
+            if isinstance(data, dict):
+                data = [data]
+            if not isinstance(data, list):
+                return []
+            return [item for item in data if isinstance(item, dict) and item.get("id")]
+        except (httpx.HTTPError, json.JSONDecodeError):
+            return []
+        finally:
+            if owns:
+                http.close()
+
+    def save_passkey(self, customer_id: str, keys: list[dict]) -> None:
+        if not customer_id.startswith("cus_") or not self._key():
+            raise RuntimeError("passkey_not_stored")
+        payload = json.dumps(keys, separators=(",", ":"))
+        if len(payload) > 500:
+            raise RuntimeError("passkey_not_stored")
+        owns = self._client is None
+        http = self._http()
+        try:
+            response = http.post(
+                f"{_STRIPE}/v1/customers/{customer_id}",
+                content=urlencode({"metadata[pk]": payload}),
+                headers={"content-type": "application/x-www-form-urlencoded"},
+                auth=self._auth(),
+            )
+            response.raise_for_status()
         finally:
             if owns:
                 http.close()

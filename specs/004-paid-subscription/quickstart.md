@@ -13,7 +13,7 @@ MCP_SUBSCRIPTION_REQUIRED=true
 ```
 
 4. Webhook endpoint: `https://<origin>/webhooks/stripe` events: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`.
-5. Deploy. Open `/setup` with no payment cookie — fee and `/subscribe` only. After Checkout, `/setup` shows Claude, ChatGPT, and Cursor steps. An assistant that already connected keeps working while Stripe shows the subscription active. No email, and no second charge. A different browser uses **Continue active subscription** with the Stripe receipt email and is not charged again.
+5. Deploy. Open `/setup` with no payment cookie — fee and `/subscribe` only. After Checkout, `/setup` shows Claude, ChatGPT, and Cursor steps. An assistant that already connected keeps working while Stripe shows the subscription active. No email, and no second charge. A different browser continues the saved subscription with no receipt email and no second charge.
 6. Test mode: pay, then Claude Connect. Unpaid Connect must fail.
 
 Automated: `uv run pytest tests/contract/test_subscription_http.py tests/unit/billing -q`

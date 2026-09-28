@@ -2,7 +2,7 @@
 
 ## `GET /subscribe`
 
-HTML. States USD 20/month. Pay button for a new subscription. A second form accepts the Stripe receipt email only when Connect starts in a different browser, to continue an active subscription with no new charge. An assistant that already finished Connect does not use that form. No Setup link, no owner bank, no card fields. If the browser already has an active entitlement, redirect to the in-progress `/authorize` or to `/setup`. After payment with no in-progress Connect, `GET /subscribe/complete` links to `/setup`. If Connect was in progress, completion redirects back to that `/authorize` URL.
+HTML. States USD 20/month. Pay button for a new subscription. A different browser continues an active subscription with a passkey saved in the paying browser. No receipt-email field, no Setup link, no owner bank, no card fields. If the browser already has an active entitlement, redirect to the in-progress `/authorize` or to `/setup`. After payment with no in-progress Connect, `GET /subscribe/complete` links to `/setup`. If Connect was in progress, completion redirects back to that `/authorize` URL.
 
 ## `POST /subscribe/restore`
 

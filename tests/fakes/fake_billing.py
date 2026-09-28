@@ -8,6 +8,7 @@ class FakeBilling:
         self.active: set[str] = set()
         self.sessions: dict[str, str] = {}
         self.emails: dict[str, str] = {}
+        self.passkeys: dict[str, list[dict]] = {}
         self.checkouts = 0
 
     def is_subscription_active(self, customer_id: str) -> bool:
@@ -29,3 +30,9 @@ class FakeBilling:
         if customer_id and customer_id in self.active:
             return customer_id
         return None
+
+    def get_passkey(self, customer_id: str) -> list[dict]:
+        return list(self.passkeys.get(customer_id) or [])
+
+    def save_passkey(self, customer_id: str, keys: list[dict]) -> None:
+        self.passkeys[customer_id] = list(keys)

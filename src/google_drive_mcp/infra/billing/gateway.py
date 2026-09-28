@@ -14,6 +14,10 @@ class BillingGateway(Protocol):
 
     def active_customer_id_for_email(self, email: str) -> str | None: ...
 
+    def get_passkey(self, customer_id: str) -> list[dict]: ...
+
+    def save_passkey(self, customer_id: str, keys: list[dict]) -> None: ...
+
 
 class InactiveBilling:
     """Paywall on but processor missing: nobody is entitled."""
@@ -29,3 +33,9 @@ class InactiveBilling:
 
     def active_customer_id_for_email(self, email: str) -> str | None:
         return None
+
+    def get_passkey(self, customer_id: str) -> list[dict]:
+        return []
+
+    def save_passkey(self, customer_id: str, keys: list[dict]) -> None:
+        raise RuntimeError("payments_not_configured")

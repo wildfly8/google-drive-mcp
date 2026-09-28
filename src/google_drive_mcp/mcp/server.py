@@ -23,6 +23,9 @@ from google_drive_mcp.infra.billing.entitlement import (
 from google_drive_mcp.infra.billing.routes import (
     entitlement_from_request,
     stripe_webhook_post,
+    passkey_finish_post,
+    passkey_options_post,
+    passkey_register_post,
     subscribe_checkout_post,
     subscribe_complete_get,
     subscribe_get,
@@ -157,11 +160,13 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
         entitled = True
         if settings.mcp_subscription_required:
             entitled = bool(scid and runtime.billing.is_subscription_active(scid))
+        remember = bool(entitled and scid and not runtime.billing.get_passkey(scid))
         return setup_get(
             request,
             settings,
             stats_snapshot(runtime.telemetry),
             entitled=entitled,
+            remember=remember and settings.mcp_subscription_required,
         )
 
     @server.custom_route("/subscribe", methods=["GET"])
@@ -174,6 +179,18 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
     @server.custom_route("/subscribe/restore", methods=["POST"])
     async def subscribe_restore(request):
         return await subscribe_restore_post(request, settings, runtime.billing)
+
+    @server.custom_route("/subscribe/passkey/options", methods=["POST"])
+    async def passkey_options(request):
+        return await passkey_options_post(request, settings, runtime.billing)
+
+    @server.custom_route("/subscribe/passkey/register", methods=["POST"])
+    async def passkey_register(request):
+        return await passkey_register_post(request, settings, runtime.billing)
+
+    @server.custom_route("/subscribe/passkey/finish", methods=["POST"])
+    async def passkey_finish(request):
+        return await passkey_finish_post(request, settings, runtime.billing)
 
     @server.custom_route("/subscribe/checkout", methods=["POST"])
     async def subscribe_checkout(request):
