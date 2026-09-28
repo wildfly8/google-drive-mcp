@@ -129,7 +129,9 @@ DEPLOY_ARGS=(
   --timeout=60
   --quiet
 )
-ALLOWED_FOLDER="${DRIVE_ALLOWED_FOLDER_ID:-1qod47BRgPlRnXVboaJsElSNj1WkofLRQ}"
+# kb/content/posts. Bare find/grep stay inside posts and skip sibling
+# unfolding-* and *-export folders under kb.
+ALLOWED_FOLDER="${DRIVE_ALLOWED_FOLDER_ID:-1SqJB83CRE5acuFz4Tj0_fqzEnK5HCcXM}"
 # Prefer an already-deployed origin so OAuth issuer == the URL hosts paste.
 EXISTING_URL="$(gcloud run services describe "$SERVICE" --project="$PROJECT" --region="$REGION" --format='value(status.url)' 2>/dev/null || true)"
 DEFAULT_PUBLIC_URL="${EXISTING_URL:-https://${SERVICE}-kxjtmypvfa-uc.a.run.app}"
