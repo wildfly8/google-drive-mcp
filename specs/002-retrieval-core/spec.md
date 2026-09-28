@@ -6,7 +6,7 @@
 
 **Created**: 2026-09-08
 
-**Status**: Implemented (Cloud Run `onto-kb-00021-hld`; find query pushdown; grep small-first with `deferred_file_ids` and `next_cursor`)
+**Status**: Implemented (Cloud Run `onto-kb-00023-8ph`; omitted find/grep search `kb`; grep input `next_cursor`)
 
 **Input**: User description: "Bounded context for discovery, inspection, and exact-match verification over live Google Drive content. Agent-controlled iterative retrieval with Drive as the sole persistent source of truth. No embedding index or application-owned document replica. Access Control is upstream; this spec never makes authorization decisions."
 
