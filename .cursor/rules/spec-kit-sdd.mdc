@@ -12,7 +12,7 @@ this state rather than re-initializing Spec-Kit or re-ratifying the constitution
 
 - **Spec-Kit:** initialized (`specify-cli` 1.0.4, `cursor-agent`, bash scripts)
 - **Constitution:** ratified v1.0.0 at `.specify/memory/constitution.md` (binding)
-- **SDD phase:** 004-paid-subscription implemented (Stripe $20/month paywall on Connect; Cloud Run `onto-kb-00007-7ff`)
+- **SDD phase:** 004-paid-subscription implemented (Stripe $20/month paywall on Connect; Cloud Run `onto-kb-00008-782`)
 - **Specs:** `specs/001-access-control/` (implemented), `specs/002-retrieval-core/` (implemented), `specs/003-connect-counter/` (implemented), `specs/004-paid-subscription/` (implemented)
 - **Next command:** `/speckit-converge`.
 
