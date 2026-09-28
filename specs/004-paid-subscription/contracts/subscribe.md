@@ -2,7 +2,7 @@
 
 ## `GET /subscribe`
 
-HTML. States USD 20/month. The only control is the Pay button for a new subscription. No Continue button, no Remember button, no receipt-email field, no Setup link, no owner bank, no card fields. If the browser already has an active entitlement, redirect to the in-progress `/authorize` or to `/setup`. After payment with no in-progress Connect, `GET /subscribe/complete` links to `/setup`. If Connect was in progress, completion redirects back to that `/authorize` URL.
+HTML. States USD 20/month. The only control is the Pay button. Pay reuses a passkey already saved in this browser and does not open Checkout when that succeeds. Otherwise Pay opens Stripe. No Continue button, no Remember button, no receipt-email field, no Setup link, no owner bank, no card fields. If the browser already has an active entitlement, redirect to the in-progress `/authorize` or to `/setup`. After payment, `GET /subscribe/complete` links back to the in-progress `/authorize` or to `/setup`. A completed Checkout whose email already has an active subscription is canceled and refunded, and the page continues the original subscription.
 
 ## `POST /subscribe/restore`
 

@@ -7,8 +7,10 @@ class FakeBilling:
     def __init__(self) -> None:
         self.active: set[str] = set()
         self.sessions: dict[str, str] = {}
+        self.session_emails: dict[str, str] = {}
         self.emails: dict[str, str] = {}
         self.passkeys: dict[str, list[dict]] = {}
+        self.released: list[str] = []
         self.checkouts = 0
 
     def is_subscription_active(self, customer_id: str) -> bool:
@@ -22,8 +24,18 @@ class FakeBilling:
         self.active.add(cus)
         return success_url.replace("{CHECKOUT_SESSION_ID}", sid)
 
-    def customer_id_from_checkout_session(self, session_id: str) -> str | None:
-        return self.sessions.get(session_id)
+    def customer_id_from_checkout_session(self, session_id: str) -> tuple[str, bool] | None:
+        customer = self.sessions.get(session_id)
+        if not customer:
+            return None
+        email = self.session_emails.get(session_id)
+        if email:
+            existing = self.active_customer_id_for_email(email)
+            if existing and existing != customer:
+                self.active.discard(customer)
+                self.released.append(customer)
+                return existing, True
+        return customer, False
 
     def active_customer_id_for_email(self, email: str) -> str | None:
         customer_id = self.emails.get(email.strip().lower())

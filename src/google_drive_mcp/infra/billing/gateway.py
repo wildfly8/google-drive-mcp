@@ -10,7 +10,9 @@ class BillingGateway(Protocol):
 
     def create_checkout_url(self, *, success_url: str, cancel_url: str) -> str: ...
 
-    def customer_id_from_checkout_session(self, session_id: str) -> str | None: ...
+    def customer_id_from_checkout_session(self, session_id: str) -> tuple[str, bool] | None:
+        """Paid customer id, and whether a duplicate checkout was released."""
+        ...
 
     def active_customer_id_for_email(self, email: str) -> str | None: ...
 
@@ -28,7 +30,7 @@ class InactiveBilling:
     def create_checkout_url(self, *, success_url: str, cancel_url: str) -> str:
         raise RuntimeError("payments_not_configured")
 
-    def customer_id_from_checkout_session(self, session_id: str) -> str | None:
+    def customer_id_from_checkout_session(self, session_id: str) -> tuple[str, bool] | None:
         return None
 
     def active_customer_id_for_email(self, email: str) -> str | None:

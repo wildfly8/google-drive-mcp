@@ -22,6 +22,7 @@ from google_drive_mcp.infra.billing.gateway import BillingGateway
 from google_drive_mcp.infra.billing.passkey import (
     CHALLENGE_COOKIE,
     authentication_options,
+    browser_script,
     merge_passkey,
     mint_challenge,
     read_challenge,
@@ -72,12 +73,12 @@ _COMPLETE = """\
   </style>
 </head>
 <body>
-  <h1>Payment received</h1>
-  <p>Return to your AI chat app. While this subscription stays active,
-     that app keeps calling onto-kb with no email and no further payment.</p>
+  <h1>{heading}</h1>
+  <p>{message}</p>
+  <p><a id="return-app" href="{next_href}">Return to your AI chat app</a></p>
   <p>Fallback entitlement (do not share):</p>
   <p><code>{code}</code></p>
-  <p><a href="/setup">Setup</a></p>
+  {script}
 </body>
 </html>
 """
@@ -124,11 +125,14 @@ def subscribe_get(
         status = (
             "USD 20 each month until you cancel in the Stripe customer portal. "
             "An AI chat app that already finished Connect keeps working "
-            "while the subscription is active. No email, and no second charge."
+            "while the subscription is active. Another browser continues the same "
+            "subscription. Pay opens Stripe only when this browser does not already "
+            "have it. The same receipt email is not charged again."
         )
         form = (
-            '<form method="post" action="/subscribe/checkout">'
+            '<form id="pay-form" method="post" action="/subscribe/checkout">'
             '<button type="submit">Pay $20 / month</button></form>'
+            + browser_script()
         )
         setup = ""
     return HTMLResponse(
@@ -160,8 +164,8 @@ async def subscribe_complete_get(
     request: Request, settings: Settings, billing: BillingGateway
 ) -> Response:
     session_id = request.query_params.get("session_id") or ""
-    customer = billing.customer_id_from_checkout_session(session_id)
-    if not customer:
+    found = billing.customer_id_from_checkout_session(session_id)
+    if not found:
         return HTMLResponse(
             _SUBSCRIBE.format(
                 status=html.escape("Payment not confirmed yet. Refresh after checkout completes."),
@@ -170,12 +174,29 @@ async def subscribe_complete_get(
             ),
             status_code=402,
         )
+    customer, reused = found
     token = mint_entitlement(settings, customer_id=customer)
-    resume = _resume_or_none(request)
-    if resume:
-        page = RedirectResponse(resume, status_code=303)
+    if reused:
+        heading = "Already subscribed"
+        message = (
+            "This browser is on the subscription you already pay for. "
+            "The new charge is refunded."
+        )
     else:
-        page = HTMLResponse(_COMPLETE.format(code=html.escape(token)))
+        heading = "Payment received"
+        message = (
+            "Return to your AI chat app. While this subscription stays active, "
+            "that app keeps calling onto-kb with no email and no further payment."
+        )
+    page = HTMLResponse(
+        _COMPLETE.format(
+            heading=html.escape(heading),
+            message=html.escape(message),
+            next_href=html.escape(_resume_target(request), quote=True),
+            code=html.escape(token),
+            script=browser_script(),
+        )
+    )
     set_entitlement_cookie(page, settings, customer)
     page.delete_cookie(RESUME_COOKIE, path="/")
     return page

@@ -75,7 +75,8 @@ def test_unpaid_authorize_redirects_to_subscribe(fake_drive: FakeDrive):
         page = client.get("/subscribe")
         assert page.status_code == 200
         assert "Pay $20 / month" in page.text
-        assert "No email, and no second charge." in page.text
+        assert "The same receipt email is not charged again." in page.text
+        assert 'id="pay-form"' in page.text
         assert "Continue subscription" not in page.text
         assert "device-email" not in page.text
         assert 'href="/setup"' not in page.text
@@ -212,6 +213,27 @@ def test_active_email_resumes_connect_without_a_new_charge(fake_drive: FakeDrive
         assert missing.status_code == 404
         assert "nobody@example.com" not in missing.text
         assert "Pay $20 / month" in missing.text
+
+
+def test_repeat_checkout_keeps_the_original_subscription(fake_drive: FakeDrive):
+    settings = _paid_settings()
+    billing = FakeBilling()
+    billing.active.update({"cus_old", "cus_new"})
+    billing.emails["payer@example.com"] = "cus_old"
+    billing.sessions["cs_dup"] = "cus_new"
+    billing.session_emails["cs_dup"] = "payer@example.com"
+    runtime = Runtime(settings=settings, drive=fake_drive, billing=billing)
+    with _client(runtime) as client:
+        done = client.get("/subscribe/complete", params={"session_id": "cs_dup"})
+        assert done.status_code == 200
+        assert "Already subscribed" in done.text
+        assert "refunded" in done.text
+        assert "payer@example.com" not in done.text
+        assert billing.released == ["cus_new"]
+        assert "cus_new" not in billing.active
+        from google_drive_mcp.infra.billing.entitlement import verify_entitlement
+
+        assert verify_entitlement(done.cookies[COOKIE_NAME], settings) == "cus_old"
 
 
 def test_paid_refresh_token_lasts_while_subscription_can_stay_active():

@@ -1,7 +1,8 @@
 """Passkey records stored on the Stripe customer.
 
-This server keeps no passkey database. The public subscribe page does not
-show a Continue or Remember button.
+This server keeps no passkey database. The subscribe page does not show a
+Continue or Remember button. Pay uses a passkey when this browser already
+has one, and a completed payment can save one for the next browser.
 """
 
 from __future__ import annotations
@@ -186,6 +187,94 @@ def merge_passkey(existing: list[dict] | None, record: dict) -> list[dict]:
     keys = [item for item in (existing or []) if item.get("id") != record["id"]]
     keys.append(record)
     return keys[-_MAX_KEYS:]
+
+
+def browser_script() -> str:
+    """Pay reuses a saved passkey. The return link saves one. No extra buttons."""
+    return """<script>
+(function () {
+  function b64urlToBuf(s) {
+    var pad = "=".repeat((4 - (s.length % 4)) % 4);
+    var b = atob(s.replace(/-/g, "+").replace(/_/g, "/") + pad);
+    var u = new Uint8Array(b.length);
+    for (var i = 0; i < b.length; i++) u[i] = b.charCodeAt(i);
+    return u.buffer;
+  }
+  function bufToB64url(buf) {
+    var u = new Uint8Array(buf);
+    var s = "";
+    for (var i = 0; i < u.length; i++) s += String.fromCharCode(u[i]);
+    return btoa(s).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/g, "");
+  }
+  function prep(pk) {
+    pk.challenge = b64urlToBuf(pk.challenge);
+    if (pk.user) pk.user.id = b64urlToBuf(pk.user.id);
+    (pk.excludeCredentials || []).forEach(function (c) { c.id = b64urlToBuf(c.id); });
+    return pk;
+  }
+  function options() {
+    return fetch("/subscribe/passkey/options", {method: "POST"}).then(function (res) {
+      if (!res.ok) throw new Error("options");
+      return res.json();
+    });
+  }
+  var form = document.getElementById("pay-form");
+  if (form && window.PublicKeyCredential) {
+    form.addEventListener("submit", function (ev) {
+      if (form.dataset.pass === "1") return;
+      ev.preventDefault();
+      options().then(function (data) {
+        return navigator.credentials.get({publicKey: prep(data.publicKey), uiMode: "immediate"});
+      }).then(function (cred) {
+        if (!cred) throw new Error("none");
+        return fetch("/subscribe/passkey/finish", {
+          method: "POST",
+          headers: {"content-type": "application/json"},
+          body: JSON.stringify({
+            id: cred.id,
+            response: {
+              clientDataJSON: bufToB64url(cred.response.clientDataJSON),
+              authenticatorData: bufToB64url(cred.response.authenticatorData),
+              signature: bufToB64url(cred.response.signature),
+              userHandle: cred.response.userHandle ? bufToB64url(cred.response.userHandle) : null
+            }
+          })
+        });
+      }).then(function (res) {
+        if (!res.ok) throw new Error("finish");
+        return res.json();
+      }).then(function (out) {
+        location.href = out.redirect;
+      }).catch(function () {
+        form.dataset.pass = "1";
+        form.submit();
+      });
+    });
+  }
+  var back = document.getElementById("return-app");
+  if (back && window.PublicKeyCredential) {
+    back.addEventListener("click", function (ev) {
+      ev.preventDefault();
+      var href = back.href;
+      options().then(function (data) {
+        return navigator.credentials.create({publicKey: prep(data.publicKey)});
+      }).then(function (cred) {
+        return fetch("/subscribe/passkey/register", {
+          method: "POST",
+          headers: {"content-type": "application/json"},
+          body: JSON.stringify({
+            id: cred.id,
+            response: {
+              clientDataJSON: bufToB64url(cred.response.clientDataJSON),
+              attestationObject: bufToB64url(cred.response.attestationObject)
+            }
+          })
+        });
+      }).catch(function () {}).then(function () { location.href = href; });
+    });
+  }
+})();
+</script>"""
 
 
 def _registration_parts(body: dict) -> tuple[dict, bytes]:
