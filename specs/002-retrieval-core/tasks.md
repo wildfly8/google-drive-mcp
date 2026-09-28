@@ -274,8 +274,15 @@ Remaining work from `/speckit-converge` (2026-09-13). Do not rewrite earlier tas
 
 ## Phase 13: Find pushdown and grep coverage
 
-Filename discovery and folder grep coverage (FR-012, FR-036, FR-038). No persistent index, no BM25, no default `kb/` scope, no per-file cap below 20 MB.
+Filename discovery and folder grep coverage (FR-012, FR-036, FR-038). No persistent index, no BM25, no per-file cap below 20 MB.
 
 - [X] T058 Push `name contains`, MIME, `modifiedTime`, and `trashed = false` into `files.list` (`pageSize` 1000) and count `drive_find` `max_results` only for matching non-folder files, without `files.get` on each listed child, in `domain/list_filter.py`, `infra/google_drive/query.py`, `infra/google_drive/client.py`, `infra/google_drive/list.py`, `retrieval/find.py`, and `tests/fakes/fake_drive.py` (FR-012)
 - [X] T059 Scan folder and whole-grant `drive_grep` known-smaller files first; defer a known size that does not fit remaining operation bytes (and the larger tail) as `deferred_file_ids` without downloading; always return `files_scanned` and `bytes_scanned`; set `next_cursor` only when the listing finished and more non-deferred files remain; never defer a single `file_id` in `retrieval/grep.py`, `mcp/server.py`, `mcp/tools.py`, and `mcp/tool_schema.py` (FR-038, FR-036)
 - [X] T060 Contract tests for find pushdown, grep deferral, cursor resume, and coverage counts in `tests/contract/test_drive_find.py`, `tests/contract/test_drive_grep.py`, and `tests/unit/retrieval/test_list_query.py`
+
+---
+
+## Phase 14: Default kb scope and next_cursor input
+
+- [X] T061 When `DRIVE_DEFAULT_FOLDER_ID` is set, omitted `drive_find` and `drive_grep` search that folder (`kb` on this deployment) without disallowing a named folder or file id, and omitted `drive_ls` still lists My Drive root, in `domain/retrieval_scope.py`, `mcp/tools.py`, `infra/config.py`, and `scripts/deploy-cloud-run.sh` (FR-010, FR-030)
+- [X] T062 Advertise `next_cursor` as a `drive_grep` input (alias `cursor`) so a host can pass the previous result field back, in `mcp/server.py`, `retrieval/grep.py`, and `mcp/tool_schema.py` (FR-030)

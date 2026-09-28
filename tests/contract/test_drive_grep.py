@@ -634,6 +634,49 @@ def test_deferred_tail_is_not_reported_empty():
     assert result["deferred_file_ids"] == ["year-log"]
 
 
+def test_next_cursor_argument_resumes_the_same_grep(authz):
+    from fakes.fake_drive import DOC_MIME, FOLDER_MIME, FakeDrive, FakeFile
+    from google_drive_mcp.domain.budgets import Budget
+    from google_drive_mcp.infra.config import Settings
+    from google_drive_mcp.mcp.middleware import Runtime
+
+    drive = FakeDrive()
+    drive.add(FakeFile(id="root", name="My Drive", mime_type=FOLDER_MIME, parents=[]))
+    drive.add(FakeFile(id="top", name="Top", mime_type=FOLDER_MIME, parents=["root"]))
+    for name, size in (("c-doc", 30), ("a-doc", 10), ("b-doc", 20)):
+        drive.add(
+            FakeFile(
+                id=name,
+                name=f"{name}.txt",
+                mime_type=DOC_MIME,
+                parents=["top"],
+                content="hit " + ("." * size),
+            )
+        )
+    runtime = Runtime(Settings.for_tests(), drive=drive)
+    first = handle_tool(
+        runtime,
+        "drive_grep",
+        {"pattern": "hit", "folder_id": "top"},
+        authz,
+    )
+    # The contract helper above uses a tiny max_files via drive_grep(). Here the
+    # default cap is 40, so force the cap through the same resume argument the host sends.
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    limited = drive_grep(drive, pattern="hit", folder_id="top", budget=Budget(max_files=1))
+    assert limited["next_cursor"] == "a-doc"
+    resumed = handle_tool(
+        runtime,
+        "drive_grep",
+        {"pattern": "hit", "folder_id": "top", "next_cursor": limited["next_cursor"]},
+        authz,
+    )
+    assert "a-doc" not in {m["file_id"] for m in resumed["matches"]}
+    assert {m["file_id"] for m in resumed["matches"]} == {"b-doc", "c-doc"}
+    assert first["status"] == "COMPLETE"
+
+
 def test_unknown_cursor_and_cursor_with_file_ids_are_invalid(runtime, authz):
     missing = handle_tool(
         runtime,
@@ -651,3 +694,24 @@ def test_unknown_cursor_and_cursor_with_file_ids_are_invalid(runtime, authz):
     )
     assert both["status"] == "ERROR"
     assert both["category"] == "INVALID_ARGUMENT"
+    aliased = handle_tool(
+        runtime,
+        "drive_grep",
+        {"pattern": "idempotency", "file_ids": ["nested-doc"], "next_cursor": "nested-doc"},
+        authz,
+    )
+    assert aliased["status"] == "ERROR"
+    assert aliased["category"] == "INVALID_ARGUMENT"
+    blank = handle_tool(
+        runtime,
+        "drive_grep",
+        {
+            "pattern": "idempotency",
+            "file_ids": ["nested-doc"],
+            "next_cursor": "",
+            "cursor": "",
+        },
+        authz,
+    )
+    assert blank["status"] == "COMPLETE"
+    assert blank["matches"]

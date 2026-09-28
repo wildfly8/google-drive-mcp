@@ -79,6 +79,40 @@ def test_unset_allow_list_reads_every_granted_file(fake_drive: FakeDrive, authz)
     assert "secret other folder text" in outside["content"]
 
 
+def test_default_folder_scopes_find_and_grep_but_not_ls_or_named_targets(fake_drive: FakeDrive, authz):
+    settings = Settings(
+        mcp_auth_token=SecretStr("test-token"),
+        mcp_principal_id="deployment-1",
+        drive_default_folder_id="folder-a",
+    )
+    runtime = Runtime(settings=settings, drive=fake_drive)
+    listed = handle_tool(runtime, "drive_ls", {}, authz)
+    listed_ids = {child["id"] for child in listed["children"]}
+    assert "outside-doc" in listed_ids
+    found = handle_tool(runtime, "drive_find", {}, authz)
+    found_ids = {c["file"]["id"] for c in found["candidates"]}
+    assert "nested-doc" in found_ids
+    assert "outside-doc" not in found_ids
+    missed = handle_tool(
+        runtime, "drive_grep", {"pattern": "secret other"}, authz
+    )
+    assert missed["matches"] == []
+    named = handle_tool(
+        runtime,
+        "drive_grep",
+        {"pattern": "secret other", "folder_id": "root"},
+        authz,
+    )
+    assert {m["file_id"] for m in named["matches"]} == {"outside-doc"}
+    by_id = handle_tool(
+        runtime,
+        "drive_grep",
+        {"pattern": "secret other", "file_ids": ["outside-doc"]},
+        authz,
+    )
+    assert {m["file_id"] for m in by_id["matches"]} == {"outside-doc"}
+
+
 def test_grep_outside_file_is_authorization_error(fake_drive: FakeDrive, authz):
     fake_drive.reset_counters()
     runtime = _runtime(fake_drive)

@@ -291,7 +291,10 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
             Field(
                 default=None,
                 pattern=FILE_ID_PATTERN,
-                description="Restrict to this folder and its descendants. Omit for the deployment default scope.",
+                description=(
+                    "Restrict to this folder and its descendants. Omit to use the deployment default "
+                    "folder (kb on this server). Pass another folder id to search that folder; no folder is disallowed."
+                ),
             ),
         ] = None,
         modified_after: Annotated[
@@ -415,11 +418,23 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
                 default=None,
                 pattern=FILE_ID_PATTERN,
                 description=(
-                    "Search this folder and descendants. Omit with no file_ids for the default scope. "
-                    "If set together with file_ids, each id must lie in that folder."
+                    "Search this folder and descendants. Omit with no file_ids to use the deployment "
+                    "default folder (kb on this server). Pass another folder id to search that folder; "
+                    "no folder is disallowed. If set together with file_ids, each id must lie in that folder."
                 ),
             ),
         ] = None,
+        next_cursor: Annotated[
+            str,
+            Field(
+                default="",
+                description=(
+                    "Continue a previous drive_grep. Paste that result's next_cursor value here. "
+                    "Use the same pattern and the same folder_id (omit folder_id again for the default scope). "
+                    "Do not send this together with file_ids. Empty string starts at the first file."
+                ),
+            ),
+        ] = "",
         case_sensitive: Annotated[
             bool,
             Field(description="Literal/regex case sensitivity. Default true. Use false for natural-language terms."),
@@ -446,16 +461,15 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
             ),
         ] = None,
         cursor: Annotated[
-            str | None,
+            str,
             Field(
-                default=None,
-                pattern=FILE_ID_PATTERN,
+                default="",
                 description=(
-                    "File id from a previous drive_grep next_cursor. Repeats the same pattern and folder "
-                    "(or the same omitted scope) after that file. Do not combine with file_ids."
+                    "Alias of next_cursor. Paste the previous drive_grep result's next_cursor value. "
+                    "If both names are set they must be the same file id. Empty string starts at the first file."
                 ),
             ),
-        ] = None,
+        ] = "",
         ctx: Context | None = None,
     ) -> Any:
         return _dispatch(
@@ -468,6 +482,7 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
                 "regex": regex,
                 "context_lines": context_lines,
                 "max_matches": max_matches,
+                "next_cursor": next_cursor,
                 "cursor": cursor,
             },
             ctx,

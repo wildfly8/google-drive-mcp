@@ -22,7 +22,7 @@ Must run Access Control chain first. Google-missing folder → `FILE_NOT_FOUND`.
 }
 ```
 
-Omitted `folder_id` → `default_whole_grant` (whole Google grant), still bounded by `max_results` / `max_files`, **unless** Access Control rewrote it to `DRIVE_ALLOWED_FOLDER_ID`. This universe MAY be larger than omitted-folder `drive_ls` (My Drive `root` children only, or the allow-list folder’s children).
+Omitted `folder_id` with `DRIVE_DEFAULT_FOLDER_ID` set → that folder (`kb` on this deployment) and its descendants, still bounded by `max_results` / `max_files`. A named `folder_id` searches that folder instead. When the variable is unset, omitted `folder_id` is `default_whole_grant` (whole Google grant), **unless** Access Control rewrote it to `DRIVE_ALLOWED_FOLDER_ID`. Omitted-folder `drive_ls` stays My Drive `root` children (or the allow-list folder’s children) and is not the same universe as omitted-folder find.
 
 Invalid `max_results` or date-time → `INVALID_ARGUMENT`.
 

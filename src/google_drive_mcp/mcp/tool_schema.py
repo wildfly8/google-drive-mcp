@@ -37,7 +37,7 @@ Loop (repeat with different terms if needed):
 3. drive_read for the full text of one file_id
 4. If status is PARTIAL, continue; do not treat the result as exhaustive.
    drive_grep may include next_cursor and deferred_file_ids.
-   - next_cursor: repeat the same pattern and the same folder_id (or the same omitted scope) with that cursor. Do not pass cursor together with file_ids.
+   - next_cursor: call drive_grep again with that exact value in the next_cursor argument (cursor is an alias). Same pattern. Same folder_id, or omit folder_id again. Do not send next_cursor together with file_ids.
    - deferred_file_ids: those files were not downloaded. Call drive_grep once per id (a single file_id is never deferred; each call still stops at 20 MB).
 5. If status is EMPTY, that slice finished with zero hits — change the phrase or scope. Do not invent hits. Do not treat EMPTY as covering deferred_file_ids; a deferral is PARTIAL.
 
@@ -46,8 +46,8 @@ Hard rules:
 - drive_find name_pattern is a case-insensitive substring of the *filename*, not glob, not contents.
 - drive_grep pattern matches exported file *bytes* (literal, or regex if regex=true). Not Drive fullText.
 - drive_ls is immediate children only; drive_find / drive_grep on a folder include descendants.
-- Omit folder_id to use the whole Google grant. This deployment disallows no folder. drive_ls then lists My Drive root children; drive_find and drive_grep search the whole grant.
-- One drive_grep or drive_read returns at most 20 MB. A file at or under that size is complete when you pass that one file_id. A folder or whole-grant grep scans smaller files first. A known size that does not fit the remaining bytes is listed in deferred_file_ids and is not downloaded.
+- Omit folder_id on drive_find and drive_grep to search the deployment default folder (kb). Pass another folder id to search that folder. No folder is disallowed. drive_ls of an omitted folder still lists My Drive root children, including kb and the other top-level folders.
+- One drive_grep or drive_read returns at most 20 MB. A file at or under that size is complete when you pass that one file_id. A folder grep scans smaller files first. A known size that does not fit the remaining bytes is listed in deferred_file_ids and is not downloaded.
 - Candidates from drive_find are not quotes. Evidence is drive_read content or drive_grep matches with provenance.
 - source_url is the locator drive:{file_id}, not an HTTP URL. Do not present it as a download or Cited Source link.
 - No write/delete/share tools exist. Do not ask for them.
@@ -86,7 +86,7 @@ Recursive metadata discovery. Returns SearchCandidate records (file + reason). N
 When to use:
 - Locate files whose *filename* contains a short stem (name_pattern is a case-insensitive substring).
 - Filter by mime_type, modified_after / modified_before (ISO-8601), or trashed.
-- Walk descendants of a folder_id (unlike drive_ls, which is one level).
+- Walk descendants of a folder_id (unlike drive_ls, which is one level). Omit folder_id to search kb.
 
 When not to use:
 - Searching file *contents* (use drive_grep).
@@ -129,7 +129,8 @@ Deterministic exact match over bytes exported in this call. Not Drive fullText, 
 
 When to use:
 - Verify a claim with a short distinctive phrase, identifier, title, or term of art taken from the user question.
-- Search known file_ids (preferred) or all descendants of a folder_id. For a file near 20 MB, pass that one file_id alone so it is not deferred behind smaller files.
+- Search known file_ids (preferred) or all descendants of a folder_id. Omit folder_id to search kb. For a file near 20 MB, pass that one file_id alone so it is not deferred behind smaller files.
+- Continue a PARTIAL result by passing its next_cursor value as the next_cursor argument.
 - Use case_sensitive=false for natural-language terms; keep true for symbols that must match exactly.
 - Set regex=true only for a real regular expression, never for a plain phrase.
 
@@ -143,7 +144,7 @@ Example (do): {"pattern": "Vicious Circle Principle", "file_ids": ["1abcFileId"]
 Example (don't): {"pattern": "Assuming I understand the function of Foundations of Mathematics, what role does pure mathematics play..."} — not an exact phrase in any file.
 
 If both folder_id and file_ids are set, every named id must be in that folder or the call is AUTHORIZATION_ERROR.
-Folder and whole-grant walks scan known-smaller files first and keep the 20 MB per-file cap. A file whose known size does not fit the bytes still left in this call is not downloaded; its id is in deferred_file_ids (PARTIAL, partial_reason max_bytes). Grep each deferred id on its own. If the listing finished and more files remain because of the file cap or the time cap, next_cursor is the last file id actually scanned — repeat the same pattern and scope with that cursor. Do not pass cursor with file_ids. A single file_id is never deferred.
+Folder walks scan known-smaller files first and keep the 20 MB per-file cap. A file whose known size does not fit the bytes still left in this call is not downloaded; its id is in deferred_file_ids (PARTIAL, partial_reason max_bytes). Grep each deferred id on its own. If the listing finished and more files remain because of the file cap or the time cap, the result field next_cursor is the last file id actually scanned. Pass that value back as the next_cursor argument (cursor is the same argument). Do not pass next_cursor with file_ids. A single file_id is never deferred.
 
 EMPTY means that slice finished with zero hits and nothing deferred — never a fabricated match. files_scanned and bytes_scanned are always present.
 

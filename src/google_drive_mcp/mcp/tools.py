@@ -11,7 +11,10 @@ from typing import Any
 
 from google_drive_mcp.domain.connect_telemetry import host_family_from_client_id
 from google_drive_mcp.domain.errors import DomainError, ErrorCategory, envelope
-from google_drive_mcp.domain.retrieval_scope import apply_allowed_folder
+from google_drive_mcp.domain.retrieval_scope import (
+    apply_allowed_folder,
+    apply_default_search_folder,
+)
 from google_drive_mcp.infra.logging import log_chain_event, log_retrieval
 from google_drive_mcp.infra.mcp_auth.bearer import extract_bearer
 from google_drive_mcp.infra.mcp_auth.tokens import (
@@ -20,7 +23,11 @@ from google_drive_mcp.infra.mcp_auth.tokens import (
 )
 from google_drive_mcp.mcp.middleware import Runtime, new_request_id, run_with_chain
 from google_drive_mcp.retrieval.find import drive_find, validate_find_args
-from google_drive_mcp.retrieval.grep import drive_grep, validate_grep_args
+from google_drive_mcp.retrieval.grep import (
+    drive_grep,
+    grep_resume_cursor,
+    validate_grep_args,
+)
 from google_drive_mcp.retrieval.ls import drive_ls, validate_ls_args
 from google_drive_mcp.retrieval.read import drive_read, validate_read_args
 
@@ -54,6 +61,9 @@ def handle_tool(
     rid = request_id or new_request_id()
     request_id = rid
     apply_allowed_folder(args, runtime.settings.drive_allowed_folder_id)
+    apply_default_search_folder(
+        args, runtime.settings.drive_default_folder_id, tool=name
+    )
     if not verify_authorization_header(authorization, runtime.settings):
         log_chain_event(
             request_id=rid,
@@ -125,7 +135,7 @@ def handle_tool(
                 regex=args.get("regex", False),
                 context_lines=args.get("context_lines", 2),
                 max_matches=args.get("max_matches"),
-                cursor=args.get("cursor"),
+                cursor=grep_resume_cursor(args),
                 request_id=request_id,
             )
         raise DomainError.of(ErrorCategory.INVALID_ARGUMENT)

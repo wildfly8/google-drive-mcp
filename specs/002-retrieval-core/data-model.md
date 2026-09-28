@@ -36,7 +36,7 @@ Canonical type. Access Control enforces the same fields (`src/google_drive_mcp/d
 
 `is_within_scope(file_id, scope, parent_lookup)` is the only descendant check. Retrieval walks and the authorization chain MUST call it. Do not fork a second parent walk.
 
-Enforced by Access Control before content export. `drive_ls` with `default_whole_grant` and **no** `DRIVE_ALLOWED_FOLDER_ID` rewrite lists immediate children of My Drive `root` only — a projection of the grant. When Access Control rewrites omitted `folder_id` to the allow-list folder, `drive_ls` lists that folder’s immediate children instead.
+Enforced by Access Control before content export. `drive_ls` with `default_whole_grant` and **no** `DRIVE_ALLOWED_FOLDER_ID` rewrite lists immediate children of My Drive `root` only — a projection of the grant. When Access Control rewrites omitted `folder_id` to the allow-list folder, `drive_ls` lists that folder’s immediate children instead. When `DRIVE_DEFAULT_FOLDER_ID` is set, omitted `drive_find` / `drive_grep` are rewritten to that folder (`kb`) before the chain runs; omitted `drive_ls` is not.
 
 ## DocumentContent
 

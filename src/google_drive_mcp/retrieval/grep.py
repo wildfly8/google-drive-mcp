@@ -296,6 +296,35 @@ def drive_grep(
     return _coverage(status=OperationStatus.COMPLETE, **common)
 
 
+def grep_resume_cursor(arguments: dict) -> str | None:
+    """Accept the previous result's next_cursor under either input name.
+
+    Empty string and omitted values start from the first file. ``cursor`` and
+    ``next_cursor`` are the same continuation point.
+    """
+    from google_drive_mcp.mcp.validation import require_file_id
+
+    chosen: str | None = None
+    for key in ("next_cursor", "cursor"):
+        raw = arguments.get(key)
+        if raw is None:
+            continue
+        if not isinstance(raw, str):
+            raise DomainError.of(ErrorCategory.INVALID_ARGUMENT)
+        text = raw.strip()
+        if not text:
+            continue
+        if chosen is not None and text != chosen:
+            raise DomainError.of(ErrorCategory.INVALID_ARGUMENT)
+        chosen = text
+    if chosen is None:
+        return None
+    require_file_id(chosen)
+    if arguments.get("file_ids"):
+        raise DomainError.of(ErrorCategory.INVALID_ARGUMENT)
+    return chosen
+
+
 def validate_grep_args(arguments: dict) -> None:
     from google_drive_mcp.mcp.validation import (
         CONTEXT_LINES_MAX,
@@ -332,10 +361,4 @@ def validate_grep_args(arguments: dict) -> None:
             raise DomainError.of(ErrorCategory.INVALID_ARGUMENT)
         for fid in file_ids:
             require_file_id(fid)
-    cursor = arguments.get("cursor")
-    if cursor is not None:
-        if not isinstance(cursor, str):
-            raise DomainError.of(ErrorCategory.INVALID_ARGUMENT)
-        require_file_id(cursor)
-        if file_ids:
-            raise DomainError.of(ErrorCategory.INVALID_ARGUMENT)
+    grep_resume_cursor(arguments)

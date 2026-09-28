@@ -41,6 +41,10 @@ Descendant checks use domain `is_within_scope` (same helper as Access Control). 
 
 **Alternatives considered**: Require folder always (rejected in clarify). Shared-with-me as a second ls root — rejected; do not special-case a second source of truth. Treating omitted-folder ls and find as the same universe (false; would hide the projection).
 
+## Decision: Omitted find/grep defaults to the kb folder (2026-09-28)
+
+**Rationale**: A whole-grant grep sorted smallest-first spent `max_files` on tiny files outside `kb` and never reached that folder. `DRIVE_DEFAULT_FOLDER_ID` points omitted `drive_find` and `drive_grep` at the My Drive folder named `kb`. A named `folder_id` or `file_ids` still searches any granted resource. Omitted `drive_ls` still lists My Drive root so those other folders stay visible. `DRIVE_ALLOWED_FOLDER_ID` stays unset. The grep input property `next_cursor` (alias `cursor`) accepts the previous result field of the same name.
+
 ## Decision: Stdlib `re` with explicit literal vs regex modes
 
 **Rationale**: Literal mode uses `re.escape(pattern)`. Regex mode compiles the pattern and fails `INVALID_ARGUMENT` on bad regex. `case_sensitive=false` adds `re.IGNORECASE`. Same bytes + same flags → same matches (Art. IX).

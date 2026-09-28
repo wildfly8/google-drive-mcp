@@ -137,6 +137,10 @@ CANONICAL_PUBLIC="${CANONICAL_PUBLIC%/}"
 DEPLOY_ENV="MCP_PUBLIC_URL=${CANONICAL_PUBLIC}"
 # Do not set DRIVE_ALLOWED_FOLDER_ID. --set-env-vars replaces the env set,
 # so a previous posts allow-list is removed and every granted folder is searchable.
+# DRIVE_DEFAULT_FOLDER_ID is the kb folder at My Drive root. Omitted find/grep
+# use it. A named folder_id still searches that other folder.
+KB_FOLDER_ID="${DRIVE_DEFAULT_FOLDER_ID:-1qod47BRgPlRnXVboaJsElSNj1WkofLRQ}"
+DEPLOY_ENV="${DEPLOY_ENV},DRIVE_DEFAULT_FOLDER_ID=${KB_FOLDER_ID}"
 DEPLOY_ENV="${DEPLOY_ENV},MCP_OAUTH_AUTO_APPROVE=true"
 DEPLOY_ENV="${DEPLOY_ENV},GOOGLE_CLOUD_PROJECT=${PROJECT}"
 DEPLOY_ENV="${DEPLOY_ENV},MCP_STATS_FROM_LOGS=true"

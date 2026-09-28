@@ -50,6 +50,30 @@ class RetrievalScope(BaseModel):
         )
 
 
+SEARCH_DEFAULT_TOOLS = frozenset({"drive_find", "drive_grep"})
+
+
+def apply_default_search_folder(
+    arguments: MutableMapping[str, Any],
+    default_folder_id: str,
+    *,
+    tool: str,
+) -> None:
+    """Point an omitted find/grep folder at the deployment default (kb).
+
+    A named folder_id or file list is unchanged, so other granted folders stay
+    reachable. drive_ls is not rewritten; omitted ls still lists My Drive root.
+    """
+    if tool not in SEARCH_DEFAULT_TOOLS:
+        return
+    default = (default_folder_id or "").strip()
+    if not default:
+        return
+    has_files = bool(arguments.get("file_id") or arguments.get("file_ids"))
+    if not arguments.get("folder_id") and not has_files:
+        arguments["folder_id"] = default
+
+
 def apply_allowed_folder(
     arguments: MutableMapping[str, Any], allowed_folder_id: str
 ) -> None:
