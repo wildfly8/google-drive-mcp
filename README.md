@@ -21,7 +21,7 @@ See the constitution for the full invariant set (Articles I–XV).
 
 This is standard **MCP Streamable HTTP** (`POST /mcp`). The host model — not this server — parses the user question and chooses `drive_ls` / `drive_find` / `drive_read` / `drive_grep` arguments. `tools/list` advertises when to use each tool and positive/negative examples.
 
-**Auth:** [MCP OAuth 2.1](https://modelcontextprotocol.io/specification/2025-03-26/basic/authorization) on this origin (authorization code + PKCE, dynamic client registration, protected-resource metadata). Hosts send `Authorization: Bearer <access_token>` on `POST /mcp`. **USD 20 / month** via [Stripe Checkout](https://onto-kb-kxjtmypvfa-uc.a.run.app/subscribe) is required before Connect. Public Cloud Run still auto-approves the OAuth consent step *after* a paid period. `MCP_AUTH_TOKEN` is still not an API key.
+**Auth:** [MCP OAuth 2.1](https://modelcontextprotocol.io/specification/2025-03-26/basic/authorization) on this origin (authorization code + PKCE, dynamic client registration, protected-resource metadata). Hosts send `Authorization: Bearer <access_token>` on `POST /mcp`. **USD 20 / month** via [Stripe Checkout](https://onto-kb-kxjtmypvfa-uc.a.run.app/subscribe) is required before the first Connect. After that, Claude, ChatGPT, and Cursor keep calling tools while Stripe reports the subscription active. A browser that does not already have the connection continues that subscription with the Stripe receipt email and is not charged again. Public Cloud Run still auto-approves the OAuth consent step after a paid period. `MCP_AUTH_TOKEN` is still not an API key.
 
 ### Add this connector in Claude
 
@@ -33,9 +33,9 @@ Read-only Google Drive tools. This server cannot write, delete, or share. Claude
 https://onto-kb-kxjtmypvfa-uc.a.run.app/mcp
 ```
 
-The same steps are on one page: [https://onto-kb-kxjtmypvfa-uc.a.run.app/setup](https://onto-kb-kxjtmypvfa-uc.a.run.app/setup). Pay first: [https://onto-kb-kxjtmypvfa-uc.a.run.app/subscribe](https://onto-kb-kxjtmypvfa-uc.a.run.app/subscribe) ($20 USD/month on Stripe; this origin never shows the operator’s bank or collects card numbers).
+Paid setup steps for Claude, ChatGPT, and Cursor are on [https://onto-kb-kxjtmypvfa-uc.a.run.app/setup](https://onto-kb-kxjtmypvfa-uc.a.run.app/setup) after payment. Subscribe: [https://onto-kb-kxjtmypvfa-uc.a.run.app/subscribe](https://onto-kb-kxjtmypvfa-uc.a.run.app/subscribe) ($20 USD/month on Stripe; this origin never shows the operator’s bank or collects card numbers).
 
-Public business site for Stripe verification (free GitHub Pages): [https://wildfly8.github.io/google-drive-mcp/](https://wildfly8.github.io/google-drive-mcp/).
+Public business site for Stripe verification (free GitHub Pages): [https://wisdomspringtech.github.io/](https://wisdomspringtech.github.io/). That page has one subscribe link and does not publish the connector URL.
 
 1. Claude Web → Customize → Connectors → **+** → Add custom connector.
 2. Name: **onto-kb**. Paste the URL above.

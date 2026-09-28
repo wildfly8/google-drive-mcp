@@ -33,8 +33,9 @@ _PAGE = """\
   <h1>Set up onto-kb</h1>
   {pay_block}
   <p>Read-only Google Drive tools. This server cannot write, delete, or share.
-     Connector setup is available only after payment, in this same browser.
-     Claude, ChatGPT, and Cursor each use the URL below and then ask you to allow the tools.</p>
+     Connector setup is available only after payment.
+     Claude, ChatGPT, and Cursor keep calling onto-kb while the Stripe subscription stays active.
+     Each host uses the URL below and then asks you to allow the tools.</p>
   <p>Connector URL</p>
   <div class="url-row">
     <input id="mcp-url" readonly value="{mcp_url}">
@@ -55,13 +56,13 @@ _PAGE = """\
     <li>Use a ChatGPT plan that allows custom connectors. Settings → Security and login → turn on <strong>Developer mode</strong>.</li>
     <li>Open ChatGPT connectors and choose <strong>+</strong>. Name: <strong>onto-kb</strong>. Paste the URL above.</li>
     <li>Authentication: <strong>OAuth</strong>. Do not paste a static token or request header.</li>
-    <li>Connect in this same browser. In a new chat, enable onto-kb from the developer-mode menu.</li>
+    <li>Connect. In a new chat, enable onto-kb from the developer-mode menu. An active subscription does not ask you to pay again.</li>
   </ol>
   <h2>Cursor</h2>
   <ol>
     <li>Cursor Settings → MCP → Add a new MCP server. Transport: <strong>Streamable HTTP</strong>.</li>
     <li>Name: <strong>onto-kb</strong>. Paste the URL above.</li>
-    <li>When Cursor opens the browser to sign in, use this same browser and finish Connect. Do not paste a static token.</li>
+    <li>Finish the sign-in Cursor opens. Do not paste a static token. An active subscription does not ask you to pay again.</li>
     <li>Enable the onto-kb server, then use it from chat.</li>
   </ol>
   <p class="note">{auth_note}</p>
@@ -135,9 +136,10 @@ def setup_get(
     pay_block = ""
     if settings.mcp_subscription_required:
         pay_block = (
-            "<p><strong>Payment confirmed in this browser.</strong> "
-            "Set up Claude, ChatGPT, or Cursor only after payment, and start Connect "
-            "from this same browser. A different browser is sent back to checkout.</p>"
+            "<p><strong>Payment confirmed.</strong> "
+            "Set up Claude, ChatGPT, or Cursor only after payment. "
+            "While Stripe shows this subscription as active, those assistants keep "
+            "calling onto-kb with no further steps from you.</p>"
         )
     if settings.mcp_oauth_auto_approve:
         auth_step = "Your browser returns to the assistant. There is no deployment password."

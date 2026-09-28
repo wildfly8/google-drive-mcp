@@ -102,6 +102,7 @@ def mint_refresh_token(
     client_id: str,
     connect_id: str | None = None,
     scid: str | None = None,
+    ttl: int | None = None,
 ) -> str:
     extra: dict[str, Any] = {"resource": resource_url(settings)}
     if connect_id:
@@ -113,7 +114,7 @@ def mint_refresh_token(
         typ=TYP_REFRESH,
         aud=resource_url(settings),
         client_id=client_id,
-        ttl=settings.mcp_refresh_token_ttl_seconds,
+        ttl=settings.mcp_refresh_token_ttl_seconds if ttl is None else ttl,
         extra=extra,
     )
     return encode_jwt(claims, signing_key(settings))

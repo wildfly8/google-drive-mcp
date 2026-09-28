@@ -34,3 +34,4 @@
 - Stripe is named only as the **chosen processor** in the constitution/payment header and Assumptions (owner asked for a recommendation). Functional requirements stay in hosted-checkout / entitlement language.
 - Operator KYC to the processor is documented as required for payouts; it is not subscriber-facing PII on this origin.
 - Checklist passed; proceed to `/speckit-plan`.
+- 2026-09-28: continued access for an active subscription, one public subscribe link at `https://wisdomspringtech.github.io/`, and Claude / ChatGPT / Cursor setup are in spec.md. The retired Pages URL `https://wildfly8.github.io/google-drive-mcp/` is not used.

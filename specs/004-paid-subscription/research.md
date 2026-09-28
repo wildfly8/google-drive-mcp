@@ -20,9 +20,9 @@
 
 ## Decision: Cookie on `/authorize`, `scid` on tokens for refresh
 
-**Rationale**: Claude's `/token` and `/mcp` run from Anthropic's cloud (no cookie). The user's browser hits `/authorize` after checkout, so a signed cookie works there. Access/refresh JWTs carry `scid` so refresh can re-query Stripe.
+**Rationale**: Claude, ChatGPT, and Cursor call `/token` and `/mcp` from their own clouds (no browser cookie). The browser hits `/authorize` during Connect. A 400-day signed cookie covers that browser. Access and refresh JWTs carry `scid`. Each refresh re-queries Stripe and, while the subscription is active, rotates a 400-day refresh token so the assistant keeps working with no subscriber action. A different browser continues an active subscription by the email Stripe already stored; that lookup does not create a charge and this origin does not keep the email.
 
-**Alternatives considered**: License key paste on `/consent` — allowed as fallback (`entitlement` query param / form field).
+**Alternatives considered**: 30-day cookie only (forces checkout again while Stripe is still active — rejected); treating any visitor as paid when any subscription is active (lets unpaid people in — rejected); a local subscriber database (Article III — rejected).
 
 ## Decision: Paywall is independent of `MCP_OAUTH_AUTO_APPROVE`
 

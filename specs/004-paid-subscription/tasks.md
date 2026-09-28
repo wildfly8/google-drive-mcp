@@ -25,9 +25,10 @@
 
 ## Phase 5: US5 public business page
 
-- [x] T011 Static public page `docs/index.html` named WisdomSpringTech, $20/month onto-kb, link to connector setup, no bank/card
-- [x] T012 Push `gh-pages` (page at repo root) and record `https://wildfly8.github.io/google-drive-mcp/`. Enabling the Pages source is a repo setting this GitHub App cannot change (API 403).
-- [x] T013 Test the page source contains the business name, price, and setup link
+- [x] T011 Static public page `docs/index.html` named WisdomSpringTech, $20/month onto-kb, one subscribe link, no connector URL, no bank/card
+- [x] T012 Publish `https://wisdomspringtech.github.io/` from `WisdomSpringTech/wisdomspringtech.github.io` (not `https://wildfly8.github.io/google-drive-mcp/`, which 404s). This repo's token cannot push that org repo.
+- [x] T013 Test the page source contains the business name, price, one subscribe link, and no `/setup` URL
+- [x] T014 Active subscribers keep access without another checkout: 400-day refresh rotation while Stripe is active, receipt-email restore with no second charge, resume in-progress `/authorize`
 
 ## Phase 6: Pickup
 

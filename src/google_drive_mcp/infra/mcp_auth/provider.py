@@ -23,7 +23,7 @@ from mcp.server.auth.provider import (
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
 from google_drive_mcp.domain.connect_telemetry import host_family_from_client_id
-from google_drive_mcp.infra.billing.entitlement import current_scid
+from google_drive_mcp.infra.billing.entitlement import ENTITLEMENT_TTL, current_scid
 from google_drive_mcp.infra.billing.gateway import BillingGateway, InactiveBilling
 from google_drive_mcp.infra.config import Settings
 from google_drive_mcp.infra.mcp_auth.cimd import fetch_cimd_client
@@ -261,7 +261,11 @@ class DriveMcpOAuthProvider(
             self.settings, client_id=client_id, connect_id=connect_id, scid=scid
         )
         refresh = mint_refresh_token(
-            self.settings, client_id=client_id, connect_id=connect_id, scid=scid
+            self.settings,
+            client_id=client_id,
+            connect_id=connect_id,
+            scid=scid,
+            ttl=ENTITLEMENT_TTL if scid else None,
         )
         return OAuthToken(
             access_token=access,

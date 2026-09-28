@@ -29,9 +29,10 @@ A person who wants onto-kb in Claude (or any MCP host) must complete a **mandato
 **Acceptance Scenarios**:
 
 1. **Given** no active paid period, **When** a host starts MCP OAuth `/authorize`, **Then** the browser is sent to pay (or shown a pay wall) and no authorization code is issued.
-2. **Given** an active $20/month period for that browser session, **When** the host completes authorization-code + PKCE, **Then** an access token is issued as in 001.
-3. **Given** a paid subscriber, **When** they call `drive_ls` / `find` / `read` / `grep`, **Then** tools behave as 002 (same one Google identity).
-4. **Given** a probe of `/authorize` that never pays, **When** it stops, **Then** `oauth_connects` does not increase.
+2. **Given** an active $20/month period, **When** the host completes authorization-code + PKCE, **Then** an access token is issued as in 001.
+3. **Given** a paid subscriber whose assistant already connected, **When** days pass and Stripe still reports the subscription active, **Then** token refresh succeeds and `drive_*` keeps working with no subscriber action.
+4. **Given** an active subscription and a browser that does not have the earlier connection, **When** the visitor submits the email already stored at the processor, **Then** Connect continues and no second charge is created.
+5. **Given** a probe of `/authorize` that never pays, **When** it stops, **Then** `oauth_connects` does not increase.
 
 ---
 
@@ -69,7 +70,7 @@ A subscriber can cancel renewal on the processor's customer portal. Access conti
 
 ### User Story 4 - Setup page tells hosts to pay first (Priority: P2)
 
-`GET /setup` states that onto-kb is **$20 USD per month** and links to checkout. The connector URL, copy control, Claude steps, OAuth notes, usage counts, and Google Cloud console links are shown only when the request has a valid entitlement cookie and Stripe reports that subscription active. Public `/stats` stays non-PII and MUST NOT list subscribers.
+`GET /setup` states that onto-kb is **$20 USD per month** and links to checkout. The connector URL, copy control, Claude / ChatGPT / Cursor steps, and OAuth notes are shown only when Stripe reports an active subscription for the browser's entitlement. Public `/stats` stays non-PII and MUST NOT list subscribers. Google Cloud console links are not shown on the paid setup page.
 
 **Why this priority**: Claude users will otherwise Connect and fail without explanation.
 
@@ -78,7 +79,7 @@ A subscriber can cancel renewal on the processor's customer portal. Access conti
 **Acceptance Scenarios**:
 
 1. **Given** `/setup` without an active entitlement, **When** loaded, **Then** it states the mandatory $20/month fee and links to checkout, and it does not include the connector URL or Claude steps.
-2. **Given** `/setup` with a valid entitlement cookie for an active subscription, **When** loaded, **Then** it shows the connector URL and Claude steps.
+2. **Given** `/setup` with a valid entitlement for an active subscription, **When** loaded, **Then** it shows the connector URL and setup steps for Claude, ChatGPT, and Cursor.
 3. **Given** `/stats`, **When** loaded, **Then** it is unchanged in kind (no emails, customer ids, or payment fields).
 
 ---
@@ -109,6 +110,8 @@ The payment processor requires a public, non-password-protected website whose vi
 - Refunds: treated as not entitled once the processor marks the subscription inactive.
 - Currency: USD 20; no other prices in this feature.
 - One Google identity: paying does not attach the subscriber's own Drive.
+- A connected assistant keeps working after the old 30-day cookie window, for as long as the processor reports the subscription active. Refresh re-checks the processor. A missing browser cookie does not start a second charge when that email already has an active subscription.
+- The public business site is `https://wisdomspringtech.github.io/`. `https://wildfly8.github.io/google-drive-mcp/` is not the business site.
 
 ## Requirements *(mandatory)*
 
@@ -124,7 +127,7 @@ The payment processor requires a public, non-password-protected website whose vi
 - **FR-008**: Connect telemetry (003) MUST still count only successful paid Connects (authorization-code token issuance after entitlement).
 - **FR-009**: Go-live deploy MUST run with the paywall **on**. `MCP_OAUTH_AUTO_APPROVE` MUST NOT bypass the paywall.
 - **FR-010**: Processor webhook (or equivalent signed events) MUST update or confirm entitlement; spoofed unsigned POSTs MUST be rejected.
-- **FR-011**: After successful checkout in the subscriber's browser, that browser MUST be able to complete MCP OAuth (cookie or one-time entitlement bound to the checkout) without pasting a card. A displayed one-time code is allowed as fallback if the cookie is missing.
+- **FR-011**: After a successful payment, a connected Claude, ChatGPT, or Cursor MUST keep calling tools with no subscriber action while the processor reports that subscription active. Refresh MUST re-check the processor and MUST rotate a long-lived refresh token on success. A browser without the earlier connection MUST be able to continue an active subscription using the email already stored at the processor, with no second charge and without this origin logging, storing, or echoing that email. A new charge happens only when the processor has no active subscription for that email. Checkout in the paying browser MUST still be able to finish Connect without pasting a card.
 - **FR-012**: The owner MUST be able to open the processor dashboard to see payouts. That dashboard is not this MCP. This origin MUST NOT print payout bank details.
 - **FR-013**: A free public HTTPS page MUST show the business name **WisdomSpringTech**, state that the product is a hosted read-only MCP subscription (onto-kb) at USD 20 per month for Claude, ChatGPT, or Cursor, and state that connector setup is available only after payment. The page MUST contain one link, to checkout, and MUST be viewable without a password. It MUST NOT show the connector setup URL, owner bank, or card details.
 
@@ -144,7 +147,8 @@ The payment processor requires a public, non-password-protected website whose vi
 - **SC-003**: A reviewer of `/setup`, `/subscribe`, `/stats`, and application logs finds zero owner bank/card numbers and zero subscriber card numbers.
 - **SC-004**: After the processor marks a subscription inactive, new Connect and token refresh fail within one token lifetime (≤ 1 hour for access tokens).
 - **SC-005**: 100% of production Connects that mint tokens have an active paid period at issuance time when the paywall is on.
-- **SC-006**: A reviewer can open the public business page with no login and see WisdomSpringTech plus the $20/month onto-kb offer within one page load.
+- **SC-006**: A reviewer can open `https://wisdomspringtech.github.io/` with no login and see WisdomSpringTech plus the $20/month onto-kb offer within one page load.
+- **SC-007**: An assistant that already connected for an active subscription can refresh and call a Drive tool after 30 days without the subscriber opening checkout again.
 
 ## Assumptions
 
@@ -154,4 +158,5 @@ The payment processor requires a public, non-password-protected website whose vi
 - USD only, $20/month, no annual plan in this feature.
 - Public `/stats` remains anonymous connect counts.
 - Test mode keys are used in automated tests; live keys only on Cloud Run go-live after the owner adds them as secrets.
-- Existing Claude connector URL stays `/mcp`. Paywall is extra steps on this origin, not a new MCP protocol.
+- Existing connector URL stays `/mcp` for Claude, ChatGPT, and Cursor. Paywall is extra steps on this origin, not a new MCP protocol.
+- The public business page is hosted at `https://wisdomspringtech.github.io/` from `WisdomSpringTech/wisdomspringtech.github.io`. It is not `https://wildfly8.github.io/google-drive-mcp/`.

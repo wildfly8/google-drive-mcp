@@ -7,6 +7,7 @@ class FakeBilling:
     def __init__(self) -> None:
         self.active: set[str] = set()
         self.sessions: dict[str, str] = {}
+        self.emails: dict[str, str] = {}
         self.checkouts = 0
 
     def is_subscription_active(self, customer_id: str) -> bool:
@@ -22,3 +23,9 @@ class FakeBilling:
 
     def customer_id_from_checkout_session(self, session_id: str) -> str | None:
         return self.sessions.get(session_id)
+
+    def active_customer_id_for_email(self, email: str) -> str | None:
+        customer_id = self.emails.get(email.strip().lower())
+        if customer_id and customer_id in self.active:
+            return customer_id
+        return None

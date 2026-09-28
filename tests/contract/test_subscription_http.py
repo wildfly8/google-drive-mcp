@@ -12,7 +12,14 @@ from starlette.testclient import TestClient
 
 from fakes.fake_billing import FakeBilling
 from fakes.fake_drive import FakeDrive
-from google_drive_mcp.infra.billing.entitlement import COOKIE_NAME, mint_entitlement
+from google_drive_mcp.infra.billing.entitlement import (
+    COOKIE_NAME,
+    ENTITLEMENT_TTL,
+    RESUME_COOKIE,
+    mint_entitlement,
+)
+from google_drive_mcp.infra.mcp_auth.provider import DriveMcpOAuthProvider
+from google_drive_mcp.infra.mcp_auth.tokens import verify_refresh_claims
 from google_drive_mcp.infra.billing.stripe_api import verify_stripe_signature
 from google_drive_mcp.infra.config import Settings
 from google_drive_mcp.mcp.middleware import Runtime
@@ -159,6 +166,59 @@ def test_checkout_complete_sets_cookie(fake_drive: FakeDrive):
         assert COOKIE_NAME in done.cookies
         assert "Payment received" in done.text
         assert 'href="/setup"' in done.text
+
+
+def test_active_email_resumes_connect_without_a_new_charge(fake_drive: FakeDrive):
+    settings = _paid_settings()
+    billing = FakeBilling()
+    billing.active.add("cus_live9")
+    billing.emails["payer@example.com"] = "cus_live9"
+    runtime = Runtime(settings=settings, drive=fake_drive, billing=billing)
+    with _client(runtime) as client:
+        authorize = client.get(
+            "/authorize",
+            params={
+                "response_type": "code",
+                "client_id": "paywall-test",
+                "redirect_uri": "http://127.0.0.1/callback",
+                "code_challenge": "abc",
+                "code_challenge_method": "S256",
+                "scope": "drive.read",
+                "resource": "http://127.0.0.1/mcp",
+            },
+            follow_redirects=False,
+        )
+        assert authorize.status_code == 302
+        assert authorize.headers["location"].endswith("/subscribe")
+        assert RESUME_COOKIE in authorize.cookies
+        before = billing.checkouts
+        restored = client.post(
+            "/subscribe/restore",
+            data={"email": "payer@example.com"},
+            follow_redirects=False,
+        )
+        assert restored.status_code == 303
+        assert restored.headers["location"].startswith("/authorize?")
+        assert "payer@example.com" not in restored.text
+        assert COOKIE_NAME in restored.cookies
+        assert billing.checkouts == before
+        missing = client.post(
+            "/subscribe/restore",
+            data={"email": "nobody@example.com"},
+            follow_redirects=False,
+        )
+        assert missing.status_code == 404
+        assert "nobody@example.com" not in missing.text
+        assert "Pay $20 / month" in missing.text
+
+
+def test_paid_refresh_token_lasts_while_subscription_can_stay_active():
+    settings = _paid_settings()
+    provider = DriveMcpOAuthProvider(settings, billing=FakeBilling())
+    issued = provider._issue_tokens("host", scid="cus_live1")
+    claims = verify_refresh_claims(issued.refresh_token, settings)
+    assert claims is not None
+    assert claims["exp"] - claims["iat"] == ENTITLEMENT_TTL
 
 
 def test_webhook_rejects_bad_signature(fake_drive: FakeDrive):

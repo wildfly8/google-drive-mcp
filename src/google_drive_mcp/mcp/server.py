@@ -11,13 +11,22 @@ from typing import Annotated, Any
 
 from pydantic import AnyHttpUrl, Field
 
-from google_drive_mcp.infra.billing.entitlement import COOKIE_NAME, set_current_scid, verify_entitlement
+from google_drive_mcp.infra.billing.entitlement import (
+    COOKIE_NAME,
+    ENTITLEMENT_TTL,
+    RESUME_COOKIE,
+    mint_entitlement,
+    safe_resume,
+    set_current_scid,
+    verify_entitlement,
+)
 from google_drive_mcp.infra.billing.routes import (
     entitlement_from_request,
     stripe_webhook_post,
     subscribe_checkout_post,
     subscribe_complete_get,
     subscribe_get,
+    subscribe_restore_post,
 )
 from google_drive_mcp.infra.billing.stripe_api import StripeHttpGateway
 from google_drive_mcp.infra.config import Settings
@@ -160,7 +169,11 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
         from google_drive_mcp.infra.billing.gateway import InactiveBilling as _Inactive
 
         configured = not isinstance(runtime.billing, _Inactive)
-        return subscribe_get(settings, configured=configured)
+        return subscribe_get(request, settings, runtime.billing, configured=configured)
+
+    @server.custom_route("/subscribe/restore", methods=["POST"])
+    async def subscribe_restore(request):
+        return await subscribe_restore_post(request, settings, runtime.billing)
 
     @server.custom_route("/subscribe/checkout", methods=["POST"])
     async def subscribe_checkout(request):
@@ -450,30 +463,86 @@ class _AuthorizationHeaderMiddleware:
         self.settings = settings
 
     async def __call__(self, scope, receive, send):
-        if scope["type"] == "http":
-            headers = {k.decode(): v.decode() for k, v in scope.get("headers", [])}
-            set_authorization(headers.get("authorization"))
-            reset_request_drive()
-            scid = None
-            if self.settings is not None:
-                from urllib.parse import parse_qs
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        headers = {k.decode(): v.decode() for k, v in scope.get("headers", [])}
+        set_authorization(headers.get("authorization"))
+        reset_request_drive()
+        scid = None
+        from_cookie = False
+        if self.settings is not None:
+            from urllib.parse import parse_qs, quote
 
-                cookies = headers.get("cookie") or ""
-                raw = None
-                for part in cookies.split(";"):
-                    if "=" not in part:
-                        continue
-                    name, value = part.strip().split("=", 1)
-                    if name == COOKIE_NAME:
-                        raw = value
-                        break
-                scid = verify_entitlement(raw, self.settings)
-                if scid is None:
-                    query = (scope.get("query_string") or b"").decode()
-                    token = (parse_qs(query).get("entitlement") or [None])[0]
-                    scid = verify_entitlement(token, self.settings)
-            set_current_scid(scid)
-        await self.app(scope, receive, send)
+            cookies = headers.get("cookie") or ""
+            raw = None
+            for part in cookies.split(";"):
+                if "=" not in part:
+                    continue
+                name, value = part.strip().split("=", 1)
+                if name == COOKIE_NAME:
+                    raw = value
+                    break
+            scid = verify_entitlement(raw, self.settings)
+            from_cookie = scid is not None
+            if scid is None:
+                query = (scope.get("query_string") or b"").decode()
+                token = (parse_qs(query).get("entitlement") or [None])[0]
+                scid = verify_entitlement(token, self.settings)
+            path = scope.get("path") or ""
+            method = scope.get("method") or "GET"
+            if (
+                method == "GET"
+                and path == "/authorize"
+                and self.settings.mcp_subscription_required
+                and not scid
+            ):
+                query = (scope.get("query_string") or b"").decode()
+                resume = "/authorize" + (f"?{query}" if query else "")
+                if safe_resume(resume):
+                    secure = issuer_url(self.settings).startswith("https://")
+                    cookie = (
+                        f"{RESUME_COOKIE}={quote(resume, safe='')}; HttpOnly; Path=/; "
+                        f"Max-Age=3600; SameSite=Lax"
+                        + ("; Secure" if secure else "")
+                    )
+                    await send(
+                        {
+                            "type": "http.response.start",
+                            "status": 302,
+                            "headers": [
+                                (b"location", b"/subscribe"),
+                                (b"set-cookie", cookie.encode()),
+                            ],
+                        }
+                    )
+                    await send({"type": "http.response.body", "body": b""})
+                    return
+        set_current_scid(scid)
+
+        async def send_renewed(message):
+            if (
+                message["type"] == "http.response.start"
+                and from_cookie
+                and scid
+                and self.settings is not None
+                and self.settings.mcp_subscription_required
+            ):
+                token = mint_entitlement(self.settings, customer_id=scid)
+                secure = issuer_url(self.settings).startswith("https://")
+                cookie = (
+                    f"{COOKIE_NAME}={token}; HttpOnly; Path=/; Max-Age={ENTITLEMENT_TTL}; "
+                    "SameSite=Lax" + ("; Secure" if secure else "")
+                )
+                updated = dict(message)
+                updated["headers"] = [
+                    *list(message.get("headers") or []),
+                    (b"set-cookie", cookie.encode()),
+                ]
+                message = updated
+            await send(message)
+
+        await self.app(scope, receive, send_renewed)
 
 
 def streamable_app(runtime: Runtime | None = None, *, json_response: bool = True):

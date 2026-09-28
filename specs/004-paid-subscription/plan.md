@@ -1,6 +1,6 @@
 # Implementation Plan: Mandatory Paid Subscription
 
-**Branch**: `cursor/feat-004-paid-subscription-4088` | **Date**: 2026-09-27 | **Spec**: [spec.md](./spec.md)
+**Branch**: `main` | **Date**: 2026-09-28 | **Spec**: [spec.md](./spec.md)
 
 **Input**: Feature specification from `/specs/004-paid-subscription/spec.md`
 
@@ -12,9 +12,9 @@ Gate MCP Connect on an active **USD 20/month** Stripe Billing subscription. Host
 
 **Language/Version**: Python 3.12
 
-**Primary Dependencies**: existing Starlette/MCP stack; Stripe API (Checkout Session + subscription retrieve + webhook signatures); HS256 JWTs already used for MCP OAuth
+**Primary Dependencies**: existing Starlette/MCP stack; Stripe API (Checkout Session, customer lookup by email, subscription retrieve, webhook signatures); HS256 JWTs already used for MCP OAuth
 
-**Storage**: None on Cloud Run. Stripe stores customers/subscriptions. Short-lived signed cookie + JWT `scid` claim cache the Stripe customer id only (not Drive content).
+**Storage**: None on Cloud Run. Stripe stores customers, emails, and subscriptions. A 400-day signed cookie and the `scid` claim on access/refresh JWTs cache the Stripe customer id only (not Drive content, not email). Refresh tokens that carry `scid` last 400 days and rotate on each successful refresh while the subscription stays active.
 
 **Testing**: pytest + Starlette TestClient; fake Stripe gateway (no live network)
 

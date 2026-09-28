@@ -12,6 +12,8 @@ class BillingGateway(Protocol):
 
     def customer_id_from_checkout_session(self, session_id: str) -> str | None: ...
 
+    def active_customer_id_for_email(self, email: str) -> str | None: ...
+
 
 class InactiveBilling:
     """Paywall on but processor missing: nobody is entitled."""
@@ -23,4 +25,7 @@ class InactiveBilling:
         raise RuntimeError("payments_not_configured")
 
     def customer_id_from_checkout_session(self, session_id: str) -> str | None:
+        return None
+
+    def active_customer_id_for_email(self, email: str) -> str | None:
         return None

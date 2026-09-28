@@ -116,6 +116,44 @@ class StripeHttpGateway:
             if owns:
                 http.close()
 
+    def active_customer_id_for_email(self, email: str) -> str | None:
+        """Active subscriber for this receipt email. Does not log the address."""
+        cleaned = email.strip()
+        if "@" not in cleaned or len(cleaned) > 320 or not self._key():
+            return None
+        owns = self._client is None
+        http = self._http()
+        try:
+            candidates = [cleaned]
+            lowered = cleaned.lower()
+            if lowered != cleaned:
+                candidates.append(lowered)
+            seen: set[str] = set()
+            for candidate in candidates:
+                response = http.get(
+                    f"{_STRIPE}/v1/customers",
+                    params={"email": candidate, "limit": 10},
+                    auth=self._auth(),
+                )
+                if response.status_code != 200:
+                    continue
+                data = response.json().get("data") or []
+                for item in data:
+                    if not isinstance(item, dict):
+                        continue
+                    customer_id = str(item.get("id") or "")
+                    if not customer_id.startswith("cus_") or customer_id in seen:
+                        continue
+                    seen.add(customer_id)
+                    if self.is_subscription_active(customer_id):
+                        return customer_id
+            return None
+        except httpx.HTTPError:
+            return None
+        finally:
+            if owns:
+                http.close()
+
 
 def verify_stripe_signature(payload: bytes, header: str, secret: str, *, now: int | None = None) -> bool:
     """Stripe-Signature t=…,v1=… HMAC. Rejects stale timestamps."""
