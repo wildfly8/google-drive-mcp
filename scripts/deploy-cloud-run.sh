@@ -140,13 +140,14 @@ DEPLOY_ENV="${DEPLOY_ENV},DRIVE_ALLOWED_FOLDER_ID=${ALLOWED_FOLDER}"
 DEPLOY_ENV="${DEPLOY_ENV},MCP_OAUTH_AUTO_APPROVE=true"
 DEPLOY_ENV="${DEPLOY_ENV},GOOGLE_CLOUD_PROJECT=${PROJECT}"
 DEPLOY_ENV="${DEPLOY_ENV},MCP_STATS_FROM_LOGS=true"
-DEPLOY_ENV="${DEPLOY_ENV},MCP_SUBSCRIPTION_REQUIRED=true"
+if secret_exists STRIPE_SECRET_KEY && secret_exists STRIPE_PRICE_ID; then
+  DEPLOY_ENV="${DEPLOY_ENV},MCP_SUBSCRIPTION_REQUIRED=true"
+else
+  echo "Stripe price is not in Secret Manager yet. Deploying /subscribe without blocking Connect." >&2
+fi
 DEPLOY_ARGS+=(--set-env-vars="${DEPLOY_ENV}")
 
 echo "Deploying ${SERVICE} to Cloud Run (${REGION})..."
-if [[ "${DEPLOY_ENV}" == *MCP_SUBSCRIPTION_REQUIRED=true* ]] && ! secret_exists STRIPE_SECRET_KEY; then
-  echo "WARNING: Paywall is on but STRIPE_SECRET_KEY is missing. Connect will fail until Stripe secrets exist." >&2
-fi
 gcloud "${DEPLOY_ARGS[@]}"
 
 URL="$(gcloud run services describe "$SERVICE" --project="$PROJECT" --region="$REGION" --format='value(status.url)')"

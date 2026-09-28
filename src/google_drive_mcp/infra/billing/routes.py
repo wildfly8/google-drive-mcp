@@ -69,8 +69,12 @@ _COMPLETE = """\
 
 def subscribe_get(settings: Settings, *, configured: bool) -> HTMLResponse:
     if not settings.mcp_subscription_required:
-        status = "Paywall is off on this deployment."
-        form = ""
+        status = (
+            "USD 20 per month for onto-kb. Checkout is not open yet because "
+            "the Stripe price is not connected to this server. "
+            "The connector setup page is available."
+        )
+        form = '<p><a href="/setup">Connector setup</a></p>'
     elif not configured:
         status = "Payments are not configured (missing processor keys)."
         form = ""
