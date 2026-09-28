@@ -51,7 +51,7 @@ Tool results identify files with `file_id` and `source_url` as `drive:{file_id}`
 
 Any AI chat app that can add a remote MCP server uses that same URL and OAuth. Do not put tokens in the MCP URL or in tool arguments. Do not send `MCP_AUTH_TOKEN` as the `/mcp` Bearer.
 
-Non-PII usage totals (Connect completions and first Drive tool use — not unique people): [https://onto-kb-kxjtmypvfa-uc.a.run.app/stats](https://onto-kb-kxjtmypvfa-uc.a.run.app/stats). The same numbers appear on `/setup`.
+Non-PII usage totals (Connect completions and first Drive tool use — not unique people): [https://onto-kb-kxjtmypvfa-uc.a.run.app/stats](https://onto-kb-kxjtmypvfa-uc.a.run.app/stats).
 
 In GCP: [Logs (oauth_connect)](https://console.cloud.google.com/logs/query;query=resource.type%3D%22cloud_run_revision%22%0Aresource.labels.service_name%3D%22onto-kb%22%0AjsonPayload.event%3D%22oauth_connect%22;project=project-84207120-95a7-43ac-95e), [Metrics Explorer](https://console.cloud.google.com/monitoring/metrics-explorer?project=project-84207120-95a7-43ac-95e) (`logging.googleapis.com/user/onto_kb_oauth_connects` and `onto_kb_drive_first_uses`), and dashboard **onto-kb connect counter** under [Monitoring dashboards](https://console.cloud.google.com/monitoring/dashboards?project=project-84207120-95a7-43ac-95e). Cloud Run’s own Metrics tab is only request/latency/error.
 

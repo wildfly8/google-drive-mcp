@@ -50,7 +50,7 @@ _PAGE = """\
     <li>If the app asks you to <strong>Always allow</strong> read-only tools, allow them, then enable onto-kb in a chat.</li>
   </ol>
   <p class="note">{auth_note}</p>
-  <p class="stats">{stats_line} <a href="/stats">JSON</a>{gcp_links}</p>
+  {stats_block}
   <script>
     document.getElementById("copy").addEventListener("click", function () {{
       const el = document.getElementById("mcp-url");
@@ -97,26 +97,30 @@ def setup_get(
         return HTMLResponse(_LOCKED.format())
     mcp_url = resource_url(settings)
     stats = stats or {}
-    connects = int(stats.get("oauth_connects") or 0)
-    first = int(stats.get("drive_first_uses") or 0)
-    stats_line = (
-        f"Non-PII usage: {connects} successful Connects, {first} first Drive tool uses "
-        "(not unique people)."
-    )
-    gcp = stats.get("gcp") if isinstance(stats.get("gcp"), dict) else {}
-    gcp_links = ""
-    dash = gcp.get("dashboards")
-    metrics = gcp.get("metrics_explorer")
-    logs = gcp.get("logs_oauth_connects")
-    extras = []
-    if dash:
-        extras.append(f'<a href="{html.escape(str(dash), quote=True)}">Monitoring dashboards</a>')
-    if metrics:
-        extras.append(f'<a href="{html.escape(str(metrics), quote=True)}">Metrics Explorer</a>')
-    if logs:
-        extras.append(f'<a href="{html.escape(str(logs), quote=True)}">Connect logs</a>')
-    if extras and not settings.mcp_subscription_required:
-        gcp_links = " · " + " · ".join(extras)
+    stats_block = ""
+    if not settings.mcp_subscription_required:
+        connects = int(stats.get("oauth_connects") or 0)
+        first = int(stats.get("drive_first_uses") or 0)
+        stats_line = (
+            f"Non-PII usage: {connects} successful Connects, {first} first Drive tool uses "
+            "(not unique people)."
+        )
+        gcp = stats.get("gcp") if isinstance(stats.get("gcp"), dict) else {}
+        extras = []
+        dash = gcp.get("dashboards")
+        metrics = gcp.get("metrics_explorer")
+        logs = gcp.get("logs_oauth_connects")
+        if dash:
+            extras.append(f'<a href="{html.escape(str(dash), quote=True)}">Monitoring dashboards</a>')
+        if metrics:
+            extras.append(f'<a href="{html.escape(str(metrics), quote=True)}">Metrics Explorer</a>')
+        if logs:
+            extras.append(f'<a href="{html.escape(str(logs), quote=True)}">Connect logs</a>')
+        gcp_links = (" · " + " · ".join(extras)) if extras else ""
+        stats_block = (
+            f'<p class="stats">{html.escape(stats_line)} '
+            f'<a href="/stats">JSON</a>{gcp_links}</p>'
+        )
     pay_block = ""
     if settings.mcp_subscription_required:
         pay_block = (
@@ -130,8 +134,7 @@ def setup_get(
         if settings.mcp_subscription_required:
             auth_note = (
                 "There is no deployment password. After Connect, the AI chat app stores a "
-                "short-lived token and sends it on each tool call. Do not put MCP_AUTH_TOKEN "
-                "in request headers."
+                "short-lived token and sends it on each tool call."
             )
         else:
             auth_note = (
@@ -153,7 +156,6 @@ def setup_get(
             pay_block=pay_block,
             auth_step=auth_step,
             auth_note=auth_note,
-            stats_line=html.escape(stats_line),
-            gcp_links=gcp_links,
+            stats_block=stats_block,
         )
     )
