@@ -104,6 +104,9 @@ A content-derived result without `file_id` is invalid.
 | `result_count` | int | |
 | `status` | enum | `COMPLETE` \| `PARTIAL` \| `EMPTY` \| `ERROR` |
 | `partial_reason` | string? | `max_files` \| `max_bytes` \| `max_matches` \| `max_execution_time` \| `RATE_LIMITED` \| `unsupported_skipped` \| … |
+| `files_scanned` / `bytes_scanned` | int | `drive_grep` only; always present |
+| `next_cursor` | string? | `drive_grep`; last scanned file id when more non-deferred files remain |
+| `deferred_file_ids` | string[]? | `drive_grep`; known-large files not downloaded on this call |
 
 ## Relationships
 

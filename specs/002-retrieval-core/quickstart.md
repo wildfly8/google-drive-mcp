@@ -38,6 +38,8 @@ Expected:
 10. After tests, no export files under `/tmp` from the app’s temp dirs
 11. Unauthenticated call never hits fake Drive **content** I/O (`tests/contract/test_tools_require_auth.py`)
 12. Walk cut by simulated 429 → `status: PARTIAL`, `partial_reason: RATE_LIMITED`
+13. `drive_find` with a filename stem among many non-matching siblings returns that file and does not `files.get` each child (`tests/contract/test_drive_find.py`)
+14. Folder `drive_grep` scans a small file, returns a larger id in `deferred_file_ids`, and resumes with `cursor` (`tests/contract/test_drive_grep.py`)
 
 ## Optional live smoke
 

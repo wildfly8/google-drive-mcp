@@ -269,3 +269,13 @@ Remaining work from `/speckit-converge` (2026-09-13). Do not rewrite earlier tas
 
 - [X] T056 Honor `trashed=true` on folder-scoped `drive_find` by threading `include_trashed` through `walk_files` → `GoogleDriveClient.list_children` / `FakeDrive.list_children` instead of hard-coding `trashed = false` (whole-grant `list_all` already respects the flag) in `src/google_drive_mcp/infra/google_drive/list.py`, `src/google_drive_mcp/infra/google_drive/client.py`, and `tests/fakes/fake_drive.py` per FR-010 (partial)
 - [X] T057 Advertise `FILE_ID_PATTERN` on `drive_grep` `file_ids` JSON Schema array items in `src/google_drive_mcp/mcp/server.py` so `tools/list` matches `require_file_id` validation (today items are plain `string`) per FR-091 (partial)
+
+---
+
+## Phase 13: Find pushdown and grep coverage
+
+Filename discovery and folder grep coverage (FR-012, FR-036, FR-038). No persistent index, no BM25, no default `kb/` scope, no per-file cap below 20 MB.
+
+- [X] T058 Push `name contains`, MIME, `modifiedTime`, and `trashed = false` into `files.list` (`pageSize` 1000) and count `drive_find` `max_results` only for matching non-folder files, without `files.get` on each listed child, in `domain/list_filter.py`, `infra/google_drive/query.py`, `infra/google_drive/client.py`, `infra/google_drive/list.py`, `retrieval/find.py`, and `tests/fakes/fake_drive.py` (FR-012)
+- [X] T059 Scan folder and whole-grant `drive_grep` known-smaller files first; defer a known size that does not fit remaining operation bytes (and the larger tail) as `deferred_file_ids` without downloading; always return `files_scanned` and `bytes_scanned`; set `next_cursor` only when the listing finished and more non-deferred files remain; never defer a single `file_id` in `retrieval/grep.py`, `mcp/server.py`, `mcp/tools.py`, and `mcp/tool_schema.py` (FR-038, FR-036)
+- [X] T060 Contract tests for find pushdown, grep deferral, cursor resume, and coverage counts in `tests/contract/test_drive_find.py`, `tests/contract/test_drive_grep.py`, and `tests/unit/retrieval/test_list_query.py`

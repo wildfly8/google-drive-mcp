@@ -9,7 +9,9 @@ from googleapiclient.errors import HttpError
 
 from google_drive_mcp.domain.budgets import Budget
 from google_drive_mcp.domain.google_errors import GoogleApiError
+from google_drive_mcp.domain.list_filter import ListFilter
 from google_drive_mcp.infra.google_drive.export import FileNotExportableError
+from google_drive_mcp.infra.google_drive.query import files_list_query, list_page_size
 
 _FIELDS = "id,name,mimeType,parents,modifiedTime,createdTime,webViewLink,size,trashed"
 
@@ -88,14 +90,19 @@ class GoogleDriveClient:
         budget: Budget | None = None,
         *,
         include_trashed: bool = False,
+        list_filter: ListFilter | None = None,
     ) -> list[dict]:
-        query = f"'{folder_id}' in parents"
-        if not include_trashed:
-            query += " and trashed = false"
+        query = files_list_query(folder_id, list_filter, include_trashed=include_trashed)
         return self._list(query, budget=budget)
 
-    def list_all(self, *, include_trashed: bool = False, budget: Budget | None = None) -> list[dict]:
-        query = "trashed = false" if not include_trashed else None
+    def list_all(
+        self,
+        *,
+        include_trashed: bool = False,
+        budget: Budget | None = None,
+        list_filter: ListFilter | None = None,
+    ) -> list[dict]:
+        query = files_list_query(None, list_filter, include_trashed=include_trashed)
         return self._list(query, budget=budget)
 
     def _list(self, query: str | None, budget: Budget | None = None) -> list[dict]:
@@ -110,7 +117,7 @@ class GoogleDriveClient:
                 kwargs = {
                     "q": query,
                     "fields": f"nextPageToken, files({_FIELDS})",
-                    "pageSize": 100,
+                    "pageSize": list_page_size(),
                     "supportsAllDrives": True,
                     "includeItemsFromAllDrives": True,
                 }

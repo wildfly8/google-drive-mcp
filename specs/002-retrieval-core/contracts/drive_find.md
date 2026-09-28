@@ -53,4 +53,6 @@ Invalid `max_results` or date-time → `INVALID_ARGUMENT`.
 
 `file` is DriveFile metadata only (id, name, mime_type, modified_time, `source_url` = `drive:{id}`, is_folder, trashed). No `content` field. `source_url` MUST NOT be an HTTP URL.
 
-Zero matches after complete scan → `EMPTY`. Hitting `max_files` while descendants remain → `PARTIAL`. Walk cut by Google 429 → `PARTIAL`, `partial_reason: RATE_LIMITED`.
+The server pushes `name contains` (when `name_pattern` is set), `mimeType`, `modifiedTime` bounds, and `trashed = false` unless `trashed` is true, into `files.list`. `name_pattern` is still confirmed as a case-insensitive filename substring on the listed names. `max_results` counts matching non-folder files only. Listing a folder does not `files.get` each child. Page size is 1000.
+
+Zero matches after a finished scan → `EMPTY`. Hitting `max_files` while more matching files remain → `PARTIAL` with `partial_reason: max_files` (the reason is present even when this page of candidates is empty). Walk cut by Google 429 → `PARTIAL`, `partial_reason: RATE_LIMITED`.

@@ -43,7 +43,7 @@ An agent needs an answer that may live in the user's Drive. It lists a folder or
 **Acceptance Scenarios**:
 
 1. **Given** an accessible folder, **When** the agent enumerates it with `drive_ls`, **Then** each child is returned with id, name, type, folder flag, modified time, and view link, and **no** document body is included.
-2. **Given** accessible files whose names or types match a query, including files nested under a named folder, **When** the agent runs `drive_find` on that folder, **Then** it receives `SearchCandidate` records for matching descendants (not only immediate children) that are not labeled or treated as verified evidence.
+2. **Given** accessible files whose names or types match a query, including files nested under a named folder, **When** the agent runs `drive_find` on that folder, **Then** it receives `SearchCandidate` records for matching descendants (not only immediate children) that are not labeled or treated as verified evidence. Non-matching siblings do not consume `max_results`.
 3. **Given** a known `file_id` the principal may read, **When** the agent runs `drive_read`, **Then** it receives current `DocumentContent` sourced from Drive at call time, with provenance intact.
 4. **Given** a Google Doc, Sheet, or Slide the principal may read, **When** the agent runs `drive_read`, **Then** it receives a usable text representation with provenance intact.
 5. **Given** another Drive file that yields usable text, **When** the agent reads it, **Then** the text is returned with provenance.
@@ -53,7 +53,7 @@ An agent needs an answer that may live in the user's Drive. It lists a folder or
 
 ### User Story 2 - Exact search turns retrieved bytes into evidence (Priority: P1)
 
-The agent has candidates and wants to verify a specific claim. It runs exact-match search (`drive_grep`) over identified files or a folder. Hits include the matched text, location, and provenance. A hit is still only evidence after content has been retrieved and, when checking a claim, exactly matched (Article VIII). No match returns an empty match list with status `EMPTY` — never a fabricated hit. Identical bytes and identical pattern produce identical results within the current request (Article IX).
+The agent has candidates and wants to verify a specific claim. It runs exact-match search (`drive_grep`) over identified files or a folder. Hits include the matched text, location, and provenance. A hit is still only evidence after content has been retrieved and, when checking a claim, exactly matched (Article VIII). A finished slice with no match and nothing deferred returns an empty match list with status `EMPTY` — never a fabricated hit. Identical bytes and identical pattern produce identical results within the current request (Article IX).
 
 **Why this priority**: Exact search is the verification primitive that makes retrieval trustworthy without a semantic index (Article II, IX).
 
@@ -63,9 +63,10 @@ The agent has candidates and wants to verify a specific claim. It runs exact-mat
 
 1. **Given** an accessible document containing a unique phrase, **When** the agent greps that phrase, **Then** the result identifies the file and includes matched text plus provenance (`file_id`, name, modified time at minimum).
 2. **Given** identical retrieved bytes and identical search parameters within one request, **When** grep is repeated, **Then** the matches are identical.
-3. **Given** no occurrence of the pattern in the searched bytes, **When** grep completes within its limits, **Then** status is `EMPTY` with an empty match list — never a fabricated match.
+3. **Given** no occurrence of the pattern in the searched bytes, **When** grep finishes that slice with nothing deferred and no budget cut, **Then** status is `EMPTY` with an empty match list — never a fabricated match.
 4. **Given** `case_sensitive = false` versus `true`, **When** the same pattern is used, **Then** case-insensitive and exact-case modes are unambiguously different.
 5. **Given** `regex = true` versus literal mode, **When** the same pattern string is used, **Then** regular-expression interpretation and literal interpretation are unambiguously distinguished.
+6. **Given** a folder that holds a small file and a file whose known size does not fit the bytes left in the call, **When** the agent greps that folder, **Then** the small file is scanned, the large id is returned in `deferred_file_ids` without a download, and status is `PARTIAL`. A later call with one of those ids searches that file. When `next_cursor` is present, the same pattern and scope with `cursor` continue after the last scanned file.
 
 ---
 
@@ -129,6 +130,7 @@ Drive is the only source of truth. After a document changes in Drive, a later re
 
 - **FR-010**: MUST discover `SearchCandidate[]` using metadata and/or Drive-native discovery, filterable by `name_pattern, mime_type, folder_id, modified_after, modified_before, trashed, max_results`. `name_pattern` is a case-insensitive **filename substring**, not a glob and not file contents. When `folder_id` is omitted, discovery runs within the default `RetrievalScope` (the whole Google grant for this deployment identity), **unless** Access Control rewrote the omitted folder to `DRIVE_ALLOWED_FOLDER_ID`. When `folder_id` is named, discovery MUST include descendants of that folder, not only its immediate children.
 - **FR-011**: MUST NOT represent returned candidates as verified evidence (Article VIII).
+- **FR-012**: `drive_find` MUST push `name contains`, `mimeType`, `modifiedTime` bounds, and `trashed = false` (unless `trashed` is true) into the Drive `files.list` query. `max_results` counts matching non-folder files only. Children returned by listing a folder are already in that folder: the walk MUST NOT `files.get` each child to re-check parents. A finished scan with zero matches is `EMPTY`. Hitting the cap while more matching files remain is `PARTIAL` with `partial_reason: max_files`.
 
 #### Inspection — `drive_read`
 
@@ -140,14 +142,15 @@ Drive is the only source of truth. After a document changes in Drive, a later re
 
 #### Verification — `drive_grep`
 
-- **FR-030**: MUST perform deterministic exact-content search over one or more files, identified by `file_ids` and/or `folder_id`, given `pattern, case_sensitive?, regex?, context_lines?, max_matches?`. When neither `file_ids` nor `folder_id` is named, grep runs within the default `RetrievalScope` (the whole Google grant for this deployment identity), subject to resource limits and `PARTIAL` completeness (FR-041). When `folder_id` is named, grep MUST search that folder’s descendants, not only its immediate children.
+- **FR-030**: MUST perform deterministic exact-content search over one or more files, identified by `file_ids` and/or `folder_id`, given `pattern, case_sensitive?, regex?, context_lines?, max_matches?, cursor?`. When neither `file_ids` nor `folder_id` is named, grep runs within the default `RetrievalScope` (the whole Google grant for this deployment identity), subject to resource limits and `PARTIAL` completeness (FR-041). When `folder_id` is named, grep MUST search that folder’s descendants, not only its immediate children. `cursor` continues a folder or whole-grant grep after `next_cursor`. Combining `cursor` with `file_ids` is `INVALID_ARGUMENT`. A `cursor` that is not in a finished listing is `INVALID_ARGUMENT`.
 - **FR-031**: For identical retrieved bytes and identical parameters, results MUST be identical (Article IX) within the current request. A changed Drive document MAY change results on a subsequent call.
 - **FR-032**: When `case_sensitive = false`, matching MUST be case-insensitive; when `true`, case MUST be respected exactly.
 - **FR-033**: When `regex = true`, `pattern` MUST be interpreted as a regular expression, not a literal string; literal and regex modes MUST be unambiguously distinguished.
 - **FR-034**: When `context_lines` is set, results SHOULD include enough surrounding content to interpret the match without a follow-up read.
 - **FR-035**: MUST retrieve target content, search it, return matches with provenance, and discard the transient content after the operation completes (Article III).
-- **FR-036**: On no match, MUST return `matches: []` and status `EMPTY` — MUST NOT fabricate a match.
+- **FR-036**: On no match after the searched slice is finished (nothing deferred, no budget or rate-limit cut), MUST return `matches: []` and status `EMPTY` — MUST NOT fabricate a match. A slice that deferred files or stopped early MUST be `PARTIAL`, not `EMPTY`.
 - **FR-037**: When `drive_grep` walks a `folder_id` or `default_whole_grant` and some files cannot yield usable text, MUST skip those files, search the rest, and return `PARTIAL` with a reason that unsupported files were skipped. If every target is unsupported, MUST fail as `UNSUPPORTED_MIME_TYPE` or `FILE_NOT_EXPORTABLE` (same categories as FR-021a).
+- **FR-038**: A folder or whole-grant `drive_grep` MUST scan known-smaller files first and MUST keep the per-file byte cap (a single named `file_id`, including a multi-megabyte export, is searched in that call and is never deferred). When the next file’s known size would exceed the bytes still left in the operation, MUST NOT download it; MUST return that id and the larger tail in `deferred_file_ids` and status `PARTIAL` with `partial_reason: max_bytes`. Unknown size is not deferred solely because remaining bytes are under the per-file cap. Every grep result MUST include `files_scanned` and `bytes_scanned`. `next_cursor` is the last file id actually scanned, and only when the listing finished and more non-deferred files remain because of the file cap or the time cap. A listing cut short by time or HTTP 429 MUST NOT invent a cursor.
 
 #### Result status (cross-cutting)
 
@@ -250,7 +253,10 @@ Scope enforcement and credential use are Access Control invariants AI3/AI4, not 
 - Drive synchronization or change-tracking service
 - Document management or editing
 - Vector database, semantic search, or reranking
-- Persistent document cache or offline mirror
+- Persistent document cache, folder cache, or offline mirror
+- A local ripgrep store, BM25 index, or any semantic / vector retrieval
+- Narrowing the default scope to a `kb/` folder, hiding export folders, or lowering the per-file cap below 20 MB
+- Rewriting Drive activity logs whose bodies are import shells; that text lives in Drive
 - Full-text indexing independent of live Drive content
 - Authentication and authorization (see `specs/001-access-control/spec.md`)
 - Architectural decision records, deployment instance lifecycle, and file/module layout (plan.md; Article XII)

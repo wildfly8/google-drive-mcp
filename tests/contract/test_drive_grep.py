@@ -380,6 +380,7 @@ def test_folder_export_429_preserves_matches_already_found(runtime, fake_drive, 
         return original(file_id, mime)
 
     fake_drive.export = fail_after_first  # type: ignore[method-assign]
+    fake_drive.update_content("text-file", "idempotency")
     result = handle_tool(
         runtime,
         "drive_grep",
@@ -389,7 +390,7 @@ def test_folder_export_429_preserves_matches_already_found(runtime, fake_drive, 
     assert result["status"] == "PARTIAL"
     assert result["partial_reason"] == "RATE_LIMITED"
     assert result["matches"]
-    assert {m["file_id"] for m in result["matches"]} == {"nested-doc"}
+    assert {m["file_id"] for m in result["matches"]} == {"text-file"}
 
 
 def test_text_blob_get_media_429_on_folder_grep_is_partial(authz):
@@ -448,3 +449,205 @@ def test_grep_mdx_octet_stream_is_searchable(runtime, fake_drive, authz):
     assert result["matches"]
     assert result["matches"][0]["file_id"] == "essay-mdx"
     assert "follows from axioms" in (result["matches"][0].get("context") or "")
+
+
+def test_folder_grep_defers_file_that_does_not_fit_and_scans_small_first():
+    from fakes.fake_drive import DOC_MIME, FOLDER_MIME, FakeDrive, FakeFile
+    from google_drive_mcp.domain.budgets import Budget
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    drive = FakeDrive()
+    drive.add(FakeFile(id="root", name="My Drive", mime_type=FOLDER_MIME, parents=[]))
+    drive.add(FakeFile(id="top", name="Top", mime_type=FOLDER_MIME, parents=["root"]))
+    drive.add(
+        FakeFile(
+            id="essay",
+            name="essay.md",
+            mime_type=DOC_MIME,
+            parents=["top"],
+            content="short hit",
+        )
+    )
+    drive.add(
+        FakeFile(
+            id="year-log",
+            name="chatgpt-2025.mdx",
+            mime_type="application/octet-stream",
+            parents=["top"],
+            content=b"alpha " + (b"x" * 5000),
+        )
+    )
+    result = drive_grep(
+        drive,
+        pattern="short hit",
+        folder_id="top",
+        budget=Budget(max_bytes_per_operation=1000),
+    )
+    assert result["status"] == "PARTIAL"
+    assert result["partial_reason"] == "max_bytes"
+    assert result["deferred_file_ids"] == ["year-log"]
+    assert result["files_scanned"] == 1
+    assert result["bytes_scanned"] == len("short hit")
+    assert {m["file_id"] for m in result["matches"]} == {"essay"}
+    assert drive.content_media_count == 0
+
+
+def test_single_file_id_is_not_deferred_when_larger_than_remaining_budget():
+    from fakes.fake_drive import FakeDrive, FakeFile
+    from google_drive_mcp.domain.budgets import Budget
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    payload = b"alpha token " + (b"x" * 500)
+    drive = FakeDrive()
+    drive.add(
+        FakeFile(
+            id="year-a",
+            name="chatgpt-2025.mdx",
+            mime_type="application/octet-stream",
+            parents=["root"],
+            content=payload,
+        )
+    )
+    result = drive_grep(
+        drive,
+        pattern="alpha token",
+        file_ids=["year-a"],
+        budget=Budget(max_bytes_per_operation=100),
+    )
+    assert "deferred_file_ids" not in result
+    assert drive.content_media_count == 1
+    assert result["matches"]
+    assert result["files_scanned"] == 1
+    assert result["bytes_scanned"] == len(payload)
+
+
+def test_grep_cursor_resumes_after_last_scanned_file():
+    from fakes.fake_drive import DOC_MIME, FOLDER_MIME, FakeDrive, FakeFile
+    from google_drive_mcp.domain.budgets import Budget
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    drive = FakeDrive()
+    drive.add(FakeFile(id="root", name="My Drive", mime_type=FOLDER_MIME, parents=[]))
+    drive.add(FakeFile(id="top", name="Top", mime_type=FOLDER_MIME, parents=["root"]))
+    for name, size in (("c-doc", 30), ("a-doc", 10), ("b-doc", 20)):
+        drive.add(
+            FakeFile(
+                id=name,
+                name=f"{name}.txt",
+                mime_type=DOC_MIME,
+                parents=["top"],
+                content="hit " + ("." * size),
+            )
+        )
+    first = drive_grep(
+        drive, pattern="hit", folder_id="top", budget=Budget(max_files=1)
+    )
+    assert first["status"] == "PARTIAL"
+    assert first["partial_reason"] == "max_files"
+    assert first["files_scanned"] == 1
+    assert first["next_cursor"] == "a-doc"
+    assert {m["file_id"] for m in first["matches"]} == {"a-doc"}
+
+    second = drive_grep(
+        drive,
+        pattern="hit",
+        folder_id="top",
+        cursor="a-doc",
+        budget=Budget(max_files=1),
+    )
+    assert second["next_cursor"] == "b-doc"
+    assert {m["file_id"] for m in second["matches"]} == {"b-doc"}
+
+    third = drive_grep(
+        drive,
+        pattern="hit",
+        folder_id="top",
+        cursor="b-doc",
+        budget=Budget(max_files=5),
+    )
+    assert third["status"] == "COMPLETE"
+    assert "next_cursor" not in third
+    assert {m["file_id"] for m in third["matches"]} == {"c-doc"}
+    assert third["files_scanned"] == 1
+    assert "bytes_scanned" in third
+
+
+def test_grep_empty_slice_includes_coverage_counts():
+    from fakes.fake_drive import DOC_MIME, FOLDER_MIME, FakeDrive, FakeFile
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    drive = FakeDrive()
+    drive.add(FakeFile(id="root", name="My Drive", mime_type=FOLDER_MIME, parents=[]))
+    drive.add(FakeFile(id="top", name="Top", mime_type=FOLDER_MIME, parents=["root"]))
+    drive.add(
+        FakeFile(
+            id="essay",
+            name="essay.md",
+            mime_type=DOC_MIME,
+            parents=["top"],
+            content="nothing relevant",
+        )
+    )
+    result = drive_grep(drive, pattern="missing-phrase", folder_id="top")
+    assert result["status"] == "EMPTY"
+    assert result["matches"] == []
+    assert result["files_scanned"] == 1
+    assert result["bytes_scanned"] == len("nothing relevant")
+    assert "deferred_file_ids" not in result
+
+
+def test_deferred_tail_is_not_reported_empty():
+    from fakes.fake_drive import DOC_MIME, FOLDER_MIME, FakeDrive, FakeFile
+    from google_drive_mcp.domain.budgets import Budget
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    drive = FakeDrive()
+    drive.add(FakeFile(id="root", name="My Drive", mime_type=FOLDER_MIME, parents=[]))
+    drive.add(FakeFile(id="top", name="Top", mime_type=FOLDER_MIME, parents=["root"]))
+    drive.add(
+        FakeFile(
+            id="essay",
+            name="essay.md",
+            mime_type=DOC_MIME,
+            parents=["top"],
+            content="no phrase here",
+        )
+    )
+    drive.add(
+        FakeFile(
+            id="year-log",
+            name="chatgpt-2025.mdx",
+            mime_type="application/octet-stream",
+            parents=["top"],
+            content=b"x" * 4000,
+        )
+    )
+    result = drive_grep(
+        drive,
+        pattern="missing-phrase",
+        folder_id="top",
+        budget=Budget(max_bytes_per_operation=1000),
+    )
+    assert result["status"] == "PARTIAL"
+    assert result["partial_reason"] == "max_bytes"
+    assert result["matches"] == []
+    assert result["deferred_file_ids"] == ["year-log"]
+
+
+def test_unknown_cursor_and_cursor_with_file_ids_are_invalid(runtime, authz):
+    missing = handle_tool(
+        runtime,
+        "drive_grep",
+        {"pattern": "idempotency", "folder_id": "folder-a", "cursor": "not-a-real-file"},
+        authz,
+    )
+    assert missing["status"] == "ERROR"
+    assert missing["category"] == "INVALID_ARGUMENT"
+    both = handle_tool(
+        runtime,
+        "drive_grep",
+        {"pattern": "idempotency", "file_ids": ["nested-doc"], "cursor": "nested-doc"},
+        authz,
+    )
+    assert both["status"] == "ERROR"
+    assert both["category"] == "INVALID_ARGUMENT"

@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from google_drive_mcp.domain.google_errors import GoogleApiError
+from google_drive_mcp.domain.list_filter import ListFilter
 from google_drive_mcp.infra.google_drive.export import FileNotExportableError
 
 FOLDER_MIME = "application/vnd.google-apps.folder"
@@ -68,6 +69,7 @@ class FakeDrive:
         self.content_export_count = 0
         self.content_media_count = 0
         self.list_count = 0
+        self.parent_lookup_count = 0
         self.rate_limit_lists_after: int | None = None
         self.rate_limit_export: bool = False
         self.fail_tempfile: bool = False
@@ -82,16 +84,45 @@ class FakeDrive:
         self.content_export_count = 0
         self.content_media_count = 0
         self.list_count = 0
+        self.parent_lookup_count = 0
 
     def add(self, file: FakeFile) -> FakeFile:
         self.files[file.id] = file
         return file
 
     def parent_lookup(self, file_id: str) -> list[str] | None:
+        self.parent_lookup_count += 1
         item = self.files.get(file_id)
         if item is None:
             return None
         return list(item.parents)
+
+    def _accepts(self, item: FakeFile, filt: ListFilter | None, *, include_trashed: bool) -> bool:
+        trashed_ok = filt.include_trashed if filt is not None else include_trashed
+        if item.trashed and not trashed_ok:
+            return False
+        if filt is None:
+            return True
+        if filt.include_subfolders and item.is_folder:
+            return True
+        if filt.name_contains and filt.name_contains.lower() not in item.name.lower():
+            return False
+        if filt.mime_type and item.mime_type != filt.mime_type:
+            return False
+        if filt.modified_after or filt.modified_before:
+            try:
+                modified = datetime.fromisoformat(item.modified_time.replace("Z", "+00:00"))
+            except ValueError:
+                return False
+            if filt.modified_after:
+                after = datetime.fromisoformat(filt.modified_after.replace("Z", "+00:00"))
+                if modified < after:
+                    return False
+            if filt.modified_before:
+                before = datetime.fromisoformat(filt.modified_before.replace("Z", "+00:00"))
+                if modified > before:
+                    return False
+        return True
 
     def get_metadata(self, file_id: str) -> dict:
         self.metadata_get_count += 1
@@ -101,7 +132,12 @@ class FakeDrive:
         return item.metadata_dict()
 
     def list_children(
-        self, folder_id: str, budget=None, *, include_trashed: bool = False
+        self,
+        folder_id: str,
+        budget=None,
+        *,
+        include_trashed: bool = False,
+        list_filter: ListFilter | None = None,
     ) -> list[FakeFile]:
         self.list_count += 1
         if self.rate_limit_lists_after is not None and self.list_count > self.rate_limit_lists_after:
@@ -111,17 +147,23 @@ class FakeDrive:
         return [
             f
             for f in self.files.values()
-            if folder_id in f.parents and (include_trashed or not f.trashed)
+            if folder_id in f.parents and self._accepts(f, list_filter, include_trashed=include_trashed)
         ]
 
-    def list_all(self, *, include_trashed: bool = False, budget=None) -> list[FakeFile]:
+    def list_all(
+        self,
+        *,
+        include_trashed: bool = False,
+        budget=None,
+        list_filter: ListFilter | None = None,
+    ) -> list[FakeFile]:
         self.list_count += 1
         if self.rate_limit_lists_after is not None and self.list_count > self.rate_limit_lists_after:
             raise GoogleApiError(429)
         return [
             f
             for f in self.files.values()
-            if f.id != "root" and (include_trashed or not f.trashed)
+            if f.id != "root" and self._accepts(f, list_filter, include_trashed=include_trashed)
         ]
 
     def export(self, file_id: str, mime: str) -> str:

@@ -31,6 +31,35 @@ def _line_oriented(representation: str) -> bool:
     return representation.startswith("text/plain") or representation.startswith("text/")
 
 
+def _sort_key(file) -> tuple:
+    return (file.size is None, file.size or 0, file.id)
+
+
+def _coverage(
+    *,
+    status: OperationStatus,
+    matches: list,
+    files_scanned: int,
+    bytes_scanned: int,
+    partial_reason: str | None = None,
+    deferred_file_ids: list[str] | None = None,
+    next_cursor: str | None = None,
+) -> dict:
+    body: dict = {
+        "status": status.value,
+        "matches": matches,
+        "files_scanned": files_scanned,
+        "bytes_scanned": bytes_scanned,
+    }
+    if partial_reason is not None:
+        body["partial_reason"] = partial_reason
+    if deferred_file_ids:
+        body["deferred_file_ids"] = deferred_file_ids
+    if next_cursor:
+        body["next_cursor"] = next_cursor
+    return body
+
+
 def drive_grep(
     drive: object,
     *,
@@ -41,6 +70,7 @@ def drive_grep(
     regex: bool = False,
     context_lines: int = 2,
     max_matches: int | None = None,
+    cursor: str | None = None,
     budget: Budget | None = None,
     request_id: str | None = None,
 ) -> dict:
@@ -50,35 +80,74 @@ def drive_grep(
     compiled = compile_pattern(pattern, regex=regex, case_sensitive=case_sensitive)
     scope = RetrievalScope.from_tool_args(folder_id=folder_id, file_ids=file_ids)
     named_only = bool(file_ids) and not folder_id
+    single_target = named_only and len(file_ids or []) == 1
     walk = walk_files(
         drive,
         scope,
         budget,
         include_folders=named_only,
+        honor_file_cap=False,
+        count_listed=False,
         request_id=request_id,
     )
+    files = list(walk.files)
+    listing_complete = not walk.time_exceeded and not walk.rate_limited
+    if not single_target:
+        files.sort(key=_sort_key)
+    if cursor and listing_complete:
+        ids = [item.id for item in files]
+        if cursor not in ids:
+            raise DomainError.of(ErrorCategory.INVALID_ARGUMENT, request_id=request_id)
+        files = files[ids.index(cursor) + 1 :]
 
     matches: list[SearchMatch] = []
     skipped_unsupported = 0
     searchable = 0
+    files_scanned = 0
     last_unsupported: ErrorCategory | None = None
     truncated_bytes = False
+    deferred: list[str] = []
+    last_scanned_id: str | None = None
+    resume = False
+    stopped_for_time = False
+    hit_match_cap = False
 
-    for file in walk.files:
-        if budget.time_exceeded():
-            walk.time_exceeded = True
-            break
-        if budget.bytes_exhausted():
-            walk.truncated = True
-            break
+    index = 0
+    while index < len(files):
+        file = files[index]
         if file.is_folder:
             if named_only:
                 skipped_unsupported += 1
+                files_scanned += 1
                 last_unsupported = ErrorCategory.UNSUPPORTED_MIME_TYPE
+                last_scanned_id = file.id
+            index += 1
             continue
+        pending = [item.id for item in files[index:] if not item.is_folder]
+        if budget.time_exceeded():
+            if pending:
+                resume = True
+                stopped_for_time = True
+            break
+        if files_scanned >= budget.max_files:
+            if pending:
+                resume = True
+            break
+        if not single_target:
+            remaining = budget.max_bytes_per_operation - budget.bytes_seen
+            if remaining <= 0:
+                deferred.extend(pending)
+                break
+            if file.size is not None and file.size > remaining:
+                deferred.append(file.id)
+                index += 1
+                continue
         if default_representation(file.mime_type, file.name) is None:
             skipped_unsupported += 1
+            files_scanned += 1
+            last_scanned_id = file.id
             last_unsupported = ErrorCategory.UNSUPPORTED_MIME_TYPE
+            index += 1
             continue
         try:
             representation = representation_for(file.mime_type, None, name=file.name)
@@ -97,21 +166,26 @@ def drive_grep(
                 ErrorCategory.FILE_NOT_EXPORTABLE,
             ):
                 skipped_unsupported += 1
+                files_scanned += 1
+                last_scanned_id = file.id
                 last_unsupported = exc.error.category
+                index += 1
                 continue
             if exc.error.category == ErrorCategory.RATE_LIMITED:
-                single_named_file = named_only and len(file_ids or []) == 1
-                if single_named_file:
+                if single_target:
                     raise
                 walk.rate_limited = True
                 break
             raise
+        files_scanned += 1
+        last_scanned_id = file.id
         searchable += 1
         budget.note_bytes(exported.byte_length)
         if exported.truncated:
             truncated_bytes = True
-        remaining = budget.max_matches - len(matches)
-        if remaining <= 0:
+        match_room = budget.max_matches - len(matches)
+        if match_room <= 0:
+            hit_match_cap = True
             break
         line_oriented = _line_oriented(exported.representation) and not exported.representation.endswith(
             "csv"
@@ -124,7 +198,7 @@ def drive_grep(
                 compiled,
                 line_oriented=line_oriented,
                 context_lines=context_lines,
-                remaining=remaining,
+                remaining=match_room,
             )
         except DomainError:
             raise
@@ -148,70 +222,78 @@ def drive_grep(
             )
         budget.note_matches(len(raw))
         if budget.matches_exhausted():
+            hit_match_cap = True
             break
+        if not single_target and (exported.truncated or budget.bytes_exhausted()):
+            deferred.extend(item.id for item in files[index + 1 :] if not item.is_folder)
+            break
+        index += 1
 
     wire = [m.to_wire() for m in matches]
-    hit_match_cap = len(matches) >= budget.max_matches and (
-        walk.truncated or budget.matches_exhausted()
+    stopped = (
+        walk.rate_limited
+        or walk.time_exceeded
+        or stopped_for_time
+        or resume
+        or truncated_bytes
+        or bool(deferred)
+        or hit_match_cap
     )
-    walk_incomplete = walk.rate_limited or walk.time_exceeded or walk.truncated
 
-    if named_only and searchable == 0 and skipped_unsupported and not walk_incomplete:
-        raise DomainError.of(last_unsupported or ErrorCategory.UNSUPPORTED_MIME_TYPE, request_id=request_id)
-    if (
-        not named_only
-        and searchable == 0
-        and skipped_unsupported
-        and not walk_incomplete
-    ):
+    if searchable == 0 and skipped_unsupported and not stopped:
         raise DomainError.of(
             last_unsupported or ErrorCategory.UNSUPPORTED_MIME_TYPE, request_id=request_id
         )
 
+    next_cursor = None
+    if listing_complete and resume and last_scanned_id and not walk.rate_limited:
+        next_cursor = last_scanned_id
+    common = {
+        "matches": wire,
+        "files_scanned": files_scanned,
+        "bytes_scanned": budget.bytes_seen,
+        "deferred_file_ids": deferred,
+        "next_cursor": next_cursor,
+    }
     if walk.rate_limited:
-        return {
-            "status": OperationStatus.PARTIAL.value,
-            "partial_reason": PartialReason.RATE_LIMITED.value,
-            "matches": wire,
-        }
-    if walk.time_exceeded:
-        return {
-            "status": OperationStatus.PARTIAL.value,
-            "partial_reason": PartialReason.max_execution_time.value,
-            "matches": wire,
-        }
-    if hit_match_cap:
-        return {
-            "status": OperationStatus.PARTIAL.value,
-            "partial_reason": PartialReason.max_matches.value,
-            "matches": wire,
-        }
-    if truncated_bytes:
-        return {
-            "status": OperationStatus.PARTIAL.value,
-            "partial_reason": PartialReason.max_bytes.value,
-            "matches": wire,
-        }
-    if walk.truncated or budget.bytes_exhausted():
-        reason = (
-            PartialReason.max_bytes.value
-            if budget.bytes_exhausted()
-            else PartialReason.max_files.value
+        return _coverage(
+            status=OperationStatus.PARTIAL,
+            partial_reason=PartialReason.RATE_LIMITED.value,
+            **common,
         )
-        return {
-            "status": OperationStatus.PARTIAL.value,
-            "partial_reason": reason,
-            "matches": wire,
-        }
+    if walk.time_exceeded or stopped_for_time:
+        return _coverage(
+            status=OperationStatus.PARTIAL,
+            partial_reason=PartialReason.max_execution_time.value,
+            **common,
+        )
+    if hit_match_cap:
+        return _coverage(
+            status=OperationStatus.PARTIAL,
+            partial_reason=PartialReason.max_matches.value,
+            **common,
+        )
+    if truncated_bytes or deferred or budget.bytes_exhausted():
+        return _coverage(
+            status=OperationStatus.PARTIAL,
+            partial_reason=PartialReason.max_bytes.value,
+            **common,
+        )
+    if resume:
+        return _coverage(
+            status=OperationStatus.PARTIAL,
+            partial_reason=PartialReason.max_files.value,
+            **common,
+        )
     if skipped_unsupported and searchable:
-        return {
-            "status": OperationStatus.PARTIAL.value,
-            "partial_reason": PartialReason.unsupported_skipped.value,
-            "matches": wire,
-        }
+        return _coverage(
+            status=OperationStatus.PARTIAL,
+            partial_reason=PartialReason.unsupported_skipped.value,
+            **common,
+        )
     if not wire:
-        return {"status": OperationStatus.EMPTY.value, "matches": []}
-    return {"status": OperationStatus.COMPLETE.value, "matches": wire}
+        return _coverage(status=OperationStatus.EMPTY, **common)
+    return _coverage(status=OperationStatus.COMPLETE, **common)
 
 
 def validate_grep_args(arguments: dict) -> None:
@@ -250,3 +332,10 @@ def validate_grep_args(arguments: dict) -> None:
             raise DomainError.of(ErrorCategory.INVALID_ARGUMENT)
         for fid in file_ids:
             require_file_id(fid)
+    cursor = arguments.get("cursor")
+    if cursor is not None:
+        if not isinstance(cursor, str):
+            raise DomainError.of(ErrorCategory.INVALID_ARGUMENT)
+        require_file_id(cursor)
+        if file_ids:
+            raise DomainError.of(ErrorCategory.INVALID_ARGUMENT)

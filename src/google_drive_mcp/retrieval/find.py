@@ -8,6 +8,7 @@ from google_drive_mcp.domain.budgets import Budget
 from google_drive_mcp.domain.candidates import SearchCandidate
 from google_drive_mcp.domain.drive_file import DriveFile
 from google_drive_mcp.domain.errors import DomainError, ErrorCategory
+from google_drive_mcp.domain.list_filter import ListFilter
 from google_drive_mcp.domain.operation import OperationStatus, PartialReason
 from google_drive_mcp.domain.retrieval_scope import RetrievalScope
 from google_drive_mcp.infra.google_drive.list import walk_files
@@ -72,11 +73,27 @@ def drive_find(
     after = _parse_dt(modified_after)
     before = _parse_dt(modified_before)
     scope = RetrievalScope.from_tool_args(folder_id=folder_id)
+    has_clause = bool(name_pattern or mime_type or modified_after or modified_before)
+    list_filter = ListFilter(
+        name_contains=name_pattern or None,
+        mime_type=mime_type,
+        modified_after=modified_after,
+        modified_before=modified_before,
+        include_trashed=trashed,
+        include_subfolders=bool(folder_id) and has_clause,
+    )
     walk = walk_files(
-        drive, scope, budget, include_trashed=trashed, request_id=request_id
+        drive,
+        scope,
+        budget,
+        include_trashed=trashed,
+        list_filter=list_filter,
+        honor_file_cap=True,
+        count_folders=False,
+        request_id=request_id,
     )
     candidates: list[SearchCandidate] = []
-    for file in walk.files:
+    for index, file in enumerate(walk.files):
         reason = _matches(
             file,
             name_pattern=name_pattern,
@@ -89,7 +106,19 @@ def drive_find(
             continue
         candidates.append(SearchCandidate(file=file, reason=reason))
         if len(candidates) >= budget.max_files:
-            walk.truncated = True
+            rest = walk.files[index + 1 :]
+            if any(
+                _matches(
+                    later,
+                    name_pattern=name_pattern,
+                    mime_type=mime_type,
+                    modified_after=after,
+                    modified_before=before,
+                    include_trashed=trashed,
+                )
+                for later in rest
+            ):
+                walk.truncated = True
             break
 
     payload = [c.to_wire() for c in candidates]

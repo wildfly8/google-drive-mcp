@@ -445,6 +445,17 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
                 description=f"Stop after this many hits ({MAX_MATCHES_MIN}–{MAX_MATCHES_MAX}). Hitting the cap → PARTIAL.",
             ),
         ] = None,
+        cursor: Annotated[
+            str | None,
+            Field(
+                default=None,
+                pattern=FILE_ID_PATTERN,
+                description=(
+                    "File id from a previous drive_grep next_cursor. Repeats the same pattern and folder "
+                    "(or the same omitted scope) after that file. Do not combine with file_ids."
+                ),
+            ),
+        ] = None,
         ctx: Context | None = None,
     ) -> Any:
         return _dispatch(
@@ -457,6 +468,7 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
                 "regex": regex,
                 "context_lines": context_lines,
                 "max_matches": max_matches,
+                "cursor": cursor,
             },
             ctx,
         )

@@ -125,6 +125,7 @@ def handle_tool(
                 regex=args.get("regex", False),
                 context_lines=args.get("context_lines", 2),
                 max_matches=args.get("max_matches"),
+                cursor=args.get("cursor"),
                 request_id=request_id,
             )
         raise DomainError.of(ErrorCategory.INVALID_ARGUMENT)

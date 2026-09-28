@@ -36,10 +36,15 @@ class DrivePort(Protocol):
         budget: object | None = None,
         *,
         include_trashed: bool = False,
+        list_filter: object | None = None,
     ) -> list: ...
 
     def list_all(
-        self, *, include_trashed: bool = False, budget: object | None = None
+        self,
+        *,
+        include_trashed: bool = False,
+        budget: object | None = None,
+        list_filter: object | None = None,
     ) -> list: ...
 
     def export(self, file_id: str, mime: str) -> str: ...

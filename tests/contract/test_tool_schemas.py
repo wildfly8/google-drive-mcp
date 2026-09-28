@@ -93,3 +93,8 @@ async def test_drive_read_and_grep_required_fields_and_bounds(runtime):
     assert "whole question" in grep["properties"]["pattern"]["description"]
     assert "filename" in by_name["drive_find"].input_schema["properties"]["name_pattern"]["description"]
     assert _array_item_schema(grep, "file_ids")["pattern"] == FILE_ID_PATTERN
+    cursor = grep["properties"]["cursor"]
+    cursor_arm = next(a for a in cursor.get("anyOf", [cursor]) if a.get("type") == "string")
+    assert cursor_arm["pattern"] == FILE_ID_PATTERN
+    assert "deferred_file_ids" in by_name["drive_grep"].description
+    assert "next_cursor" in by_name["drive_grep"].description

@@ -12,6 +12,7 @@ from google_drive_mcp.domain.budgets import Budget
 from google_drive_mcp.domain.drive_file import DriveFile
 from google_drive_mcp.domain.errors import DomainError, ErrorCategory
 from google_drive_mcp.domain.google_errors import GoogleApiError, map_google_error
+from google_drive_mcp.domain.list_filter import ListFilter
 from google_drive_mcp.domain.retrieval_scope import RetrievalScope, is_within_scope
 
 
@@ -80,27 +81,39 @@ def walk_files(
     *,
     include_trashed: bool = False,
     include_folders: bool = True,
+    list_filter: ListFilter | None = None,
+    honor_file_cap: bool = True,
+    count_folders: bool = True,
+    count_listed: bool = True,
     request_id: str | None = None,
 ) -> WalkResult:
-    """BFS descendants (folder scope) or whole-grant listing. Uses is_within_scope.
+    """BFS descendants (folder scope) or whole-grant listing.
 
-    When ``include_folders`` is false (grep), folder nodes are used only for BFS
-    and do not consume ``max_files`` or appear in ``WalkResult.files``.
+    Children returned by listing a folder are already inside that folder, so
+    the walk does not fetch each child's parents. ``honor_file_cap`` false
+    keeps listing until time runs out so a later pass can order by size.
+    Folder nodes do not consume ``max_files`` when ``count_folders`` is false.
+    ``count_listed`` false leaves the file budget for the caller (grep scans
+    a size-ordered subset of a finished listing).
     """
     result = WalkResult()
     lookup = _parent_lookup(drive)
 
-    def consider(file: DriveFile) -> None:
+    def consider(file: DriveFile, *, trust: bool) -> None:
         if file.trashed and not include_trashed:
             return
-        if not is_within_scope(file.id, scope, lookup):
+        if not trust and not is_within_scope(file.id, scope, lookup):
             return
         if file.is_folder and not include_folders:
             return
-        if budget.files_exhausted() or budget.time_exceeded():
+        counts = count_folders or not file.is_folder
+        if budget.time_exceeded():
+            return
+        if honor_file_cap and counts and budget.files_exhausted():
             return
         result.files.append(file)
-        budget.note_file()
+        if count_listed and counts:
+            budget.note_file()
 
     try:
         if scope.file_ids:
@@ -108,11 +121,11 @@ def walk_files(
                 if budget.time_exceeded():
                     result.time_exceeded = True
                     break
-                if budget.files_exhausted():
+                if honor_file_cap and budget.files_exhausted():
                     result.truncated = True
                     break
                 meta = drive.get_metadata(fid)
-                consider(_as_file(meta))
+                consider(_as_file(meta), trust=False)
             return result
 
         if scope.folder_id:
@@ -122,7 +135,7 @@ def walk_files(
                 if budget.time_exceeded():
                     result.time_exceeded = True
                     break
-                if budget.files_exhausted():
+                if honor_file_cap and budget.files_exhausted():
                     result.truncated = True
                     break
                 folder = queue.popleft()
@@ -135,6 +148,7 @@ def walk_files(
                         folder_id=folder,
                         budget=budget,
                         include_trashed=include_trashed,
+                        list_filter=list_filter,
                     )
                 ]
                 if getattr(drive, "list_time_exceeded", False):
@@ -142,8 +156,8 @@ def walk_files(
                 for index, child in enumerate(children):
                     if child.is_folder:
                         queue.append(child.id)
-                    consider(child)
-                    if budget.files_exhausted():
+                    consider(child, trust=True)
+                    if honor_file_cap and budget.files_exhausted():
                         if index + 1 < len(children) or queue:
                             result.truncated = True
                         break
@@ -154,18 +168,20 @@ def walk_files(
                     break
             return result
 
-        raw = drive.list_all(include_trashed=include_trashed, budget=budget)
+        raw = drive.list_all(
+            include_trashed=include_trashed, budget=budget, list_filter=list_filter
+        )
         if getattr(drive, "list_time_exceeded", False):
             result.time_exceeded = True
         for item in raw:
             if budget.time_exceeded():
                 result.time_exceeded = True
                 break
-            if budget.files_exhausted():
+            if honor_file_cap and budget.files_exhausted():
                 result.truncated = True
                 break
-            consider(_as_file(item))
-        if budget.files_exhausted() and len(result.files) < len(
+            consider(_as_file(item), trust=True)
+        if honor_file_cap and budget.files_exhausted() and len(result.files) < len(
             [i for i in raw if include_folders or not _as_file(i).is_folder]
         ):
             result.truncated = True

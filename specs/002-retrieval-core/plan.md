@@ -48,6 +48,12 @@ Google 404/403-as-404 (and single-file 429 with no prefix) go through Access Con
 
 Sheets/Slides context: character window of 200 characters around a match when the representation is not line-oriented; Docs/plain text use `max_context_lines`.
 
+### Listing and grep coverage
+
+`drive_find` sends `name contains`, MIME, `modifiedTime`, and `trashed = false` in `files.list` (`pageSize` 1000). `max_results` counts matching files. Children of a listed folder are not `files.get`'d to walk parents.
+
+`drive_grep` on a folder or the whole grant sorts known-smaller files first. The 20 MB per-file cap stays, including for one named `file_id`. A known size that does not fit the remaining operation bytes is returned in `deferred_file_ids` and not downloaded. Results always include `files_scanned` and `bytes_scanned`. `next_cursor` is the last scanned file id only when the listing finished and more non-deferred files remain. There is no persistent folder cache, ripgrep store, or BM25 index, and the default scope stays the whole grant.
+
 ### `content_format` (plan-level, spec FR-022)
 
 Omitted → default MIME from the research export map (Docs/Slides `text/plain`, Sheets `text/csv`, text blobs as stored). If set, it MUST be a MIME that type can produce. Unknown or type-incompatible value → `INVALID_ARGUMENT`.
@@ -96,6 +102,7 @@ src/google_drive_mcp/
 │   ├── google_errors.py     # shared mapper: 404/403-as-404; single-file 429; not walk 429
 │   ├── budgets.py
 │   ├── drive_file.py
+│   ├── list_filter.py       # files.list predicates for drive_find
 │   ├── provenance.py
 │   ├── retrieval_scope.py   # is_within_scope; implemented in Access Control T005
 │   ├── candidates.py
@@ -111,6 +118,7 @@ src/google_drive_mcp/
 ├── infra/
 │   ├── google_drive/
 │   │   ├── list.py          # files.list / get metadata; uses is_within_scope
+│   │   ├── query.py         # files.list q text and page size
 │   │   └── export.py        # files.export / get_media
 │   └── exact_search/
 │       └── regex.py         # stdlib re, swappable port
