@@ -108,11 +108,11 @@ def authorize(
             raise DomainError.of(ErrorCategory.DRIVE_API_ERROR)
         return drive.get_metadata(file_id)
 
-    def parent_lookup(file_id: str) -> list[str] | None:
+    def list_subfolders(parent_ids: list[str]) -> list[Any]:
         drive = runtime.active_drive()
         if drive is None:
-            return None
-        return drive.parent_lookup(file_id)
+            raise DomainError.of(ErrorCategory.DRIVE_API_ERROR)
+        return drive.list_subfolders(parent_ids)
 
     def mint() -> object:
         return runtime.mint_and_bind()
@@ -130,7 +130,7 @@ def authorize(
         file_id=arguments.get("file_id"),
         allowed_folder_id=allowed or None,
         get_metadata=get_metadata,
-        parent_lookup=parent_lookup,
+        list_subfolders=list_subfolders,
         mint_credentials=mint,
     )
     if not decision.allowed:

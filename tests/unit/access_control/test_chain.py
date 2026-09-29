@@ -13,6 +13,20 @@ from google_drive_mcp.domain.retrieval_scope import RetrievalScope, is_within_sc
 from google_drive_mcp.infra.mcp_auth.bearer import extract_bearer
 
 
+def _folders(parents: dict[str, list[str]]):
+    """list_subfolders over a {folder_id: parents} map."""
+
+    def list_subfolders(parent_ids: list[str]) -> list[dict]:
+        wanted = set(parent_ids)
+        return [
+            {"id": fid, "parents": list(ps)}
+            for fid, ps in parents.items()
+            if wanted.intersection(ps)
+        ]
+
+    return list_subfolders
+
+
 def _accepts(*allowed: str):
     def verify(authorization: str | None) -> bool:
         return extract_bearer(authorization) in allowed
@@ -64,7 +78,7 @@ def test_prior_allow_is_not_reused():
         file_id="child",
         allowed_folder_id="root",
         get_metadata=get_metadata,
-        parent_lookup=lambda fid: parents.get(fid),
+        list_subfolders=_folders({"folder": ["root"]}),
     )
     assert first.allowed
     second = evaluate_chain(
@@ -74,7 +88,7 @@ def test_prior_allow_is_not_reused():
         file_id="child",
         allowed_folder_id="root",
         get_metadata=get_metadata,
-        parent_lookup=lambda fid: parents.get(fid),
+        list_subfolders=_folders({"folder": ["root"]}),
     )
     assert second.outcome == DecisionOutcome.AUTHENTICATION_ERROR
     assert gets == ["child"]
@@ -116,15 +130,15 @@ def test_google_500_during_chain_is_drive_api_error():
             file_id="nested-doc",
             allowed_folder_id="root",
             get_metadata=get_metadata,
-            parent_lookup={"nested-doc": ["root"]}.get,
+            list_subfolders=_folders({}),
         )
     assert caught.value.error.category == ErrorCategory.DRIVE_API_ERROR
 
 
-def test_google_500_during_parent_lookup_is_drive_api_error():
+def test_google_500_while_listing_the_allowed_tree_is_drive_api_error():
     from google_drive_mcp.domain.errors import DomainError, ErrorCategory
 
-    def lookup(_fid: str):
+    def list_subfolders(_ids: list[str]):
         raise GoogleApiError(500)
 
     with pytest.raises(DomainError) as caught:
@@ -134,8 +148,8 @@ def test_google_500_during_parent_lookup_is_drive_api_error():
             principal_id="deployment-1",
             file_id="nested-doc",
             allowed_folder_id="root",
-            get_metadata=lambda fid: {"id": fid},
-            parent_lookup=lookup,
+            get_metadata=lambda fid: {"id": fid, "parents": ["root"]},
+            list_subfolders=list_subfolders,
         )
     assert caught.value.error.category == ErrorCategory.DRIVE_API_ERROR
 
@@ -154,9 +168,10 @@ def test_google_500_via_handle_tool_is_drive_api_error(runtime, fake_drive, auth
     assert result["category"] == "DRIVE_API_ERROR"
 
 
-def test_google_miss_on_named_file_is_authorization_error():
+@pytest.mark.parametrize("status", [404, 403])
+def test_google_miss_on_named_file_is_authorization_error(status: int):
     def get_metadata(_fid: str):
-        raise GoogleApiError(404)
+        raise GoogleApiError(status)
 
     decision = evaluate_chain(
         authorization="Bearer test-token",
@@ -165,27 +180,51 @@ def test_google_miss_on_named_file_is_authorization_error():
         file_id="missing",
         allowed_folder_id="root",
         get_metadata=get_metadata,
-        parent_lookup=lambda _fid: None,
+        list_subfolders=_folders({}),
     )
     assert decision.outcome == DecisionOutcome.AUTHORIZATION_ERROR
     assert decision.reason_code == "outside_allowed_folder"
 
 
-def test_google_miss_after_allow_list_check_is_file_not_found():
-    def get_metadata(_fid: str):
-        raise GoogleApiError(404)
+def test_outside_missing_and_ungranted_ids_cost_the_same_drive_calls():
+    folders = {"kb-sub": ["kb"], "kb-deep": ["kb-sub"], "finance": ["root"]}
+    files = {"inside": ["kb-deep"], "outside": ["finance"], **folders}
 
-    decision = evaluate_chain(
-        authorization="Bearer test-token",
-        verify_caller=_accepts("test-token"),
-        principal_id="deployment-1",
-        file_id="gone",
-        allowed_folder_id="root",
-        get_metadata=get_metadata,
-        parent_lookup={"gone": ["root"]}.get,
-    )
-    assert decision.outcome == DecisionOutcome.FILE_NOT_FOUND
-    assert decision.step_failed == StepFailed.google_authorization
+    def run(named: str, deny: int | None = None) -> tuple[list, str]:
+        calls: list = []
+
+        def get_metadata(fid: str):
+            calls.append("get")
+            if deny is not None or fid not in files:
+                raise GoogleApiError(deny or 404)
+            return {"id": fid, "parents": files[fid]}
+
+        lister = _folders(folders)
+
+        def list_subfolders(ids: list[str]):
+            calls.append(("list", tuple(sorted(ids))))
+            return lister(ids)
+
+        decision = evaluate_chain(
+            authorization="Bearer test-token",
+            verify_caller=_accepts("test-token"),
+            principal_id="deployment-1",
+            file_id=named,
+            allowed_folder_id="kb",
+            get_metadata=get_metadata,
+            list_subfolders=list_subfolders,
+        )
+        return calls, decision.outcome
+
+    outside = run("outside")
+    missing = run("no-such-id")
+    ungranted = run("outside", deny=403)
+    inside = run("inside")
+    assert outside == missing == ungranted
+    assert outside[1] == DecisionOutcome.AUTHORIZATION_ERROR
+    assert inside == (outside[0], DecisionOutcome.ALLOW)
+    listed = {pid for call in outside[0] if call != "get" for pid in call[1]}
+    assert listed <= {"kb", "kb-sub", "kb-deep"}
 
 
 @pytest.mark.parametrize("allowed", [None, "", "   "])
@@ -206,7 +245,7 @@ def test_no_allow_list_refuses_before_google(allowed):
             principal_id="deployment-1",
             allowed_folder_id=allowed,
             get_metadata=get_metadata,
-            parent_lookup={"nested-doc": ["folder-a"], "folder-a": ["root"]}.get,
+            list_subfolders=_folders({"folder-a": ["root"]}),
             mint_credentials=mint,
             **scope,
         )

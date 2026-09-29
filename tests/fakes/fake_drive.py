@@ -69,6 +69,7 @@ class FakeDrive:
         self.content_export_count = 0
         self.content_media_count = 0
         self.list_count = 0
+        self.subfolder_list_count = 0
         self.parent_lookup_count = 0
         self.rate_limit_lists_after: int | None = None
         self.rate_limit_export: bool = False
@@ -84,6 +85,7 @@ class FakeDrive:
         self.content_export_count = 0
         self.content_media_count = 0
         self.list_count = 0
+        self.subfolder_list_count = 0
         self.parent_lookup_count = 0
 
     def add(self, file: FakeFile) -> FakeFile:
@@ -148,6 +150,16 @@ class FakeDrive:
             f
             for f in self.files.values()
             if folder_id in f.parents and self._accepts(f, list_filter, include_trashed=include_trashed)
+        ]
+
+    def list_subfolders(self, parent_ids: list[str]) -> list[dict]:
+        """Authorization's top-down tree listing; counted apart from walks."""
+        self.subfolder_list_count += 1
+        wanted = set(parent_ids)
+        return [
+            f.metadata_dict()
+            for f in self.files.values()
+            if f.is_folder and wanted.intersection(f.parents)
         ]
 
     def export(self, file_id: str, mime: str) -> str:

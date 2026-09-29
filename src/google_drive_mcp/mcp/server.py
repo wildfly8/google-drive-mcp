@@ -11,6 +11,7 @@ from typing import Annotated, Any
 
 from pydantic import AnyHttpUrl, Field
 
+from google_drive_mcp.access_control.allowed_folder import check_allowed_folder
 from google_drive_mcp.infra.billing.entitlement import (
     COOKIE_NAME,
     ENTITLEMENT_TTL,
@@ -603,11 +604,27 @@ def streamable_app(runtime: Runtime | None = None, *, json_response: bool = True
     return app
 
 
+def check_allowed_folder_in_drive(settings: Settings) -> None:
+    """Refuse to serve unless the allow-list is one folder that Drive can read."""
+    from google_drive_mcp.infra.google_auth.refresh_token import (
+        clear_request_credentials,
+        mint_readonly_credentials,
+    )
+    from google_drive_mcp.infra.google_drive.client import GoogleDriveClient
+
+    folder = settings.require_allowed_folder()
+    try:
+        check_allowed_folder(GoogleDriveClient(mint_readonly_credentials(settings)), folder)
+    finally:
+        clear_request_credentials()
+
+
 def main() -> None:
     import uvicorn
 
     try:
         runtime = build_runtime()
+        check_allowed_folder_in_drive(runtime.settings)
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
     app = streamable_app(runtime)

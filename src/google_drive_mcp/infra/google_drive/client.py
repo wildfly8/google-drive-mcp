@@ -11,9 +11,14 @@ from google_drive_mcp.domain.budgets import Budget
 from google_drive_mcp.domain.google_errors import GoogleApiError
 from google_drive_mcp.domain.list_filter import ListFilter
 from google_drive_mcp.infra.google_drive.export import FileNotExportableError
-from google_drive_mcp.infra.google_drive.query import files_list_query, list_page_size
+from google_drive_mcp.infra.google_drive.query import (
+    files_list_query,
+    list_page_size,
+    subfolders_query,
+)
 
 _FIELDS = "id,name,mimeType,parents,modifiedTime,createdTime,webViewLink,size,trashed"
+_PARENTS_PER_QUERY = 40
 
 
 def _reraise_google(exc: BaseException) -> None:
@@ -97,6 +102,15 @@ class GoogleDriveClient:
             raise ValueError("list_children requires a folder_id")
         query = files_list_query(folder_id, list_filter, include_trashed=include_trashed)
         return self._list(query, budget=budget)
+
+    def list_subfolders(self, parent_ids: list[str]) -> list[dict]:
+        """Folders (trashed included) whose parents include any of parent_ids."""
+        items: list[dict] = []
+        ids = [pid for pid in parent_ids if pid]
+        for start in range(0, len(ids), _PARENTS_PER_QUERY):
+            chunk = ids[start : start + _PARENTS_PER_QUERY]
+            items.extend(self._list(subfolders_query(chunk)))
+        return items
 
     def _list(self, query: str, budget: Budget | None = None) -> list[dict]:
         items: list[dict] = []

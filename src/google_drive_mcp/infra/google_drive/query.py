@@ -46,3 +46,9 @@ def files_list_query(
     if not parts:
         return None
     return " and ".join(parts)
+
+
+def subfolders_query(parent_ids: list[str]) -> str:
+    """Folders (trashed included) whose parents include any of parent_ids."""
+    parents = " or ".join(f"'{_escape(pid)}' in parents" for pid in parent_ids)
+    return f"({parents}) and mimeType = '{FOLDER_MIME}'"

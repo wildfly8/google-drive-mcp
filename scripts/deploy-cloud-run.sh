@@ -166,39 +166,45 @@ if [[ "$CANONICAL_PUBLIC" != "$URL" ]]; then
     --quiet
 fi
 
-# kb-only guard. A pinned or rolled-back revision keeps its own env, so route all
-# traffic to the newest revision, check it carries the kb allow-list, and delete
-# older revisions that do not (they would serve the whole Drive on rollback).
+# kb-only guard. A pinned, tagged or rolled-back revision keeps its own code
+# and env, so check the newest revision carries the kb allow-list before it
+# takes traffic, send all traffic to it, drop traffic tags, and delete every
+# other revision. Roll back by redeploying an older commit instead.
 revision_folder() {
   gcloud run revisions describe "$1" --project="$PROJECT" --region="$REGION" --format=json \
     | python3 -c 'import json, sys
 env = json.load(sys.stdin)["spec"]["containers"][0].get("env") or []
 print(next((e.get("value", "") for e in env if e.get("name") == "DRIVE_ALLOWED_FOLDER_ID"), ""))'
 }
-echo "Routing all traffic to the newest revision..."
+LATEST="$(gcloud run services describe "$SERVICE" --project="$PROJECT" --region="$REGION" --format='value(status.latestReadyRevisionName)')"
+if [[ -z "$LATEST" || "$(revision_folder "$LATEST")" != "$KB_FOLDER_ID" ]]; then
+  echo "Revision ${LATEST:-<none>} does not carry DRIVE_ALLOWED_FOLDER_ID=${KB_FOLDER_ID}. Stopping." >&2
+  exit 1
+fi
+echo "Routing all traffic to ${LATEST} and clearing traffic tags..."
 gcloud run services update-traffic "$SERVICE" \
   --project="$PROJECT" \
   --region="$REGION" \
-  --to-latest \
+  --to-revisions="${LATEST}=100" \
+  --clear-tags \
   --quiet >/dev/null
-LATEST="$(gcloud run services describe "$SERVICE" --project="$PROJECT" --region="$REGION" --format='value(status.latestReadyRevisionName)')"
-if [[ "$(revision_folder "$LATEST")" != "$KB_FOLDER_ID" ]]; then
-  echo "Revision ${LATEST} does not carry DRIVE_ALLOWED_FOLDER_ID=${KB_FOLDER_ID}. Stopping." >&2
+echo "Deleting every older revision..."
+# A plain assignment so set -e stops the script if the listing fails.
+REVISIONS="$(gcloud run revisions list --service="$SERVICE" --project="$PROJECT" --region="$REGION" --format='value(metadata.name)')"
+if ! grep -qxF "$LATEST" <<<"$REVISIONS"; then
+  echo "Revision list does not include ${LATEST}; cannot confirm old revisions are gone." >&2
   exit 1
 fi
-echo "Deleting older revisions without the kb allow-list..."
-KEPT_OPEN=()
-for rev in $(gcloud run revisions list --service="$SERVICE" --project="$PROJECT" --region="$REGION" --format='value(metadata.name)'); do
+NOT_DELETED=()
+for rev in $REVISIONS; do
   [[ "$rev" == "$LATEST" ]] && continue
-  if [[ "$(revision_folder "$rev")" != "$KB_FOLDER_ID" ]]; then
-    echo "  deleting ${rev}"
-    gcloud run revisions delete "$rev" --project="$PROJECT" --region="$REGION" --quiet \
-      || KEPT_OPEN+=("$rev")
-  fi
+  echo "  deleting ${rev}"
+  gcloud run revisions delete "$rev" --project="$PROJECT" --region="$REGION" --quiet \
+    || NOT_DELETED+=("$rev")
 done
-if (( ${#KEPT_OPEN[@]} )); then
-  echo "Could not delete revisions without the kb allow-list: ${KEPT_OPEN[*]}" >&2
-  echo "Remove their traffic tags, then delete them by hand." >&2
+if (( ${#NOT_DELETED[@]} )); then
+  echo "Could not delete revisions: ${NOT_DELETED[*]}" >&2
+  echo "Only ${LATEST} should exist. Remove their traffic, then delete them by hand." >&2
   exit 1
 fi
 echo "LIVE_MCP_URL=${URL}/mcp"

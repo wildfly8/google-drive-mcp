@@ -9,9 +9,11 @@ from __future__ import annotations
 import pytest
 from pydantic import SecretStr, ValidationError
 
-from fakes.fake_drive import FakeDrive
+from fakes.fake_drive import DOC_MIME, FOLDER_MIME, FakeDrive, FakeFile
+from google_drive_mcp.access_control.allowed_folder import check_allowed_folder
 from google_drive_mcp.domain.budgets import Budget
 from google_drive_mcp.domain.errors import DomainError, ErrorCategory
+from google_drive_mcp.domain.google_errors import GoogleApiError
 from google_drive_mcp.domain.retrieval_scope import RetrievalScope, apply_allowed_folder
 from google_drive_mcp.infra.config import Settings
 from google_drive_mcp.infra.google_drive.list import walk_files
@@ -105,9 +107,23 @@ def test_unset_allow_list_refuses_every_call_without_drive_io(
     assert fake_drive.content_count == 0
 
 
+def _record_drive(fake_drive: FakeDrive) -> list[tuple[str, object]]:
+    calls: list[tuple[str, object]] = []
+    for name in ("get_metadata", "list_children", "list_subfolders", "parent_lookup"):
+        original = getattr(fake_drive, name)
+
+        def recorded(*args, _name=name, _original=original, **kwargs):
+            target = args[0] if args else kwargs.get("folder_id")
+            calls.append((_name, tuple(target) if isinstance(target, list) else target))
+            return _original(*args, **kwargs)
+
+        setattr(fake_drive, name, recorded)
+    return calls
+
+
 def test_outside_folders_cannot_even_be_listed(fake_drive: FakeDrive, authz):
     runtime = _runtime(fake_drive)
-    fake_drive.reset_counters()
+    calls = _record_drive(fake_drive)
     for name, arguments in [
         ("drive_ls", {"folder_id": "root"}),
         ("drive_find", {"folder_id": "root"}),
@@ -118,8 +134,60 @@ def test_outside_folders_cannot_even_be_listed(fake_drive: FakeDrive, authz):
         assert result["category"] == "AUTHORIZATION_ERROR", (name, arguments)
         assert "Other" not in str(result)
         assert "outside-doc" not in str(result)
-    assert fake_drive.list_count == 0
     assert fake_drive.content_count == 0
+    # Only the allowed folder's own tree is listed, and only the named id is looked up.
+    assert not [c for c in calls if c[0] in ("list_children", "parent_lookup")]
+    assert {c[1] for c in calls if c[0] == "list_subfolders"} == {("folder-a",)}
+    assert {c[1] for c in calls if c[0] == "get_metadata"} == {"root"}
+
+
+def test_outside_missing_and_ungranted_ids_take_the_same_drive_calls(
+    fake_drive: FakeDrive, authz
+):
+    runtime = _runtime(fake_drive)
+    original = fake_drive.get_metadata
+
+    def get_metadata(file_id: str):
+        if file_id == "ungranted-doc":
+            raise GoogleApiError(403)
+        return original(file_id)
+
+    fake_drive.get_metadata = get_metadata  # type: ignore[method-assign]
+    shapes = []
+    for file_id in ("outside-doc", "no-such-id", "ungranted-doc"):
+        calls = _record_drive(fake_drive)
+        result = handle_tool(runtime, "drive_read", {"file_id": file_id}, authz)
+        result.pop("request_id")
+        shape = [(name, "*" if name == "get_metadata" else target) for name, target in calls]
+        shapes.append((shape, result))
+    assert shapes[0] == shapes[1] == shapes[2]
+    assert shapes[0][1]["category"] == "AUTHORIZATION_ERROR"
+
+
+def test_deep_file_inside_allowed_folder_is_still_readable(fake_drive: FakeDrive, authz):
+    fake_drive.add(FakeFile(id="sub-1", name="sub", mime_type=FOLDER_MIME, parents=["folder-a"]))
+    fake_drive.add(FakeFile(id="sub-2", name="deeper", mime_type=FOLDER_MIME, parents=["sub-1"]))
+    fake_drive.add(
+        FakeFile(
+            id="deep-doc",
+            name="Deep",
+            mime_type=DOC_MIME,
+            parents=["sub-2"],
+            content="deep kb text",
+        )
+    )
+    runtime = _runtime(fake_drive)
+    read = handle_tool(runtime, "drive_read", {"file_id": "deep-doc"}, authz)
+    listed = handle_tool(runtime, "drive_ls", {"folder_id": "sub-2"}, authz)
+    grepped = handle_tool(
+        runtime,
+        "drive_grep",
+        {"pattern": "deep kb", "folder_id": "sub-1", "file_ids": ["deep-doc"]},
+        authz,
+    )
+    assert read["content"] == "deep kb text"
+    assert [c["id"] for c in listed["children"]] == ["deep-doc"]
+    assert [m["file_id"] for m in grepped["matches"]] == ["deep-doc"]
 
 
 def test_outside_and_missing_ids_get_the_same_reply(fake_drive: FakeDrive, authz):
@@ -210,6 +278,59 @@ def test_startup_accepts_the_kb_folder_id():
         drive_allowed_folder_id="1qod47BRgPlRnXVboaJsElSNj1WkofLRQ",
     )
     assert settings.require_allowed_folder() == "1qod47BRgPlRnXVboaJsElSNj1WkofLRQ"
+
+
+@pytest.mark.parametrize(
+    ("folder_id", "problem"),
+    [
+        ("root", "root"),
+        ("nested-doc", "not a folder"),
+        ("no-such-folder", "could not be read"),
+        ("trashed-folder", "trash"),
+    ],
+)
+def test_startup_drive_check_refuses_anything_but_one_folder(
+    fake_drive: FakeDrive, folder_id: str, problem: str
+):
+    fake_drive.add(
+        FakeFile(
+            id="trashed-folder",
+            name="old",
+            mime_type=FOLDER_MIME,
+            parents=["root"],
+            trashed=True,
+        )
+    )
+    with pytest.raises(ValueError, match=problem):
+        check_allowed_folder(fake_drive, folder_id)
+
+
+def test_startup_drive_check_refuses_the_real_root_id(fake_drive: FakeDrive):
+    original = fake_drive.get_metadata
+
+    def get_metadata(file_id: str):
+        meta = original("root" if file_id in {"root", "0ARealRootId"} else file_id)
+        return {**meta, "id": "0ARealRootId"} if file_id in {"root", "0ARealRootId"} else meta
+
+    fake_drive.get_metadata = get_metadata  # type: ignore[method-assign]
+    with pytest.raises(ValueError, match="root"):
+        check_allowed_folder(fake_drive, "0ARealRootId")
+    check_allowed_folder(fake_drive, "folder-a")
+
+
+def test_server_refuses_to_start_when_drive_check_fails(monkeypatch):
+    from google_drive_mcp.mcp import server
+
+    monkeypatch.setenv("MCP_AUTH_TOKEN", "test-token")
+    monkeypatch.setenv("DRIVE_ALLOWED_FOLDER_ID", "1qod47BRgPlRnXVboaJsElSNj1WkofLRQ")
+
+    def refuse(_settings):
+        raise ValueError("DRIVE_ALLOWED_FOLDER_ID is a Drive root, not one folder under it.")
+
+    monkeypatch.setattr(server, "check_allowed_folder_in_drive", refuse)
+    with pytest.raises(SystemExit) as stopped:
+        server.main()
+    assert "Drive root" in str(stopped.value)
 
 
 def test_server_refuses_to_start_without_allow_list(monkeypatch):

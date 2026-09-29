@@ -14,12 +14,13 @@ from google_drive_mcp.domain.errors import ErrorCategory, DomainError
 from google_drive_mcp.domain.google_errors import GoogleApiError, map_google_error
 from google_drive_mcp.domain.retrieval_scope import (
     RetrievalScope,
+    SubfolderLister,
     apply_allowed_folder,
-    is_within_scope,
+    folder_tree,
+    is_inside_tree,
 )
 
 MetadataGet = Callable[[str], Any]
-ParentLookup = Callable[[str], list[str] | None]
 GoogleMint = Callable[[], object]
 
 
@@ -33,7 +34,7 @@ def evaluate_chain(
     file_id: str | None = None,
     allowed_folder_id: str | None = None,
     get_metadata: MetadataGet | None = None,
-    parent_lookup: ParentLookup | None = None,
+    list_subfolders: SubfolderLister | None = None,
     mint_credentials: GoogleMint | None = None,
 ) -> AuthorizationDecision:
     """Run MCP auth → MCP authz → Google auth. Document body is not a parameter."""
@@ -74,14 +75,6 @@ def evaluate_chain(
     if mint_credentials is not None:
         mint_credentials()
 
-    raw_lookup = parent_lookup or (lambda _fid: None)
-
-    def lookup(fid: str) -> list[str] | None:
-        try:
-            return raw_lookup(fid)
-        except GoogleApiError as exc:
-            raise DomainError(map_google_error(exc)) from exc
-
     def _get(fid: str) -> Any:
         if get_metadata is None:
             raise DomainError.of(ErrorCategory.DRIVE_API_ERROR)
@@ -90,33 +83,45 @@ def evaluate_chain(
         except GoogleApiError as exc:
             raise DomainError(map_google_error(exc)) from exc
 
+    def _parents_or_none(fid: str) -> list[str] | None:
+        try:
+            meta = _get(fid)
+        except DomainError as exc:
+            if exc.error.category == ErrorCategory.FILE_NOT_FOUND:
+                return None
+            raise
+        return list((meta or {}).get("parents") or [])
+
+    def _tree() -> dict[str, list[str]]:
+        if list_subfolders is None:
+            raise DomainError.of(ErrorCategory.DRIVE_API_ERROR)
+        try:
+            return folder_tree(allowed, list_subfolders)
+        except GoogleApiError as exc:
+            raise DomainError(map_google_error(exc)) from exc
+
     named_files = list(scope.file_ids or [])
+    named = [*named_files, *([scope.folder_id] if scope.folder_id else [])]
     try:
-        # Allow-list first. An id that is not proven to be the allow-list
-        # folder or a descendant is refused the same way whether or not
-        # Google grants it, so the reply does not reveal that it exists.
-        allow_scope = RetrievalScope(folder_id=allowed)
-        check_ids = list(named_files)
-        if scope.folder_id:
-            check_ids.append(scope.folder_id)
-        for fid in check_ids:
-            if not is_within_scope(fid, allow_scope, lookup):
+        # Allow-list first. The allowed folder's tree is listed top down, then
+        # each named id gets one metadata get. An id outside the folder, a
+        # missing id and an ungranted id take the same Drive calls and get the
+        # same reply, so neither the reply nor its timing reveals existence.
+        tree = {} if set(named) == {allowed} else _tree()
+        parents_of: dict[str, list[str]] = {}
+        for fid in named:
+            parents = _parents_or_none(fid)
+            if parents is None or not is_inside_tree(fid, parents, allowed, tree):
                 return _refuse(
                     principal_id, StepFailed.google_authorization, "outside_allowed_folder"
                 )
-
-        if named_files:
+            parents_of[fid] = parents
+        if named_files and scope.folder_id:
             for fid in named_files:
-                _get(fid)
-            if scope.folder_id:
-                _get(scope.folder_id)
-                for fid in named_files:
-                    if not is_within_scope(fid, scope, lookup):
-                        return _refuse(
-                            principal_id, StepFailed.google_authorization, "file_outside_folder"
-                        )
-        else:
-            _get(scope.folder_id)
+                if not is_inside_tree(fid, parents_of[fid], scope.folder_id, tree):
+                    return _refuse(
+                        principal_id, StepFailed.google_authorization, "file_outside_folder"
+                    )
     except DomainError as exc:
         if exc.error.category == ErrorCategory.FILE_NOT_FOUND:
             return AuthorizationDecision(

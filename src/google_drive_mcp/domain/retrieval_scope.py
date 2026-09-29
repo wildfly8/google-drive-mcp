@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, MutableMapping
+from collections.abc import Callable, Mapping, MutableMapping
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
 ParentLookup = Callable[[str], list[str] | None]
+SubfolderLister = Callable[[list[str]], list[Any]]
 
 
 class RetrievalScope(BaseModel):
@@ -75,6 +76,57 @@ def _names_files(arguments: MutableMapping[str, Any]) -> bool:
         return True
     ids = arguments.get("file_ids")
     return isinstance(ids, list) and any(_named(i) for i in ids)
+
+
+def folder_tree(root_id: str, list_subfolders: SubfolderLister) -> dict[str, list[str]]:
+    """Map every folder under root_id to its parents, listed top down.
+
+    The cost depends only on the tree under root_id, never on an id a caller
+    names, so a check built on it takes the same Drive calls for an id outside
+    the tree, a missing id, and an id Google does not grant.
+    """
+    tree: dict[str, list[str]] = {}
+    known = {root_id}
+    frontier = [root_id]
+    while frontier:
+        level = set(frontier)
+        found: list[str] = []
+        for item in list_subfolders(frontier):
+            fid = item.get("id") if isinstance(item, Mapping) else None
+            parents = list(item.get("parents") or []) if isinstance(item, Mapping) else []
+            if not fid or fid in known or not level.intersection(parents):
+                continue
+            known.add(fid)
+            tree[fid] = parents
+            found.append(fid)
+        frontier = found
+    return tree
+
+
+def is_inside_tree(
+    item_id: str,
+    parents: list[str],
+    folder_id: str,
+    tree: Mapping[str, list[str]],
+) -> bool:
+    """True if item_id is folder_id or lies under it.
+
+    The ancestor walk only follows folders in ``tree`` (from folder_tree), so it
+    never looks up anything outside that tree.
+    """
+    if item_id == folder_id:
+        return True
+    seen: set[str] = set()
+    stack = list(parents)
+    while stack:
+        current = stack.pop()
+        if current == folder_id:
+            return True
+        if current in seen:
+            continue
+        seen.add(current)
+        stack.extend(tree.get(current, ()))
+    return False
 
 
 def is_within_scope(file_id: str, scope: RetrievalScope, parent_lookup: ParentLookup) -> bool:
