@@ -21,14 +21,14 @@ def test_ls_folder_returns_children_metadata_with_source_url_no_content(runtime,
     assert result.get("content") is None
 
 
-def test_ls_empty_unknown_folder_is_file_not_found(runtime, authz):
+def test_ls_unknown_folder_is_authorization_error(runtime, authz):
     result = handle_tool(
         runtime, "drive_ls", {"folder_id": "missing-folder"}, authz
     )
-    assert result["category"] == "FILE_NOT_FOUND"
+    assert result["category"] == "AUTHORIZATION_ERROR"
 
 
-def test_ls_omitted_folder_lists_root_children(runtime, authz):
+def test_ls_omitted_folder_lists_allowed_folder_children(runtime, authz):
     result = handle_tool(runtime, "drive_ls", {}, authz)
     ids = {c["id"] for c in result["children"]}
     assert "folder-a" in ids

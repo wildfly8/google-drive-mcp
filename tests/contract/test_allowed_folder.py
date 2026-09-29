@@ -1,13 +1,23 @@
-"""Deployment folder allow-list: only that folder and descendants are in scope."""
+"""Deployment folder allow-list: only that folder and descendants are in scope.
+
+Nothing outside it is readable or listable, not even metadata, and the server
+fails closed when no allow-list folder is configured.
+"""
 
 from __future__ import annotations
 
-from pydantic import SecretStr
+import pytest
+from pydantic import SecretStr, ValidationError
 
 from fakes.fake_drive import FakeDrive
+from google_drive_mcp.domain.budgets import Budget
+from google_drive_mcp.domain.errors import DomainError, ErrorCategory
+from google_drive_mcp.domain.retrieval_scope import RetrievalScope, apply_allowed_folder
 from google_drive_mcp.infra.config import Settings
+from google_drive_mcp.infra.google_drive.list import walk_files
 from google_drive_mcp.mcp.middleware import Runtime
 from google_drive_mcp.mcp.tools import handle_tool
+from google_drive_mcp.retrieval.ls import drive_ls
 
 
 def _runtime(fake_drive: FakeDrive) -> Runtime:
@@ -65,52 +75,173 @@ def test_find_omitted_folder_stays_inside_allow_list(fake_drive: FakeDrive, auth
     assert "Notes" in names
 
 
-def test_unset_allow_list_reads_every_granted_file(fake_drive: FakeDrive, authz):
+@pytest.mark.parametrize("allowed", ["", "   "])
+def test_unset_allow_list_refuses_every_call_without_drive_io(
+    fake_drive: FakeDrive, authz, allowed: str
+):
     settings = Settings(
         mcp_auth_token=SecretStr("test-token"),
         mcp_principal_id="deployment-1",
-        drive_allowed_folder_id="",
+        drive_allowed_folder_id=allowed,
     )
     runtime = Runtime(settings=settings, drive=fake_drive)
-    inside = handle_tool(runtime, "drive_read", {"file_id": "nested-doc"}, authz)
-    outside = handle_tool(runtime, "drive_read", {"file_id": "outside-doc"}, authz)
-    assert inside["status"] == "COMPLETE"
-    assert outside["status"] == "COMPLETE"
-    assert "secret other folder text" in outside["content"]
+    fake_drive.reset_counters()
+    calls = [
+        ("drive_ls", {}),
+        ("drive_ls", {"folder_id": "root"}),
+        ("drive_ls", {"folder_id": "folder-a"}),
+        ("drive_find", {}),
+        ("drive_find", {"folder_id": "root"}),
+        ("drive_grep", {"pattern": "secret"}),
+        ("drive_grep", {"pattern": "secret", "file_ids": ["outside-doc"]}),
+        ("drive_read", {"file_id": "outside-doc"}),
+        ("drive_read", {"file_id": "nested-doc"}),
+    ]
+    for name, arguments in calls:
+        result = handle_tool(runtime, name, arguments, authz)
+        assert result["category"] == "AUTHORIZATION_ERROR", (name, arguments)
+    assert fake_drive.metadata_get_count == 0
+    assert fake_drive.list_count == 0
+    assert fake_drive.content_count == 0
 
 
-def test_default_folder_scopes_find_and_grep_but_not_ls_or_named_targets(fake_drive: FakeDrive, authz):
-    settings = Settings(
-        mcp_auth_token=SecretStr("test-token"),
-        mcp_principal_id="deployment-1",
-        drive_default_folder_id="folder-a",
-    )
-    runtime = Runtime(settings=settings, drive=fake_drive)
-    listed = handle_tool(runtime, "drive_ls", {}, authz)
-    listed_ids = {child["id"] for child in listed["children"]}
-    assert "outside-doc" in listed_ids
+def test_outside_folders_cannot_even_be_listed(fake_drive: FakeDrive, authz):
+    runtime = _runtime(fake_drive)
+    fake_drive.reset_counters()
+    for name, arguments in [
+        ("drive_ls", {"folder_id": "root"}),
+        ("drive_find", {"folder_id": "root"}),
+        ("drive_find", {"folder_id": "root", "name_pattern": "Other"}),
+        ("drive_grep", {"pattern": "secret", "folder_id": "root"}),
+    ]:
+        result = handle_tool(runtime, name, arguments, authz)
+        assert result["category"] == "AUTHORIZATION_ERROR", (name, arguments)
+        assert "Other" not in str(result)
+        assert "outside-doc" not in str(result)
+    assert fake_drive.list_count == 0
+    assert fake_drive.content_count == 0
+
+
+def test_outside_and_missing_ids_get_the_same_reply(fake_drive: FakeDrive, authz):
+    runtime = _runtime(fake_drive)
+    for name, key in [("drive_read", "file_id"), ("drive_ls", "folder_id")]:
+        outside = handle_tool(runtime, name, {key: "outside-doc"}, authz)
+        missing = handle_tool(runtime, name, {key: "no-such-id"}, authz)
+        outside.pop("request_id")
+        missing.pop("request_id")
+        assert outside == missing
+        assert outside["category"] == "AUTHORIZATION_ERROR"
+
+
+@pytest.mark.parametrize(
+    ("name", "arguments"),
+    [
+        ("drive_ls", {"file_id": "nested-doc"}),
+        ("drive_ls", {"file_ids": ["nested-doc"]}),
+        ("drive_find", {"file_id": "nested-doc"}),
+        ("drive_find", {"file_ids": ["nested-doc"]}),
+        ("drive_grep", {"pattern": "secret", "file_id": "nested-doc"}),
+        ("drive_read", {"file_id": "nested-doc", "folder_id": "folder-a"}),
+    ],
+)
+def test_arguments_a_tool_does_not_take_are_refused(
+    fake_drive: FakeDrive, authz, name: str, arguments: dict
+):
+    runtime = _runtime(fake_drive)
+    fake_drive.reset_counters()
+    result = handle_tool(runtime, name, arguments, authz)
+    assert result["category"] == "INVALID_ARGUMENT"
+    assert fake_drive.list_count == 0
+    assert fake_drive.content_count == 0
+
+
+def test_blank_file_ids_do_not_skip_the_allow_list_rewrite():
+    arguments: dict = {"file_ids": ["", "  "], "file_id": " "}
+    apply_allowed_folder(arguments, "folder-a")
+    assert arguments["folder_id"] == "folder-a"
+
+
+def test_stale_listing_entry_outside_the_folder_is_dropped(fake_drive: FakeDrive, authz):
+    listed = fake_drive.list_children
+
+    def over_broad(folder_id, budget=None, **kwargs):
+        children = listed(folder_id, budget, **kwargs)
+        if folder_id == "folder-a":
+            children.append(fake_drive.files["outside-doc"])
+        return children
+
+    fake_drive.list_children = over_broad  # type: ignore[method-assign]
+    runtime = _runtime(fake_drive)
+    listed_ids = {c["id"] for c in handle_tool(runtime, "drive_ls", {}, authz)["children"]}
     found = handle_tool(runtime, "drive_find", {}, authz)
     found_ids = {c["file"]["id"] for c in found["candidates"]}
-    assert "nested-doc" in found_ids
+    grepped = handle_tool(runtime, "drive_grep", {"pattern": "secret other"}, authz)
+    assert "nested-doc" in listed_ids
+    assert "outside-doc" not in listed_ids
     assert "outside-doc" not in found_ids
-    missed = handle_tool(
-        runtime, "drive_grep", {"pattern": "secret other"}, authz
+    assert grepped["matches"] == []
+
+
+def test_retrieval_never_lists_without_a_folder(fake_drive: FakeDrive):
+    with pytest.raises(DomainError) as listed:
+        drive_ls(fake_drive)
+    with pytest.raises(DomainError) as walked:
+        walk_files(fake_drive, RetrievalScope.default_whole_grant_scope(), Budget())
+    assert listed.value.error.category == ErrorCategory.AUTHORIZATION_ERROR
+    assert walked.value.error.category == ErrorCategory.AUTHORIZATION_ERROR
+    assert fake_drive.list_count == 0
+
+
+@pytest.mark.parametrize("value", ["", "  ", "root", "ROOT", "appDataFolder", "kb/sub", "a b"])
+def test_startup_requires_one_real_allow_list_folder(value: str):
+    settings = Settings(
+        mcp_auth_token=SecretStr("test-token"),
+        mcp_principal_id="deployment-1",
+        drive_allowed_folder_id=value,
     )
-    assert missed["matches"] == []
-    named = handle_tool(
-        runtime,
-        "drive_grep",
-        {"pattern": "secret other", "folder_id": "root"},
-        authz,
+    with pytest.raises(ValueError):
+        settings.require_allowed_folder()
+
+
+def test_startup_accepts_the_kb_folder_id():
+    settings = Settings(
+        mcp_auth_token=SecretStr("test-token"),
+        mcp_principal_id="deployment-1",
+        drive_allowed_folder_id="1qod47BRgPlRnXVboaJsElSNj1WkofLRQ",
     )
-    assert {m["file_id"] for m in named["matches"]} == {"outside-doc"}
-    by_id = handle_tool(
-        runtime,
-        "drive_grep",
-        {"pattern": "secret other", "file_ids": ["outside-doc"]},
-        authz,
-    )
-    assert {m["file_id"] for m in by_id["matches"]} == {"outside-doc"}
+    assert settings.require_allowed_folder() == "1qod47BRgPlRnXVboaJsElSNj1WkofLRQ"
+
+
+def test_server_refuses_to_start_without_allow_list(monkeypatch):
+    from google_drive_mcp.mcp import server
+
+    monkeypatch.delenv("DRIVE_ALLOWED_FOLDER_ID", raising=False)
+    monkeypatch.setenv("MCP_AUTH_TOKEN", "test-token")
+    with pytest.raises(SystemExit) as stopped:
+        server.main()
+    assert "DRIVE_ALLOWED_FOLDER_ID" in str(stopped.value)
+
+
+@pytest.mark.parametrize("value", [None, "", "root"])
+def test_runtime_from_env_requires_allow_list(monkeypatch, value):
+    from google_drive_mcp.mcp.server import build_runtime
+
+    monkeypatch.setenv("MCP_AUTH_TOKEN", "test-token")
+    if value is None:
+        monkeypatch.delenv("DRIVE_ALLOWED_FOLDER_ID", raising=False)
+    else:
+        monkeypatch.setenv("DRIVE_ALLOWED_FOLDER_ID", value)
+    with pytest.raises(ValueError):
+        build_runtime()
+
+
+def test_default_folder_setting_no_longer_exists():
+    with pytest.raises(ValidationError):
+        Settings(
+            mcp_auth_token=SecretStr("test-token"),
+            mcp_principal_id="deployment-1",
+            drive_default_folder_id="folder-a",
+        )
 
 
 def test_named_folder_outside_allow_list_is_authorization_error(fake_drive: FakeDrive, authz):

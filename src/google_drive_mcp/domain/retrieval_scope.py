@@ -50,44 +50,31 @@ class RetrievalScope(BaseModel):
         )
 
 
-SEARCH_DEFAULT_TOOLS = frozenset({"drive_find", "drive_grep"})
-
-
-def apply_default_search_folder(
-    arguments: MutableMapping[str, Any],
-    default_folder_id: str,
-    *,
-    tool: str,
-) -> None:
-    """Point an omitted find/grep folder at the deployment default (kb).
-
-    A named folder_id or file list is unchanged, so other granted folders stay
-    reachable. drive_ls is not rewritten; omitted ls still lists My Drive root.
-    """
-    if tool not in SEARCH_DEFAULT_TOOLS:
-        return
-    default = (default_folder_id or "").strip()
-    if not default:
-        return
-    has_files = bool(arguments.get("file_id") or arguments.get("file_ids"))
-    if not arguments.get("folder_id") and not has_files:
-        arguments["folder_id"] = default
-
-
 def apply_allowed_folder(
     arguments: MutableMapping[str, Any], allowed_folder_id: str
 ) -> None:
     """Narrow an omitted folder/file list to the deployment allow-list folder.
 
     Named folder_id / file_id / file_ids are left unchanged; the chain refuses
-    those that are not this folder or a descendant.
+    those that are not this folder or a descendant. Blank ids do not count as
+    named, so ``file_ids=[""]`` cannot skip the rewrite.
     """
     allowed = (allowed_folder_id or "").strip()
     if not allowed:
         return
-    has_files = bool(arguments.get("file_id") or arguments.get("file_ids"))
-    if not arguments.get("folder_id") and not has_files:
+    if not _named(arguments.get("folder_id")) and not _names_files(arguments):
         arguments["folder_id"] = allowed
+
+
+def _named(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _names_files(arguments: MutableMapping[str, Any]) -> bool:
+    if _named(arguments.get("file_id")):
+        return True
+    ids = arguments.get("file_ids")
+    return isinstance(ids, list) and any(_named(i) for i in ids)
 
 
 def is_within_scope(file_id: str, scope: RetrievalScope, parent_lookup: ParentLookup) -> bool:

@@ -1,4 +1,4 @@
-"""drive_ls: immediate children of a folder (or My Drive root)."""
+"""drive_ls: immediate children of one named folder (never My Drive root by default)."""
 
 from __future__ import annotations
 
@@ -19,7 +19,9 @@ def drive_ls(
 ) -> dict:
     budget = budget or Budget()
     page_size = max_results if max_results is not None else budget.max_files
-    target = folder_id or "root"
+    if not folder_id:
+        raise DomainError.of(ErrorCategory.AUTHORIZATION_ERROR, request_id=request_id)
+    target = folder_id
     if budget.time_exceeded():
         return {
             "status": OperationStatus.PARTIAL.value,

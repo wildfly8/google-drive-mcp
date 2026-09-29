@@ -150,22 +150,6 @@ class FakeDrive:
             if folder_id in f.parents and self._accepts(f, list_filter, include_trashed=include_trashed)
         ]
 
-    def list_all(
-        self,
-        *,
-        include_trashed: bool = False,
-        budget=None,
-        list_filter: ListFilter | None = None,
-    ) -> list[FakeFile]:
-        self.list_count += 1
-        if self.rate_limit_lists_after is not None and self.list_count > self.rate_limit_lists_after:
-            raise GoogleApiError(429)
-        return [
-            f
-            for f in self.files.values()
-            if f.id != "root" and self._accepts(f, list_filter, include_trashed=include_trashed)
-        ]
-
     def export(self, file_id: str, mime: str) -> str:
         self.content_export_count += 1
         if self.rate_limit_export:

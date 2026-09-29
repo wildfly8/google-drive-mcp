@@ -88,7 +88,10 @@ except ImportError:  # mcp 1.x
 
 
 def build_runtime(settings: Settings | None = None, drive: Any | None = None) -> Runtime:
-    settings = settings or Settings.from_env()
+    if settings is None:
+        settings = Settings.from_env()
+        # Only kb is readable: never serve from an environment without it.
+        settings.require_allowed_folder()
     billing = None
     if settings.stripe_secret_key.get_secret_value().strip():
         billing = StripeHttpGateway(settings)
@@ -603,7 +606,10 @@ def streamable_app(runtime: Runtime | None = None, *, json_response: bool = True
 def main() -> None:
     import uvicorn
 
-    runtime = build_runtime()
+    try:
+        runtime = build_runtime()
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     app = streamable_app(runtime)
     port = int(os.environ.get("PORT", "8080"))
     uvicorn.run(app, host="0.0.0.0", port=port)

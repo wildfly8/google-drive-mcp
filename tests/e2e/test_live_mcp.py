@@ -27,6 +27,9 @@ LIVE_TOKEN = os.environ.get("MCP_AUTH_TOKEN", "")
 LIVE_DOC = os.environ.get("LIVE_DOC_FILE_ID", "")
 LIVE_FOLDER = os.environ.get("LIVE_FOLDER_ID", "")
 LIVE_PHRASE = os.environ.get("LIVE_PHRASE", "idempotency")
+LIVE_KB_FOLDER = os.environ.get("LIVE_KB_FOLDER_ID", "1qod47BRgPlRnXVboaJsElSNj1WkofLRQ")
+# Optional canary: a file the deployment identity can read that is NOT under kb.
+LIVE_OUTSIDE_FILE = os.environ.get("LIVE_OUTSIDE_FILE_ID", "")
 
 pytestmark = pytest.mark.skipif(
     not LIVE_URL or not LIVE_TOKEN,
@@ -229,24 +232,58 @@ def test_static_shared_secret_is_not_an_access_token(live_oauth):
     assert LIVE_TOKEN not in response.text
 
 
-def test_unknown_file_is_file_not_found(live_oauth):
+def test_unknown_file_is_authorization_error(live_oauth):
     body = _call_tool(
         "drive_read", {"file_id": "00000000000000000000000000000000"}
     )
-    assert body.get("category") == "FILE_NOT_FOUND"
+    assert body.get("category") == "AUTHORIZATION_ERROR"
     dumped = json.dumps(body)
     assert LIVE_TOKEN not in dumped
     assert "refresh" not in dumped.lower()
 
 
-def test_live_ls_my_drive_root(live_oauth):
-    listed = _call_tool("drive_ls", {"max_results": 5})
+def test_live_omitted_ls_lists_kb_not_my_drive_root(live_oauth):
+    listed = _call_tool("drive_ls", {"max_results": 40})
     assert listed.get("status") in {"COMPLETE", "PARTIAL", "EMPTY"}
     dumped = json.dumps(listed)
     assert LIVE_TOKEN not in dumped
     for child in listed.get("children") or []:
         assert "content" not in child
         assert child.get("id")
+    kb = _call_tool("drive_ls", {"folder_id": LIVE_KB_FOLDER, "max_results": 40})
+    assert [c["id"] for c in listed.get("children") or []] == [
+        c["id"] for c in kb.get("children") or []
+    ]
+
+
+@pytest.mark.parametrize(
+    ("name", "arguments"),
+    [
+        ("drive_ls", {"folder_id": "root"}),
+        ("drive_find", {"folder_id": "root"}),
+        ("drive_find", {"folder_id": "root", "name_pattern": "a"}),
+        ("drive_grep", {"pattern": "the", "folder_id": "root"}),
+        ("drive_read", {"file_id": "root"}),
+    ],
+)
+def test_live_nothing_outside_kb_is_listed_or_read(live_oauth, name, arguments):
+    body = _call_tool(name, arguments)
+    assert body.get("category") == "AUTHORIZATION_ERROR"
+    for key in ("children", "candidates", "matches", "content"):
+        assert not body.get(key)
+
+
+@pytest.mark.skipif(
+    not LIVE_OUTSIDE_FILE,
+    reason="Set LIVE_OUTSIDE_FILE_ID to a readable file outside kb",
+)
+def test_live_outside_file_matches_missing_file_reply(live_oauth):
+    outside = _call_tool("drive_read", {"file_id": LIVE_OUTSIDE_FILE})
+    missing = _call_tool("drive_read", {"file_id": "00000000000000000000000000000000"})
+    outside.pop("request_id", None)
+    missing.pop("request_id", None)
+    assert outside == missing
+    assert outside.get("category") == "AUTHORIZATION_ERROR"
 
 
 @pytest.mark.skipif(

@@ -47,28 +47,40 @@ def evaluate_chain(
             principal_id=principal_id,
         )
 
-    # Step 3 — MCP authorization (argument-level only; no Drive I/O)
+    # Step 3 — MCP authorization (argument-level only; no Drive I/O).
+    # Fail closed: with no allow-list folder nothing is readable, and a call
+    # that names no folder or file after the rewrite is refused rather than
+    # widened to the whole Google grant.
     allowed = (allowed_folder_id or "").strip() or None
-    if allowed:
-        rewritten = {
-            "folder_id": folder_id,
-            "file_ids": file_ids,
-            "file_id": file_id,
-        }
-        apply_allowed_folder(rewritten, allowed)
-        folder_id = rewritten.get("folder_id")
-        file_ids = rewritten.get("file_ids")
-        file_id = rewritten.get("file_id")
+    if not allowed:
+        return _refuse(principal_id, StepFailed.mcp_authorization, "no_allowed_folder")
+    rewritten = {
+        "folder_id": folder_id,
+        "file_ids": file_ids,
+        "file_id": file_id,
+    }
+    apply_allowed_folder(rewritten, allowed)
+    folder_id = rewritten.get("folder_id")
+    file_ids = rewritten.get("file_ids")
+    file_id = rewritten.get("file_id")
 
     scope = RetrievalScope.from_tool_args(
         folder_id=folder_id, file_ids=file_ids, file_id=file_id
     )
+    if scope.default_whole_grant:
+        return _refuse(principal_id, StepFailed.mcp_authorization, "whole_grant_refused")
 
     # Step 4 — Google authorization
     if mint_credentials is not None:
         mint_credentials()
 
-    lookup = parent_lookup or (lambda _fid: None)
+    raw_lookup = parent_lookup or (lambda _fid: None)
+
+    def lookup(fid: str) -> list[str] | None:
+        try:
+            return raw_lookup(fid)
+        except GoogleApiError as exc:
+            raise DomainError(map_google_error(exc)) from exc
 
     def _get(fid: str) -> Any:
         if get_metadata is None:
@@ -80,43 +92,31 @@ def evaluate_chain(
 
     named_files = list(scope.file_ids or [])
     try:
+        # Allow-list first. An id that is not proven to be the allow-list
+        # folder or a descendant is refused the same way whether or not
+        # Google grants it, so the reply does not reveal that it exists.
+        allow_scope = RetrievalScope(folder_id=allowed)
+        check_ids = list(named_files)
+        if scope.folder_id:
+            check_ids.append(scope.folder_id)
+        for fid in check_ids:
+            if not is_within_scope(fid, allow_scope, lookup):
+                return _refuse(
+                    principal_id, StepFailed.google_authorization, "outside_allowed_folder"
+                )
+
         if named_files:
-            granted: list[str] = []
             for fid in named_files:
                 _get(fid)
-                granted.append(fid)
             if scope.folder_id:
-                try:
-                    _get(scope.folder_id)
-                except DomainError as exc:
-                    if exc.error.category == ErrorCategory.FILE_NOT_FOUND:
-                        raise
-                    raise
-                for fid in granted:
+                _get(scope.folder_id)
+                for fid in named_files:
                     if not is_within_scope(fid, scope, lookup):
-                        return AuthorizationDecision(
-                            outcome=DecisionOutcome.AUTHORIZATION_ERROR,
-                            step_failed=StepFailed.google_authorization,
-                            reason_code="file_outside_folder",
-                            principal_id=principal_id,
+                        return _refuse(
+                            principal_id, StepFailed.google_authorization, "file_outside_folder"
                         )
-        elif scope.folder_id:
+        else:
             _get(scope.folder_id)
-        # default_whole_grant: no resource-specific get
-
-        if allowed:
-            allow_scope = RetrievalScope(folder_id=allowed)
-            check_ids = list(named_files)
-            if scope.folder_id:
-                check_ids.append(scope.folder_id)
-            for fid in check_ids:
-                if not is_within_scope(fid, allow_scope, lookup):
-                    return AuthorizationDecision(
-                        outcome=DecisionOutcome.AUTHORIZATION_ERROR,
-                        step_failed=StepFailed.google_authorization,
-                        reason_code="outside_allowed_folder",
-                        principal_id=principal_id,
-                    )
     except DomainError as exc:
         if exc.error.category == ErrorCategory.FILE_NOT_FOUND:
             return AuthorizationDecision(
@@ -131,5 +131,14 @@ def evaluate_chain(
         outcome=DecisionOutcome.ALLOW,
         step_failed=None,
         reason_code="allow",
+        principal_id=principal_id,
+    )
+
+
+def _refuse(principal_id: str, step: StepFailed, reason_code: str) -> AuthorizationDecision:
+    return AuthorizationDecision(
+        outcome=DecisionOutcome.AUTHORIZATION_ERROR,
+        step_failed=step,
+        reason_code=reason_code,
         principal_id=principal_id,
     )

@@ -46,7 +46,7 @@ Hard rules:
 - drive_find name_pattern is a case-insensitive substring of the *filename*, not glob, not contents.
 - drive_grep pattern matches exported file *bytes* (literal, or regex if regex=true). Not Drive fullText.
 - drive_ls is immediate children only; drive_find / drive_grep on a folder include descendants.
-- The only folder this server may read is kb and its descendants. Omit folder_id to list or search kb. A folder_id or file_id outside kb is AUTHORIZATION_ERROR. Do not request My Drive root or any other top-level folder.
+- The only folder this server may read is kb and its descendants. Omit folder_id to list or search kb. A folder_id or file_id outside kb, or one that does not exist, is AUTHORIZATION_ERROR; nothing outside kb is listed or read. Do not request My Drive root or any other top-level folder.
 - One drive_grep or drive_read returns at most 20 MB. A file at or under that size is complete when you pass that one file_id. A folder grep scans smaller files first. A known size that does not fit the remaining bytes is listed in deferred_file_ids and is not downloaded.
 - Candidates from drive_find are not quotes. Evidence is drive_read content or drive_grep matches with provenance.
 - source_url is the locator drive:{file_id}, not an HTTP URL. Do not present it as a download or Cited Source link.

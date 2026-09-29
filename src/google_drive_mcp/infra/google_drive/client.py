@@ -92,20 +92,13 @@ class GoogleDriveClient:
         include_trashed: bool = False,
         list_filter: ListFilter | None = None,
     ) -> list[dict]:
+        if not folder_id:
+            # A files.list without a parent clause would list the whole grant.
+            raise ValueError("list_children requires a folder_id")
         query = files_list_query(folder_id, list_filter, include_trashed=include_trashed)
         return self._list(query, budget=budget)
 
-    def list_all(
-        self,
-        *,
-        include_trashed: bool = False,
-        budget: Budget | None = None,
-        list_filter: ListFilter | None = None,
-    ) -> list[dict]:
-        query = files_list_query(None, list_filter, include_trashed=include_trashed)
-        return self._list(query, budget=budget)
-
-    def _list(self, query: str | None, budget: Budget | None = None) -> list[dict]:
+    def _list(self, query: str, budget: Budget | None = None) -> list[dict]:
         items: list[dict] = []
         page_token = None
         self.list_time_exceeded = False
@@ -123,8 +116,6 @@ class GoogleDriveClient:
                 }
                 if page_token:
                     kwargs["pageToken"] = page_token
-                if query is None:
-                    kwargs.pop("q")
                 response = self._service.files().list(**kwargs).execute()
                 for resource in response.get("files", []):
                     items.append(_meta(resource))

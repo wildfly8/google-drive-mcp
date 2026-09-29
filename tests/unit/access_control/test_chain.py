@@ -62,6 +62,7 @@ def test_prior_allow_is_not_reused():
         verify_caller=_accepts("test-token"),
         principal_id="deployment-1",
         file_id="child",
+        allowed_folder_id="root",
         get_metadata=get_metadata,
         parent_lookup=lambda fid: parents.get(fid),
     )
@@ -71,6 +72,7 @@ def test_prior_allow_is_not_reused():
         verify_caller=_accepts("test-token"),
         principal_id="deployment-1",
         file_id="child",
+        allowed_folder_id="root",
         get_metadata=get_metadata,
         parent_lookup=lambda fid: parents.get(fid),
     )
@@ -112,7 +114,28 @@ def test_google_500_during_chain_is_drive_api_error():
             verify_caller=_accepts("test-token"),
             principal_id="deployment-1",
             file_id="nested-doc",
+            allowed_folder_id="root",
             get_metadata=get_metadata,
+            parent_lookup={"nested-doc": ["root"]}.get,
+        )
+    assert caught.value.error.category == ErrorCategory.DRIVE_API_ERROR
+
+
+def test_google_500_during_parent_lookup_is_drive_api_error():
+    from google_drive_mcp.domain.errors import DomainError, ErrorCategory
+
+    def lookup(_fid: str):
+        raise GoogleApiError(500)
+
+    with pytest.raises(DomainError) as caught:
+        evaluate_chain(
+            authorization="Bearer test-token",
+            verify_caller=_accepts("test-token"),
+            principal_id="deployment-1",
+            file_id="nested-doc",
+            allowed_folder_id="root",
+            get_metadata=lambda fid: {"id": fid},
+            parent_lookup=lookup,
         )
     assert caught.value.error.category == ErrorCategory.DRIVE_API_ERROR
 
@@ -131,7 +154,7 @@ def test_google_500_via_handle_tool_is_drive_api_error(runtime, fake_drive, auth
     assert result["category"] == "DRIVE_API_ERROR"
 
 
-def test_google_miss_on_named_file_is_file_not_found():
+def test_google_miss_on_named_file_is_authorization_error():
     def get_metadata(_fid: str):
         raise GoogleApiError(404)
 
@@ -140,7 +163,53 @@ def test_google_miss_on_named_file_is_file_not_found():
         verify_caller=_accepts("test-token"),
         principal_id="deployment-1",
         file_id="missing",
+        allowed_folder_id="root",
         get_metadata=get_metadata,
+        parent_lookup=lambda _fid: None,
+    )
+    assert decision.outcome == DecisionOutcome.AUTHORIZATION_ERROR
+    assert decision.reason_code == "outside_allowed_folder"
+
+
+def test_google_miss_after_allow_list_check_is_file_not_found():
+    def get_metadata(_fid: str):
+        raise GoogleApiError(404)
+
+    decision = evaluate_chain(
+        authorization="Bearer test-token",
+        verify_caller=_accepts("test-token"),
+        principal_id="deployment-1",
+        file_id="gone",
+        allowed_folder_id="root",
+        get_metadata=get_metadata,
+        parent_lookup={"gone": ["root"]}.get,
     )
     assert decision.outcome == DecisionOutcome.FILE_NOT_FOUND
     assert decision.step_failed == StepFailed.google_authorization
+
+
+@pytest.mark.parametrize("allowed", [None, "", "   "])
+def test_no_allow_list_refuses_before_google(allowed):
+    calls: list[str] = []
+
+    def get_metadata(fid: str):
+        calls.append(fid)
+        return {"id": fid}
+
+    def mint():
+        calls.append("mint")
+
+    for scope in ({}, {"folder_id": "folder-a"}, {"file_id": "nested-doc"}):
+        decision = evaluate_chain(
+            authorization="Bearer test-token",
+            verify_caller=_accepts("test-token"),
+            principal_id="deployment-1",
+            allowed_folder_id=allowed,
+            get_metadata=get_metadata,
+            parent_lookup={"nested-doc": ["folder-a"], "folder-a": ["root"]}.get,
+            mint_credentials=mint,
+            **scope,
+        )
+        assert decision.outcome == DecisionOutcome.AUTHORIZATION_ERROR
+        assert decision.reason_code == "no_allowed_folder"
+    assert calls == []

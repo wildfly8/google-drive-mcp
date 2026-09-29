@@ -137,8 +137,10 @@ CANONICAL_PUBLIC="${CANONICAL_PUBLIC%/}"
 DEPLOY_ENV="MCP_PUBLIC_URL=${CANONICAL_PUBLIC}"
 # The only readable folder is kb and its descendants. --set-env-vars replaces
 # the env set, so this bind is the live allow-list (omitted ls/find/grep use kb;
-# a named folder_id or file_id outside kb is AUTHORIZATION_ERROR).
-KB_FOLDER_ID="${DRIVE_ALLOWED_FOLDER_ID:-1qod47BRgPlRnXVboaJsElSNj1WkofLRQ}"
+# a named folder_id or file_id outside kb is AUTHORIZATION_ERROR). The id is
+# pinned here, not read from the operator's shell, so a stray
+# DRIVE_ALLOWED_FOLDER_ID cannot widen it. The server refuses to start without it.
+KB_FOLDER_ID="1qod47BRgPlRnXVboaJsElSNj1WkofLRQ"
 DEPLOY_ENV="${DEPLOY_ENV},DRIVE_ALLOWED_FOLDER_ID=${KB_FOLDER_ID}"
 DEPLOY_ENV="${DEPLOY_ENV},MCP_OAUTH_AUTO_APPROVE=true"
 DEPLOY_ENV="${DEPLOY_ENV},GOOGLE_CLOUD_PROJECT=${PROJECT}"
@@ -162,6 +164,42 @@ if [[ "$CANONICAL_PUBLIC" != "$URL" ]]; then
     --region="$REGION" \
     --update-env-vars="MCP_PUBLIC_URL=${URL}" \
     --quiet
+fi
+
+# kb-only guard. A pinned or rolled-back revision keeps its own env, so route all
+# traffic to the newest revision, check it carries the kb allow-list, and delete
+# older revisions that do not (they would serve the whole Drive on rollback).
+revision_folder() {
+  gcloud run revisions describe "$1" --project="$PROJECT" --region="$REGION" --format=json \
+    | python3 -c 'import json, sys
+env = json.load(sys.stdin)["spec"]["containers"][0].get("env") or []
+print(next((e.get("value", "") for e in env if e.get("name") == "DRIVE_ALLOWED_FOLDER_ID"), ""))'
+}
+echo "Routing all traffic to the newest revision..."
+gcloud run services update-traffic "$SERVICE" \
+  --project="$PROJECT" \
+  --region="$REGION" \
+  --to-latest \
+  --quiet >/dev/null
+LATEST="$(gcloud run services describe "$SERVICE" --project="$PROJECT" --region="$REGION" --format='value(status.latestReadyRevisionName)')"
+if [[ "$(revision_folder "$LATEST")" != "$KB_FOLDER_ID" ]]; then
+  echo "Revision ${LATEST} does not carry DRIVE_ALLOWED_FOLDER_ID=${KB_FOLDER_ID}. Stopping." >&2
+  exit 1
+fi
+echo "Deleting older revisions without the kb allow-list..."
+KEPT_OPEN=()
+for rev in $(gcloud run revisions list --service="$SERVICE" --project="$PROJECT" --region="$REGION" --format='value(metadata.name)'); do
+  [[ "$rev" == "$LATEST" ]] && continue
+  if [[ "$(revision_folder "$rev")" != "$KB_FOLDER_ID" ]]; then
+    echo "  deleting ${rev}"
+    gcloud run revisions delete "$rev" --project="$PROJECT" --region="$REGION" --quiet \
+      || KEPT_OPEN+=("$rev")
+  fi
+done
+if (( ${#KEPT_OPEN[@]} )); then
+  echo "Could not delete revisions without the kb allow-list: ${KEPT_OPEN[*]}" >&2
+  echo "Remove their traffic tags, then delete them by hand." >&2
+  exit 1
 fi
 echo "LIVE_MCP_URL=${URL}/mcp"
 echo "Ensuring connect-counter log metrics and Monitoring dashboard..."

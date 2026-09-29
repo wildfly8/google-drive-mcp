@@ -32,14 +32,14 @@ def test_invalid_bearer_is_authentication_error(runtime, fake_drive: FakeDrive):
     assert fake_drive.content_count == 0
 
 
-def test_google_miss_is_file_not_found_without_metadata(runtime, fake_drive: FakeDrive, authz):
+def test_google_miss_is_authorization_error_without_metadata(runtime, fake_drive: FakeDrive, authz):
     fake_drive.reset_counters()
     result = _call(
         runtime,
         {"file_id": "missing-id"},
         authz,
     )
-    assert result["category"] == "FILE_NOT_FOUND"
+    assert result["category"] == "AUTHORIZATION_ERROR"
     assert "name" not in result
     assert "content" not in result
     assert "Notes" not in result.get("message", "")
@@ -60,7 +60,14 @@ def test_folder_and_granted_file_outside_folder_is_authorization_error(
     assert fake_drive.metadata_get_count >= 1
 
 
-def test_file_id_only_google_miss_is_never_authorization_error(runtime, fake_drive: FakeDrive, authz):
-    result = _call(runtime, {"file_id": "does-not-exist"}, authz)
-    assert result["category"] == "FILE_NOT_FOUND"
-    assert result["category"] != "AUTHORIZATION_ERROR"
+def test_google_miss_and_outside_allow_list_reply_the_same(fake_drive: FakeDrive, authz):
+    from google_drive_mcp.infra.config import Settings
+
+    settings = Settings.for_tests().model_copy(update={"drive_allowed_folder_id": "folder-a"})
+    runtime = Runtime(settings=settings, drive=fake_drive)
+    missing = _call(runtime, {"file_id": "does-not-exist"}, authz)
+    outside = _call(runtime, {"file_id": "outside-doc"}, authz)
+    missing.pop("request_id")
+    outside.pop("request_id")
+    assert missing == outside
+    assert outside["category"] == "AUTHORIZATION_ERROR"

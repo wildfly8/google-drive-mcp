@@ -11,10 +11,7 @@ from typing import Any
 
 from google_drive_mcp.domain.connect_telemetry import host_family_from_client_id
 from google_drive_mcp.domain.errors import DomainError, ErrorCategory, envelope
-from google_drive_mcp.domain.retrieval_scope import (
-    apply_allowed_folder,
-    apply_default_search_folder,
-)
+from google_drive_mcp.domain.retrieval_scope import apply_allowed_folder
 from google_drive_mcp.infra.logging import log_chain_event, log_retrieval
 from google_drive_mcp.infra.mcp_auth.bearer import extract_bearer
 from google_drive_mcp.infra.mcp_auth.tokens import (
@@ -33,6 +30,39 @@ from google_drive_mcp.retrieval.read import drive_read, validate_read_args
 
 READ_ONLY_TOOLS = ("drive_ls", "drive_find", "drive_read", "drive_grep")
 SCOPE_PROBE = "scope_probe"
+
+# Every key a tool body reads. Anything else is INVALID_ARGUMENT, so the
+# authorization chain and the tool body always see the same scope (a file_id
+# on drive_ls cannot pass the chain and then be ignored by the listing).
+TOOL_ARGUMENTS: dict[str, frozenset[str]] = {
+    "drive_ls": frozenset({"folder_id", "max_results", "page_token"}),
+    "drive_find": frozenset(
+        {
+            "name_pattern",
+            "mime_type",
+            "folder_id",
+            "modified_after",
+            "modified_before",
+            "trashed",
+            "max_results",
+        }
+    ),
+    "drive_read": frozenset({"file_id", "content_format", "max_bytes"}),
+    "drive_grep": frozenset(
+        {
+            "pattern",
+            "file_ids",
+            "folder_id",
+            "case_sensitive",
+            "regex",
+            "context_lines",
+            "max_matches",
+            "next_cursor",
+            "cursor",
+        }
+    ),
+    SCOPE_PROBE: frozenset({"folder_id", "file_id", "file_ids"}),
+}
 
 
 def _note_drive_first_use(runtime: Runtime, authorization: str | None) -> None:
@@ -57,13 +87,11 @@ def handle_tool(
     request_id: str | None = None,
 ) -> dict[str, Any]:
     args = dict(arguments or {})
+    supplied = set(args)
     started = time.monotonic()
     rid = request_id or new_request_id()
     request_id = rid
     apply_allowed_folder(args, runtime.settings.drive_allowed_folder_id)
-    apply_default_search_folder(
-        args, runtime.settings.drive_default_folder_id, tool=name
-    )
     if not verify_authorization_header(authorization, runtime.settings):
         log_chain_event(
             request_id=rid,
@@ -75,6 +103,9 @@ def handle_tool(
     if name in READ_ONLY_TOOLS:
         _note_drive_first_use(runtime, authorization)
     try:
+        known = TOOL_ARGUMENTS.get(name)
+        if known is None or not supplied <= known:
+            raise DomainError.of(ErrorCategory.INVALID_ARGUMENT)
         if name == "drive_ls":
             validate_ls_args(args)
         elif name == "drive_find":

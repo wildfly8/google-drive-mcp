@@ -1,5 +1,7 @@
 """Drive list adapter: immediate children and descendant walks via is_within_scope.
 
+Every listing is bounded to one named folder. There is no whole-grant listing,
+and a listed child whose parents do not include the listed folder is dropped.
 Walk HTTP 429 is completeness (PARTIAL), not map_google_error RATE_LIMITED.
 """
 
@@ -40,6 +42,16 @@ def _parent_lookup(drive: object) -> object:
     return drive.parent_lookup
 
 
+def _children_of(folder_id: str, items: list) -> list[DriveFile]:
+    """Keep listed items that really are children of folder_id.
+
+    files.list is answered from Drive's search index; checking the parents it
+    returned keeps a stale or over-broad entry out of the result.
+    """
+    files = [_as_file(item) for item in items]
+    return [f for f in files if folder_id in f.parents]
+
+
 def immediate_children(
     drive: object,
     folder_id: str,
@@ -54,7 +66,7 @@ def immediate_children(
         if exc.status == 429:
             return WalkResult(rate_limited=True)
         raise DomainError(map_google_error(exc, request_id=request_id)) from exc
-    files = [_as_file(item) for item in raw]
+    files = _children_of(folder_id, raw)
     start = 0
     if page_token:
         try:
@@ -87,7 +99,7 @@ def walk_files(
     count_listed: bool = True,
     request_id: str | None = None,
 ) -> WalkResult:
-    """BFS descendants (folder scope) or whole-grant listing.
+    """BFS descendants (folder scope) or the named files. Never the whole grant.
 
     Children returned by listing a folder are already inside that folder, so
     the walk does not fetch each child's parents. ``honor_file_cap`` false
@@ -142,15 +154,15 @@ def walk_files(
                 if folder in seen:
                     continue
                 seen.add(folder)
-                children = [
-                    _as_file(i)
-                    for i in drive.list_children(
+                children = _children_of(
+                    folder,
+                    drive.list_children(
                         folder_id=folder,
                         budget=budget,
                         include_trashed=include_trashed,
                         list_filter=list_filter,
-                    )
-                ]
+                    ),
+                )
                 if getattr(drive, "list_time_exceeded", False):
                     result.time_exceeded = True
                 for index, child in enumerate(children):
@@ -168,24 +180,8 @@ def walk_files(
                     break
             return result
 
-        raw = drive.list_all(
-            include_trashed=include_trashed, budget=budget, list_filter=list_filter
-        )
-        if getattr(drive, "list_time_exceeded", False):
-            result.time_exceeded = True
-        for item in raw:
-            if budget.time_exceeded():
-                result.time_exceeded = True
-                break
-            if honor_file_cap and budget.files_exhausted():
-                result.truncated = True
-                break
-            consider(_as_file(item), trust=True)
-        if honor_file_cap and budget.files_exhausted() and len(result.files) < len(
-            [i for i in raw if include_folders or not _as_file(i).is_folder]
-        ):
-            result.truncated = True
-        return result
+        # Unscoped: the whole Google grant is never listed.
+        raise DomainError.of(ErrorCategory.AUTHORIZATION_ERROR, request_id=request_id)
     except GoogleApiError as exc:
         if exc.status == 429:
             result.rate_limited = True
