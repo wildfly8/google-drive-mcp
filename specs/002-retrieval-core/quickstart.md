@@ -4,7 +4,7 @@ Validates discover → read → grep against the shared fake Drive (no RAG, no l
 
 ## Prerequisites
 
-- Access Control quickstart env (`MCP_AUTH_TOKEN` consent password, `MCP_PUBLIC_URL`, `MCP_PRINCIPAL_ID`)
+- Access Control quickstart env (`MCP_AUTH_TOKEN` consent password, `MCP_PUBLIC_URL`, `MCP_PRINCIPAL_ID`; a running server also needs `DRIVE_ALLOWED_FOLDER_ID`)
 - Python 3.12, `uv`
 - Shared fixture `tests/fakes/fake_drive.py` with: a folder, a nested Doc containing `idempotency`, a binary file that cannot yield text
 
@@ -40,10 +40,11 @@ Expected:
 12. Walk cut by simulated 429 → `status: PARTIAL`, `partial_reason: RATE_LIMITED`
 13. `drive_find` with a filename stem among many non-matching siblings returns that file and does not `files.get` each child (`tests/contract/test_drive_find.py`)
 14. Folder `drive_grep` scans a small file, returns a larger id in `deferred_file_ids`, and resumes with `cursor` (`tests/contract/test_drive_grep.py`)
+15. Omitted `drive_ls` lists the allow-list folder, never My Drive root; an id outside that folder and a missing id get the same `AUTHORIZATION_ERROR`; an argument the tool does not take is `INVALID_ARGUMENT`; no allow-list refuses every call (`tests/contract/test_allowed_folder.py`)
 
 ## Optional live smoke
 
-Use a throwaway Drive. Update a Doc, `drive_read` again, confirm new text. Grep a missing phrase → `EMPTY`.
+Use a throwaway Drive and set `DRIVE_ALLOWED_FOLDER_ID` to a test folder in it. Update a Doc in that folder, `drive_read` again, confirm new text. Grep a missing phrase → `EMPTY`.
 
 ## See also
 

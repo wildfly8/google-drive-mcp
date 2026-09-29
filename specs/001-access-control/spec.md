@@ -21,8 +21,8 @@
 ### Session 2026-09-08
 
 - Q: In v1, who is the principal that every Drive call runs as, given the constitution allows only one Google identity per deployment? → A: One Drive identity per deployment. MCP authentication is still required so anonymous callers cannot use it. Concurrent requests share that identity; isolation is no leaked credential state, not multiple Google users.
-- Q: When a call is denied, should the agent be told the file is forbidden, or only that it was not found? → A: Outside the call’s stated retrieval boundary → forbidden (`AUTHORIZATION_ERROR`). Google does not grant the file → not found (`FILE_NOT_FOUND`, no existence leak).
-- Q: If the agent does not name a folder or file list, what may the call search? → A: This deployment sets `DRIVE_ALLOWED_FOLDER_ID` to the `kb` folder. An omitted folder on `drive_ls`, `drive_find`, and `drive_grep` is rewritten to `kb` before the chain runs. A caller-named folder or file outside `kb` is `AUTHORIZATION_ERROR` (`outside_allowed_folder`). The allow-list only narrows the Google grant. When it is unset, the unspecified boundary is the whole Google grant, and `DRIVE_DEFAULT_FOLDER_ID` may fill omitted find/grep without denying a named resource. A named folder or file list narrows that one call.
+- Q: When a call is denied, should the agent be told the file is forbidden, or only that it was not found? → A: Outside the call’s stated retrieval boundary → forbidden (`AUTHORIZATION_ERROR`). Google does not grant the file → not found (`FILE_NOT_FOUND`, no existence leak). For named ids this is superseded by Session 2026-09-29: an id not proven inside `kb` is `AUTHORIZATION_ERROR` whether or not Google grants it.
+- Q: If the agent does not name a folder or file list, what may the call search? → A: `DRIVE_ALLOWED_FOLDER_ID` is required and names the `kb` folder. An omitted folder on `drive_ls`, `drive_find`, and `drive_grep` is rewritten to `kb` before the chain runs. A caller-named folder or file that is not `kb` or a descendant is `AUTHORIZATION_ERROR` (`outside_allowed_folder`). The allow-list only narrows the Google grant. There is no whole-Google-grant boundary (Session 2026-09-29). A named folder or file list narrows that one call.
 - Q: When the agent names a folder for find or exact search, does that include files in nested subfolders? → A: Find and grep on a folder include nested subfolders. List is immediate children only. (Owned by Retrieval Core; Access Control enforces the resulting `RetrievalScope`.)
 - Q: Which file kinds must v1 be able to read and exact-search, and what happens for everything else? → A: Required: Docs, Sheets, Slides. Also: other Drive files that yield usable text. Non-text/unreadable types → unsupported error. (Owned by Retrieval Core.)
 
@@ -33,6 +33,11 @@
 - Q: May a host send `MCP_AUTH_TOKEN` as the `/mcp` `Authorization` Bearer? → A: No. Streamable HTTP MUST return HTTP 401. In-process calls MUST return `AUTHENTICATION_ERROR`. No Drive I/O.
 - Q: After a Cloud Run instance disappears, can a previously issued access token still work, and must hosts re-register? → A: Access/refresh/authorization-code values are self-contained JWTs and MUST verify on any instance. DCR client records and used-code / revocation ids are in-memory protocol state (Article III exception); hosts re-register (RFC 7591).
 
+### Session 2026-09-29
+
+- Q: May anything outside `kb` be listed or read, even names, ids, or metadata? → A: No. `DRIVE_ALLOWED_FOLDER_ID` is required and names the `kb` folder. The server refuses to start without it, and the chain refuses every call when it is missing (`no_allowed_folder`) before any Google call. There is no whole-Google-grant mode: a call that names no folder or file after the rewrite is refused (`whole_grant_refused`). `DRIVE_DEFAULT_FOLDER_ID` is removed.
+- Q: Should a named id outside `kb` and an id that does not exist get different replies? → A: No. Any named id not proven to be `kb` or a descendant is `AUTHORIZATION_ERROR`, whether it lies outside `kb`, does not exist, or Google does not grant it. The reply does not reveal whether it exists. `FILE_NOT_FOUND` is left for an id already proven inside `kb` that then disappears, and for misses after authorization.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Every call must clear the same authority chain (Priority: P1)
@@ -41,16 +46,17 @@ An agent asks the MCP to discover, read, or search Drive content. Before any Dri
 
 **Why this priority**: Without an independently evaluated chain, every other retrieval guarantee is bypassable. Article VII is the security invariant this story encodes.
 
-**Independent Test**: Issue an unauthenticated HTTP call (401, no Drive I/O) and an in-process call without an access token (`AUTHENTICATION_ERROR`, no Drive I/O). Present `MCP_AUTH_TOKEN` as the `/mcp` Bearer (401 / `AUTHENTICATION_ERROR`, no Drive I/O). Complete DCR + auth-code + PKCE S256 and call `/mcp` with the issued access token. Issue a call for a Google-ungranted file id (`FILE_NOT_FOUND`, no content). Call `evaluate_chain` with both `folder_id` and a `file_ids` entry that Google grants but that is not in that folder (`AUTHORIZATION_ERROR`, metadata get allowed, no export). Confirm none return the target content — never empty successful retrieval. The agent-visible tool that uses this argument shape is `drive_grep` (Retrieval Core).
+**Independent Test**: Issue an unauthenticated HTTP call (401, no Drive I/O) and an in-process call without an access token (`AUTHENTICATION_ERROR`, no Drive I/O). Present `MCP_AUTH_TOKEN` as the `/mcp` Bearer (401 / `AUTHENTICATION_ERROR`, no Drive I/O). Complete DCR + auth-code + PKCE S256 and call `/mcp` with the issued access token. Issue a call for a Google-ungranted file id (`AUTHORIZATION_ERROR`, the same reply as an id outside `kb`, no content). Run the chain with no `DRIVE_ALLOWED_FOLDER_ID` (`AUTHORIZATION_ERROR`, no Google call) and start the server without it (refuses to start). Call `evaluate_chain` with both `folder_id` and a `file_ids` entry that Google grants but that is not in that folder (`AUTHORIZATION_ERROR`, metadata get allowed, no export). Confirm none return the target content — never empty successful retrieval. The agent-visible tool that uses this argument shape is `drive_grep` (Retrieval Core).
 
 **Acceptance Scenarios**:
 
 1. **Given** no authenticated principal, **When** any retrieval call is issued, **Then** the MCP refuses the call as HTTP 401 on Streamable HTTP (or `AUTHENTICATION_ERROR` in-process) before any Drive resource is accessed.
 2. **Given** `MCP_AUTH_TOKEN` sent as `Authorization: Bearer` on `/mcp`, **When** any tool call is issued, **Then** the MCP refuses as HTTP 401 (or `AUTHENTICATION_ERROR` in-process) and MUST NOT treat the consent password as an access token.
-3. **Given** an authenticated caller whose Google grant does not include a requested file, **When** they ask to retrieve that file (however the request is phrased), **Then** the MCP denies the call as `FILE_NOT_FOUND` without confirming that the file exists or returning its content.
-4. **Given** an authenticated caller who passes **both** a `folder_id` and a `file_id` that Google grants but that is not that folder or a descendant (v1 agent-visible shape: `drive_grep`; Access Control tests this via `evaluate_chain` with the same arguments), **When** they request that resource, **Then** the MCP denies the call as `AUTHORIZATION_ERROR` without returning that resource’s content. Google misses on `drive_read` / `drive_ls` / `drive_find` are `FILE_NOT_FOUND`. Those tools emit `AUTHORIZATION_ERROR` in v1 only when a deployment `DRIVE_ALLOWED_FOLDER_ID` is set and Google grants a named resource outside that folder.
+3. **Given** an authenticated caller whose Google grant does not include a requested file, **When** they ask to retrieve that file (however the request is phrased), **Then** the MCP denies the call as `AUTHORIZATION_ERROR`, the same reply as for a file outside `kb`, without confirming that the file exists or returning its content.
+4. **Given** an authenticated caller who passes **both** a `folder_id` and a `file_id` that Google grants but that is not that folder or a descendant (v1 agent-visible shape: `drive_grep`; Access Control tests this via `evaluate_chain` with the same arguments), **When** they request that resource, **Then** the MCP denies the call as `AUTHORIZATION_ERROR` without returning that resource’s content. On every tool, a named id that is not proven to be `DRIVE_ALLOWED_FOLDER_ID` (`kb`) or a descendant is `AUTHORIZATION_ERROR`, whether it lies outside `kb`, does not exist, or Google does not grant it.
 5. **Given** a prior successful retrieval by the same deployment identity, **When** a later call is issued for a resource Google does not grant, **Then** the prior success is not treated as a credential and the new call is evaluated from the first chain step.
 6. **Given** a request that fails MCP authentication, **When** later chain steps would have passed, **Then** those later steps are never evaluated (no default-allow).
+7. **Given** `DRIVE_ALLOWED_FOLDER_ID` is unset, blank, or an alias such as `root`, **When** the server starts, **Then** it refuses to start. **Given** no allow-list reaches the chain, **When** any call is evaluated, **Then** it is `AUTHORIZATION_ERROR` before any Google call.
 
 ---
 
@@ -90,11 +96,12 @@ The MCP holds Google authorization material for the deployment's single Drive id
 ### Edge Cases
 
 - Unauthenticated vs unauthorized vs not-found MUST remain distinct categories; an authorization denial MUST NOT be reported as empty retrieval (Article XI, X).
-- MCP retrieval-boundary violations MUST return `AUTHORIZATION_ERROR` (v1 reachable case: `drive_grep` with both `folder_id` and `file_ids` when Google grants a named file that is not in that folder). Google grant failures MUST return `FILE_NOT_FOUND` and MUST NOT confirm that the inaccessible file exists.
-- On denial, the MCP MUST NOT leak resource content. Metadata and existence MAY be implied only by `AUTHORIZATION_ERROR` for an out-of-boundary resource the caller already named; Google-denied resources MUST NOT leak existence.
+- MCP retrieval-boundary violations MUST return `AUTHORIZATION_ERROR` (v1 reachable cases: no allow-list configured; a named id not proven to be `kb` or a descendant; `drive_grep` with both `folder_id` and `file_ids` when a named file is not in that folder). A named id that Google does not grant, or that does not exist, gets the same `AUTHORIZATION_ERROR` as an id outside `kb`, so the reply does not confirm that it exists. `FILE_NOT_FOUND` is only for an id already proven inside `kb` that Google then misses.
+- On denial, the MCP MUST NOT leak resource content. Nothing outside `kb` is listed, and no reply confirms that an id outside `kb` exists. Existence MAY be implied only for ids inside `kb` that the caller already named (for example the folder ∩ file_ids `AUTHORIZATION_ERROR`).
+- A tool argument the tool body does not read MUST NOT reach the chain: it is `INVALID_ARGUMENT` (Retrieval Core) before authorization, so the chain and the tool body always see the same scope. A blank id does not count as a named resource.
 - A request MUST NOT proceed to step N of the chain if step N-1 did not explicitly pass.
 - MCP-level retrieval-scope confinement applies even if the underlying Google credential could technically reach further (the MCP MUST still refuse out-of-scope resources).
-- Google's authorization is the final non-bypassable check; the MCP MUST NOT implement a parallel allow-list that could grant access Google would deny. Optional `DRIVE_ALLOWED_FOLDER_ID` MAY only **narrow** a call (never widen past Google).
+- Google's authorization is the final non-bypassable check; the MCP MUST NOT implement a parallel allow-list that could grant access Google would deny. Required `DRIVE_ALLOWED_FOLDER_ID` only **narrows** a call (never widens past Google).
 - `MCP_AUTH_TOKEN` presented as a `/mcp` Bearer MUST fail authentication (HTTP 401 / `AUTHENTICATION_ERROR`), distinct from a missing header and from `AUTHORIZATION_ERROR`.
 - Write, share, and permission-modification are not grantable here: this context only denies them, because Article V provides no mutating capability to authorize.
 
@@ -117,9 +124,10 @@ The MCP holds Google authorization material for the deployment's single Drive id
 #### Authorization and scope
 
 - **AC-FR-020**: Google credentials MUST use the narrowest practical read-only Drive grant sufficient for discovery, content retrieval, and exact search.
-- **AC-FR-021**: An operation MUST NOT access Drive resources outside its authorized `RetrievalScope` (type defined in Retrieval Core; this context enforces it). Default `RetrievalScope` for a call that names no folder or file list is the entire Google grant for this deployment identity (`default_whole_grant`), optionally rewritten to deployment `DRIVE_ALLOWED_FOLDER_ID` when that env is set (narrow-only). A `folder_id` or `file_ids` argument narrows that call only. The MCP MUST still refuse out-of-scope resources even if the underlying credential could technically reach them. In v1, `AUTHORIZATION_ERROR` is returned when (1) a caller-named `file_id` lies outside a caller-named `folder_id` after Google grants metadata, or (2) a named folder or file lies outside `DRIVE_ALLOWED_FOLDER_ID` after Google grants metadata. Otherwise Google misses are `FILE_NOT_FOUND`. See `contracts/authorization-chain.md`.
+- **AC-FR-021**: An operation MUST NOT access Drive resources outside its authorized `RetrievalScope` (type defined in Retrieval Core; this context enforces it). A call that names no folder or file list is rewritten to deployment `DRIVE_ALLOWED_FOLDER_ID` (narrow-only). A call that still names none (`default_whole_grant`) is refused; there is no whole-Google-grant scope. A `folder_id` or `file_ids` argument narrows that call only. The MCP MUST still refuse out-of-scope resources even if the underlying credential could technically reach them. In v1, `AUTHORIZATION_ERROR` is returned when (1) no allow-list is configured, (2) a named folder or file is not proven to be `DRIVE_ALLOWED_FOLDER_ID` or a descendant, whether it lies outside that folder, does not exist, or Google does not grant it, or (3) a caller-named `file_id` inside the allow-list folder lies outside a caller-named `folder_id`. `FILE_NOT_FOUND` is left for an id already proven inside the allow-list folder that Google then misses. See `contracts/authorization-chain.md`.
 - **AC-FR-022**: If the principal's Google authorization does not grant access to a requested resource, the MCP MUST deny it via Google's own check. The MCP MUST NOT implement a parallel authorization model that could diverge from Google's by granting access Google would deny.
-- **AC-FR-023**: Denial categories MUST follow this split: (1) a resource outside this call’s stated `RetrievalScope` → `AUTHORIZATION_ERROR`; (2) Google’s grant does not include the resource → `FILE_NOT_FOUND`, and the MCP MUST NOT confirm that the file exists or return its content. The MCP MUST NOT leak content on either path.
+- **AC-FR-023**: Denial categories MUST follow this split: (1) a resource outside this call’s stated `RetrievalScope` or not proven inside `DRIVE_ALLOWED_FOLDER_ID`, including a named id Google does not grant or that does not exist → `AUTHORIZATION_ERROR`, one reply for all of these so the MCP does not confirm that the file exists; (2) an id already proven inside the allow-list folder that Google then misses → `FILE_NOT_FOUND`. The MCP MUST NOT leak content on either path, and MUST NOT leak names, ids, or metadata of anything outside the allow-list folder.
+- **AC-FR-024**: The deployment MUST set `DRIVE_ALLOWED_FOLDER_ID` to one Drive folder id (`kb` on this deployment). The server MUST refuse to start when it is unset, blank, a Drive alias such as `root` or `appDataFolder`, or not a plain id. The chain MUST also return `AUTHORIZATION_ERROR` (`no_allowed_folder`) for every call when no allow-list reaches it, before any Google call (fail closed).
 
 #### Per-identity isolation
 
@@ -132,7 +140,7 @@ The MCP holds Google authorization material for the deployment's single Drive id
 
 #### Failure classification (this context's categories)
 
-- **AC-FR-050**: Failures this context raises MUST be classified as `AUTHENTICATION_ERROR`, `AUTHORIZATION_ERROR` (MCP retrieval-boundary), or `FILE_NOT_FOUND` (Google grant does not include the resource) and MUST NOT be silently treated as empty retrieval (Article XI). Remaining categories belong to Retrieval Core; both contexts share one flat taxonomy at the agent-visible level.
+- **AC-FR-050**: Failures this context raises MUST be classified as `AUTHENTICATION_ERROR`, `AUTHORIZATION_ERROR` (MCP retrieval-boundary, including ids not proven inside the allow-list folder), or `FILE_NOT_FOUND` (an id proven inside the allow-list folder that Google then misses) and MUST NOT be silently treated as empty retrieval (Article XI). Remaining categories belong to Retrieval Core; both contexts share one flat taxonomy at the agent-visible level.
 
 #### Secret hygiene and re-derivable state
 
@@ -147,9 +155,9 @@ The MCP holds Google authorization material for the deployment's single Drive id
 - **ConsentPassword**: Resource-owner password (`MCP_AUTH_TOKEN`). Compared only on consent. MUST NOT succeed as a `/mcp` Bearer.
 - **RegisteredClient**: RFC 7591 client record from DCR. In-memory protocol state; discarded on instance death; hosts re-register.
 - **Credential**: The MCP-held representation of **Google** authorization for the deployment identity. Never exposed to the agent or language-model context in raw form. Distinct from `McpAccessToken`.
-- **AuthorizationDecision**: Outcome of evaluating a request against the chain — `ALLOW`, `AUTHENTICATION_ERROR`, `AUTHORIZATION_ERROR` (MCP retrieval-boundary), or `FILE_NOT_FOUND` (Google grant denial; existence not confirmed).
+- **AuthorizationDecision**: Outcome of evaluating a request against the chain — `ALLOW`, `AUTHENTICATION_ERROR`, `AUTHORIZATION_ERROR` (MCP retrieval-boundary; also any named id not proven inside the allow-list folder, so existence is not confirmed), or `FILE_NOT_FOUND` (an id proven inside the allow-list folder that Google then misses).
 - **Grant / Scope**: The narrowest practical Google read-only grant associated with a principal. MCP OAuth scope on the access token is a separate, non-Google value (`drive.read`).
-- **RetrievalScope**: Resource boundary a specific operation is confined to. **Defined** in Retrieval Core (`specs/002-retrieval-core/data-model.md`, field `default_whole_grant`). **Enforced** here. Default (no folder or file list named) is the whole Google grant for this deployment identity, optionally narrowed by `DRIVE_ALLOWED_FOLDER_ID`; a named folder or file list narrows that call only. Shared implementation lives in `domain/retrieval_scope.py`.
+- **RetrievalScope**: Resource boundary a specific operation is confined to. **Defined** in Retrieval Core (`specs/002-retrieval-core/data-model.md`, field `default_whole_grant`). **Enforced** here. A call that names no folder or file list is rewritten to the required `DRIVE_ALLOWED_FOLDER_ID`; there is no whole-Google-grant scope. A named folder or file list narrows that call only. Shared implementation lives in `domain/retrieval_scope.py`.
 
 **Vocabulary note**: This context speaks in principal, MCP access token, consent password, Google credential, grant, scope, and authorization decision. Retrieval Core speaks in candidate, content, match, and evidence. That divergence is why these are separate features.
 
@@ -162,6 +170,7 @@ The MCP holds Google authorization material for the deployment's single Drive id
 | AI3 | An operation never exceeds its authorized RetrievalScope | Article VII |
 | AI4 | Credential and authorization state is request-scoped and does not leak across requests (v1: one Drive identity per deployment) | Article VII |
 | AI5 | Google's authorization is the final, non-bypassable check | Article VII |
+| AI6 | Nothing outside `DRIVE_ALLOWED_FOLDER_ID` is listed, read, or confirmed to exist; without that folder nothing is readable | Article VII |
 
 ## Success Criteria *(mandatory)*
 
@@ -172,7 +181,7 @@ The MCP holds Google authorization material for the deployment's single Drive id
 - **SC-003**: In adversarial-document tests, retrieved instructions produce **zero** changes to any authorization decision (no extra grant, no skipped chain step, no policy change).
 - **SC-004**: Two concurrent requests against the same deployment identity share **zero** leftover credential, grant, or authorization-context observations.
 - **SC-005**: Audit of responses, error bodies, and logs after success and failure paths finds **zero** raw token or credential material.
-- **SC-006**: 100% of MCP retrieval-boundary denials (v1: granted named `file_id` outside named `folder_id`, or granted named resource outside `DRIVE_ALLOWED_FOLDER_ID`) are labeled `AUTHORIZATION_ERROR`. 100% of Google-grant denials are labeled `FILE_NOT_FOUND` (existence not confirmed). Neither path is labeled as empty successful retrieval. `drive_read` Google misses are `FILE_NOT_FOUND`.
+- **SC-006**: 100% of MCP retrieval-boundary denials (v1: no allow-list; a named resource not proven inside `DRIVE_ALLOWED_FOLDER_ID`, including one that does not exist or that Google does not grant; a granted named `file_id` outside a named `folder_id`) are labeled `AUTHORIZATION_ERROR`, and an id outside `kb` gets the same reply as a missing id. 100% of misses on an id already proven inside the allow-list folder are labeled `FILE_NOT_FOUND`. Neither path is labeled as empty successful retrieval.
 - **SC-007**: 100% of Streamable HTTP `/mcp` calls that present `MCP_AUTH_TOKEN` as Bearer are refused as HTTP 401 before Drive I/O. 100% of successful `/mcp` Bearer values are access tokens issued by this origin’s auth-code + PKCE flow (or a test helper that mints the same token type).
 
 ## Assumptions
@@ -182,7 +191,7 @@ The MCP holds Google authorization material for the deployment's single Drive id
 - Whether principal identifiers in logs are hashed or used as-is is a plan-level choice bounded by AC-FR-061.
 - Widening or narrowing the granted read-only OAuth scope over the feature lifecycle is a plan-level change; it MUST remain read-only (Article V) and as narrow as practical (AC-FR-020).
 - Retrieval tool semantics (`drive_ls`, `drive_find`, `drive_read`, `drive_grep`) live in Retrieval Core. This spec does not define what a cleared call retrieves.
-- `FILE_NOT_FOUND` is the Google-grant denial category (no existence leak). `AUTHORIZATION_ERROR` is the MCP retrieval-boundary denial category (v1: granted `file_id` outside named `folder_id` on `drive_grep`, or granted resource outside `DRIVE_ALLOWED_FOLDER_ID`). Both are part of the shared agent-visible taxonomy; Retrieval Core also raises `FILE_NOT_FOUND` for genuinely missing files after authorization has cleared, using the same `map_google_error()` helper.
+- `AUTHORIZATION_ERROR` is the MCP retrieval-boundary denial category (v1: no allow-list; a named id not proven inside `DRIVE_ALLOWED_FOLDER_ID`, whether outside it, missing, or not granted; a granted `file_id` outside a named `folder_id` on `drive_grep`). `FILE_NOT_FOUND` is for an id already proven inside the allow-list folder that Google then misses, so no reply leaks existence outside that folder. Both are part of the shared agent-visible taxonomy; Retrieval Core also raises `FILE_NOT_FOUND` for genuinely missing files after authorization has cleared, using the same `map_google_error()` helper.
 - Write, share, and permission modification have nothing to grant here — only to deny — because Article V provides no mutating capability.
 
 ## Out of Scope

@@ -32,11 +32,11 @@ Canonical type. Access Control enforces the same fields (`src/google_drive_mcp/d
 | --- | --- | --- |
 | `folder_id` | string? | If set: ls = immediate children; find/grep = this folder and descendants |
 | `file_ids` | string[]? | If set: only these files |
-| `default_whole_grant` | bool | True when neither folder nor file list named |
+| `default_whole_grant` | bool | True when neither folder nor file list named. Access Control refuses this scope (`whole_grant_refused`) |
 
-`is_within_scope(file_id, scope, parent_lookup)` is the only descendant check. Retrieval walks and the authorization chain MUST call it. Do not fork a second parent walk.
+`is_within_scope(file_id, scope, parent_lookup)` is the only descendant check. Retrieval walks and the authorization chain MUST call it. Do not fork a second parent walk. Folder listings keep only children whose `parents` include the listed folder (one membership check on the listing, not a parent walk).
 
-Enforced by Access Control before content export. This deployment sets `DRIVE_ALLOWED_FOLDER_ID` to `kb`. Access Control rewrites an omitted `folder_id` on `drive_ls`, `drive_find`, and `drive_grep` to that folder, and refuses a named folder or file outside it. When the allow-list is unset, `drive_ls` with `default_whole_grant` lists immediate children of My Drive `root` only, and omitted find/grep use `DRIVE_DEFAULT_FOLDER_ID` when that variable is set.
+Enforced by Access Control before content export. `DRIVE_ALLOWED_FOLDER_ID` is required (`kb` on this deployment). Access Control rewrites an omitted `folder_id` on `drive_ls`, `drive_find`, and `drive_grep` to that folder, and refuses any named folder or file it cannot prove is that folder or a descendant, whether or not the id exists. No retrieval path lists without a folder: `drive_ls` never lists My Drive `root`, and the Drive port has no whole-grant listing (`list_all` removed).
 
 ## DocumentContent
 

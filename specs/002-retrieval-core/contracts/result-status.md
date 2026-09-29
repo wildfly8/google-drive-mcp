@@ -22,4 +22,4 @@ Do not silently retry until the operation can claim `COMPLETE`.
 
 ## Grep coverage
 
-Folder and whole-grant `drive_grep` results include `files_scanned` and `bytes_scanned`. `deferred_file_ids` with `partial_reason: max_bytes` means those files were not downloaded. `next_cursor` means the listing finished and more non-deferred files remain (`max_files` or `max_execution_time`). `EMPTY` is only a finished slice with zero hits. Deferred ids or a cursor are `PARTIAL`.
+Folder `drive_grep` results include `files_scanned` and `bytes_scanned`. `deferred_file_ids` with `partial_reason: max_bytes` means those files were not downloaded. `next_cursor` means the listing finished and more non-deferred files remain (`max_files` or `max_execution_time`). `EMPTY` is only a finished slice with zero hits. Deferred ids or a cursor are `PARTIAL`.

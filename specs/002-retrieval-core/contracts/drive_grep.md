@@ -14,7 +14,7 @@ Must run Access Control chain first.
   "properties": {
     "pattern": { "type": "string", "minLength": 1, "description": "Exact phrase in exported bytes (literal unless regex=true). Short term of art, not the whole user question. Not Drive fullText." },
     "file_ids": { "type": "array", "items": { "type": "string" } },
-    "folder_id": { "type": "string", "description": "Omit to search DRIVE_ALLOWED_FOLDER_ID (kb on this deployment). A named id outside kb is AUTHORIZATION_ERROR." },
+    "folder_id": { "type": "string", "description": "Omit to search DRIVE_ALLOWED_FOLDER_ID (kb on this deployment). A named id outside kb, or one that does not exist, is AUTHORIZATION_ERROR." },
     "next_cursor": { "type": "string", "description": "Previous result field next_cursor. Empty starts at the first file. Alias: cursor." },
     "cursor": { "type": "string", "description": "Alias of next_cursor." },
     "case_sensitive": { "type": "boolean", "default": true },
@@ -25,11 +25,11 @@ Must run Access Control chain first.
 }
 ```
 
-If both `file_ids` and `folder_id` are omitted, grep searches `DRIVE_ALLOWED_FOLDER_ID` (`kb` on this deployment). When the allow-list is unset, omitted grep uses `DRIVE_DEFAULT_FOLDER_ID` if set, otherwise `default_whole_grant`, still budgeted. A named folder or file outside the allow-list is `AUTHORIZATION_ERROR`. `regex=false` → literal (`re.escape`). Invalid regex, out-of-range budgets, `next_cursor` or `cursor` combined with `file_ids`, or a continuation id that is not a file id in a finished listing → `INVALID_ARGUMENT`. An empty `next_cursor` starts at the first file. Runtime engine failure after a valid compile → `SEARCH_ERROR`.
+If both `file_ids` and `folder_id` are omitted (blank ids count as omitted), grep searches the required `DRIVE_ALLOWED_FOLDER_ID` (`kb` on this deployment). There is no whole-grant grep. A named folder or file that is not `kb` or a descendant is `AUTHORIZATION_ERROR`, whether it exists or not. `regex=false` → literal (`re.escape`). Invalid regex, out-of-range budgets, an argument not in this schema, `next_cursor` or `cursor` combined with `file_ids`, or a continuation id that is not a file id in a finished listing → `INVALID_ARGUMENT`. An empty `next_cursor` starts at the first file. Runtime engine failure after a valid compile → `SEARCH_ERROR`.
 
-A folder or whole-grant call scans known-smaller files first. The per-file cap stays 20 MB, so one named `file_id` (including a ~19 MB `.mdx`) is exported in that call and is never placed in `deferred_file_ids`. A known size that does not fit the bytes left in the operation is not downloaded; that id and the larger tail are `deferred_file_ids`. Unknown size is not deferred only because remaining bytes are below 20 MB.
+A folder call scans known-smaller files first. The folder walk drops a listed child whose `parents` do not include the folder being listed. The per-file cap stays 20 MB, so one named `file_id` (including a ~19 MB `.mdx`) is exported in that call and is never placed in `deferred_file_ids`. A known size that does not fit the bytes left in the operation is not downloaded; that id and the larger tail are `deferred_file_ids`. Unknown size is not deferred only because remaining bytes are below 20 MB.
 
-When **both** `folder_id` and `file_ids` are set: Access Control step 4 metadata-checks each named id. Granted file outside the folder → `AUTHORIZATION_ERROR`. Ungranted → `FILE_NOT_FOUND`.
+When **both** `folder_id` and `file_ids` are set: Access Control step 4 first checks that each named id is inside `kb`, then metadata-checks it. A file outside `kb`, missing, or not granted → `AUTHORIZATION_ERROR`. A granted file inside `kb` but outside the named folder → `AUTHORIZATION_ERROR`. A file proven inside `kb` that then misses → `FILE_NOT_FOUND`.
 
 ## Output (success)
 
@@ -74,5 +74,5 @@ When **both** `folder_id` and `file_ids` are set: Access Control step 4 metadata
 | Target | Result |
 | --- | --- |
 | Only `file_ids`, and every named file is unsupported / not exportable | `ERROR` / `UNSUPPORTED_MIME_TYPE` or `FILE_NOT_EXPORTABLE` |
-| `folder_id` or `default_whole_grant` walk: mix of searchable and unsupported | Skip unsupported, search the rest, `PARTIAL` with `partial_reason` noting skips |
+| `folder_id` walk: mix of searchable and unsupported | Skip unsupported, search the rest, `PARTIAL` with `partial_reason` noting skips |
 | Walk: every target unsupported | `ERROR` / `UNSUPPORTED_MIME_TYPE` or `FILE_NOT_EXPORTABLE` |

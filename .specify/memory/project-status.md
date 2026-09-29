@@ -7,7 +7,7 @@ SDD phase changes (specify / plan / tasks / implement / converge).
 | --- | --- |
 | Spec-Kit | Initialized (specify-cli 1.0.4, cursor-agent, bash) |
 | Constitution | Ratified v1.0.0 (`.specify/memory/constitution.md`) |
-| Current phase | 002 retrieval coverage on top of 004 paywall (only `kb` via `DRIVE_ALLOWED_FOLDER_ID`; grep input `next_cursor`; Cloud Run `onto-kb-00023-8ph` until the allow-list revision is serving) |
+| Current phase | 002 retrieval coverage on top of 004 paywall (only `kb` via required `DRIVE_ALLOWED_FOLDER_ID`; grep input `next_cursor`; the kb-only lockdown (T064) must be deployed with `scripts/deploy-cloud-run.sh`) |
 | Next command | `/speckit-converge` |
 | Feature specs | `specs/001-access-control/spec.md`, `specs/002-retrieval-core/spec.md`, `specs/003-connect-counter/spec.md`, `specs/004-paid-subscription/spec.md` |
 | Git branch | Spec dirs are documentation ids |

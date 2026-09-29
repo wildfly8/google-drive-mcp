@@ -12,8 +12,9 @@ Every MCP call must pass `agent request → MCP authentication → MCP authoriza
 
 Denial split (locked):
 
-- Google grant miss (404 / permission-as-404) → `FILE_NOT_FOUND` (no existence leak, no content).
-- v1 `AUTHORIZATION_ERROR` when Google **grants** a named file that `is_within_scope` rejects: caller named **both** `folder_id` and `file_ids` (`drive_grep` / `evaluate_chain`), or a named id is outside deployment `DRIVE_ALLOWED_FOLDER_ID`.
+- A named id not proven to be deployment `DRIVE_ALLOWED_FOLDER_ID` (`kb`) or a descendant → `AUTHORIZATION_ERROR` (`outside_allowed_folder`), whether it lies outside `kb`, does not exist, or Google does not grant it. One reply for all three, so no existence leak and no content.
+- `AUTHORIZATION_ERROR` also when no allow-list is configured (`no_allowed_folder`), when a call names no folder or file after the rewrite (`whole_grant_refused`), and when the caller names **both** `folder_id` and `file_ids` (`drive_grep` / `evaluate_chain`) and Google grants a named file that `is_within_scope` rejects for that folder.
+- Google miss (404 / permission-as-404) on an id already proven inside `kb` (race) → `FILE_NOT_FOUND` (no content).
 - Access Control tests the folder∩file_ids AUTH case via `evaluate_chain`. Do not implement `drive_grep` here; Retrieval replays the same case on the real tool.
 
 MCP authentication (locked, AC-FR-012): this Cloud Run origin is both OAuth 2.1 authorization server and MCP resource server. Hosts complete authorization-code + PKCE S256, DCR (`POST /register`), and RFC 9728 discovery, then call `/mcp` with a short-lived access token. `MCP_AUTH_TOKEN` is the consent password only — not a `/mcp` Bearer. Google OAuth (`GOOGLE_*` / authorized-user JSON) is the Drive identity adapter, never the MCP login.
@@ -34,9 +35,9 @@ Technical approach: a Python hexagonal MCP server on Cloud Run. Access control i
 
 **Project Type**: MCP web service (stateless)
 
-**Performance Goals**: Correctness over latency. Auth chain overhead must stay small relative to Drive calls. Grant denial (`FILE_NOT_FOUND`) MUST NOT add a second round-trip solely to confirm existence of a file Google already hid. AUTH folder∩file_ids MAY use one metadata `files.get` (caller already named both ids); it MUST NOT export or `get_media`.
+**Performance Goals**: Correctness over latency. Auth chain overhead must stay small relative to Drive calls. Denying an ungranted id MUST NOT add a second round-trip solely to confirm existence of a file Google already hid. AUTH folder∩file_ids MAY use one metadata `files.get` (caller already named both ids); it MUST NOT export or `get_media`.
 
-**Constraints**: Read-only Google scope `https://www.googleapis.com/auth/drive.readonly` (three-field refresh mint). MCP OAuth scope on issued access tokens is `drive.read` (not a Google scope). No write tools registered in this context (Drive client write-method scan is Retrieval). Tokens never logged. Instance may die after each request. Concurrency > 1 on Cloud Run, so Google credentials are request-scoped. HTTP serving requires `MCP_PUBLIC_URL` (HTTPS origin, no path, no `/mcp` suffix). Step 4 MAY touch Drive metadata; content adapters stay off until `ALLOW`.
+**Constraints**: Read-only Google scope `https://www.googleapis.com/auth/drive.readonly` (three-field refresh mint). MCP OAuth scope on issued access tokens is `drive.read` (not a Google scope). No write tools registered in this context (Drive client write-method scan is Retrieval). Tokens never logged. Instance may die after each request. Concurrency > 1 on Cloud Run, so Google credentials are request-scoped. HTTP serving requires `MCP_PUBLIC_URL` (HTTPS origin, no path, no `/mcp` suffix). Step 4 MAY touch Drive metadata; content adapters stay off until `ALLOW`. `DRIVE_ALLOWED_FOLDER_ID` is required: the server refuses to start when it is unset, blank, an alias such as `root` / `appDataFolder`, or not a plain id (`Settings.require_allowed_folder`).
 
 ### MCP OAuth 2.1 (plan-level, spec AC-FR-012)
 

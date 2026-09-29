@@ -63,9 +63,9 @@ The agent never receives this object. Adapter maps env secrets (`GOOGLE_*` or au
 | --- | --- | --- |
 | `folder_id` | string? | If set, allowed resources are this folder and (for find/grep) descendants; ls uses immediate children only |
 | `file_ids` | string[]? | If set, only these ids |
-| `default_whole_grant` | bool | True when neither folder nor file list named; scope = whole Google grant for this identity |
+| `default_whole_grant` | bool | True when neither folder nor file list named. Never allowed: the chain rewrites an omitted folder to `DRIVE_ALLOWED_FOLDER_ID` and refuses a scope still marked whole-grant (`whole_grant_refused`) |
 
-A caller-named `file_id` that Google grants but that lies outside `folder_id` is an MCP authorization failure (`AUTHORIZATION_ERROR`) after metadata `files.get` (not a content fetch). See [authorization-chain.md](./contracts/authorization-chain.md).
+A named id that is not proven to be `DRIVE_ALLOWED_FOLDER_ID` or a descendant is `AUTHORIZATION_ERROR` (`outside_allowed_folder`), whether it lies outside that folder, does not exist, or Google does not grant it. A caller-named `file_id` that Google grants but that lies outside `folder_id` is an MCP authorization failure (`AUTHORIZATION_ERROR`) after metadata `files.get` (not a content fetch). See [authorization-chain.md](./contracts/authorization-chain.md).
 
 ## AuthorizationDecision
 
@@ -73,10 +73,10 @@ A caller-named `file_id` that Google grants but that lies outside `folder_id` is
 | --- | --- | --- |
 | `outcome` | enum | `ALLOW` \| `AUTHENTICATION_ERROR` \| `AUTHORIZATION_ERROR` \| `FILE_NOT_FOUND` |
 | `step_failed` | enum? | `mcp_authentication` \| `mcp_authorization` \| `google_authorization` |
-| `reason_code` | string | Machine-readable, no token material |
+| `reason_code` | string | Machine-readable, no token material (`mcp_access_token_rejected`, `no_allowed_folder`, `whole_grant_refused`, `outside_allowed_folder`, `file_outside_folder`, `google_grant_miss`, `allow`) |
 | `principal_id` | string | Non-secret; for logs only |
 
-`AUTHORIZATION_ERROR` from a folder ∩ file_ids miss uses `step_failed = google_authorization` because it requires granted metadata. Argument-level step-3 failures (none in v1 tools) would use `mcp_authorization`.
+`AUTHORIZATION_ERROR` from the allow-list check (`outside_allowed_folder`) or a folder ∩ file_ids miss (`file_outside_folder`) uses `step_failed = google_authorization` because it needs Drive metadata. Argument-level step-3 failures use `mcp_authorization`: `no_allowed_folder` (no `DRIVE_ALLOWED_FOLDER_ID`) and `whole_grant_refused` (no folder or file after the rewrite).
 
 ### Transitions
 
@@ -84,9 +84,10 @@ A caller-named `file_id` that Google grants but that lies outside `folder_id` is
 start
   → mcp_authentication fail → AUTHENTICATION_ERROR (stop)
   → mcp_authentication pass
-      → mcp_authorization fail (argument-level; v1 tools pass) → AUTHORIZATION_ERROR (stop, no Drive I/O)
+      → mcp_authorization fail (no allow-list, or no folder/file after the rewrite) → AUTHORIZATION_ERROR (stop, no Drive I/O)
       → mcp_authorization pass
-          → google_authorization fail (no grant) → FILE_NOT_FOUND (stop, no existence leak)
+          → google_authorization: named id not proven inside the allow-list folder (outside, missing, or not granted) → AUTHORIZATION_ERROR (stop, no existence leak)
+          → google_authorization fail (id proven inside, then Google misses) → FILE_NOT_FOUND (stop)
           → google_authorization: granted file_id outside folder_id → AUTHORIZATION_ERROR (stop, no content I/O)
           → google_authorization pass → ALLOW → resource
 ```

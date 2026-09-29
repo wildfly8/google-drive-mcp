@@ -2,7 +2,7 @@
 
 Metadata / Drive-native **candidate** discovery. Recursive when `folder_id` is set. Results are not evidence.
 
-Must run Access Control chain first. Google-missing folder → `FILE_NOT_FOUND`. A Google-granted folder outside `DRIVE_ALLOWED_FOLDER_ID` → `AUTHORIZATION_ERROR`.
+Must run Access Control chain first. A named folder that is not `DRIVE_ALLOWED_FOLDER_ID` (`kb`) or a descendant → `AUTHORIZATION_ERROR`, whether it lies outside `kb`, does not exist, or Google does not grant it. `FILE_NOT_FOUND` only when a folder already proven inside `kb` then misses.
 
 ## Input
 
@@ -22,9 +22,9 @@ Must run Access Control chain first. Google-missing folder → `FILE_NOT_FOUND`.
 }
 ```
 
-On this deployment, omitted `folder_id` is `DRIVE_ALLOWED_FOLDER_ID` (`kb`) and its descendants, still bounded by `max_results` / `max_files`. A named `folder_id` outside `kb` is `AUTHORIZATION_ERROR`. When the allow-list is unset, omitted `folder_id` uses `DRIVE_DEFAULT_FOLDER_ID` if set, otherwise `default_whole_grant`. Omitted `drive_ls` lists the same allow-list folder’s immediate children.
+Omitted `folder_id` is the required `DRIVE_ALLOWED_FOLDER_ID` (`kb` on this deployment) and its descendants, still bounded by `max_results` / `max_files`. A named `folder_id` that is not `kb` or a descendant is `AUTHORIZATION_ERROR`. There is no whole-grant find. Omitted `drive_ls` lists the same folder’s immediate children.
 
-Invalid `max_results` or date-time → `INVALID_ARGUMENT`.
+Invalid `max_results` or date-time, or an argument not in this schema (for example `file_id`) → `INVALID_ARGUMENT`.
 
 ## Output (success)
 
@@ -53,6 +53,6 @@ Invalid `max_results` or date-time → `INVALID_ARGUMENT`.
 
 `file` is DriveFile metadata only (id, name, mime_type, modified_time, `source_url` = `drive:{id}`, is_folder, trashed). No `content` field. `source_url` MUST NOT be an HTTP URL.
 
-The server pushes `name contains` (when `name_pattern` is set), `mimeType`, `modifiedTime` bounds, and `trashed = false` unless `trashed` is true, into `files.list`. `name_pattern` is still confirmed as a case-insensitive filename substring on the listed names. `max_results` counts matching non-folder files only. Listing a folder does not `files.get` each child. Page size is 1000.
+The server pushes `name contains` (when `name_pattern` is set), `mimeType`, `modifiedTime` bounds, and `trashed = false` unless `trashed` is true, into `files.list`. `name_pattern` is still confirmed as a case-insensitive filename substring on the listed names. `max_results` counts matching non-folder files only. Listing a folder does not `files.get` each child. A listed child whose `parents` do not include the folder being listed is dropped. Page size is 1000.
 
 Zero matches after a finished scan → `EMPTY`. Hitting `max_files` while more matching files remain → `PARTIAL` with `partial_reason: max_files` (the reason is present even when this page of candidates is empty). Walk cut by Google 429 → `PARTIAL`, `partial_reason: RATE_LIMITED`.

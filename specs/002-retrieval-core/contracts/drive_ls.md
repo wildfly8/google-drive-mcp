@@ -2,7 +2,7 @@
 
 Enumerate **immediate children** of a folder. No document bodies.
 
-Must run Access Control chain first. Google-missing folder → `FILE_NOT_FOUND`. `AUTHORIZATION_ERROR` only when Access Control’s `DRIVE_ALLOWED_FOLDER_ID` rejects a Google-granted named folder (AC-FR-021).
+Must run Access Control chain first. A named folder that is not `DRIVE_ALLOWED_FOLDER_ID` (`kb`) or a descendant → `AUTHORIZATION_ERROR`, whether it lies outside `kb`, does not exist, or Google does not grant it (AC-FR-021). `FILE_NOT_FOUND` only when a folder already proven inside `kb` then misses. There is no listing without a folder: My Drive `root` is never listed.
 
 ## Input
 
@@ -11,14 +11,14 @@ Must run Access Control chain first. Google-missing folder → `FILE_NOT_FOUND`.
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "folder_id": { "type": "string", "description": "Omit to list DRIVE_ALLOWED_FOLDER_ID (kb on this deployment). A named folder outside that allow-list is AUTHORIZATION_ERROR. When the allow-list is unset, omit lists My Drive root children." },
+    "folder_id": { "type": "string", "description": "Omit to list DRIVE_ALLOWED_FOLDER_ID (kb on this deployment). A named folder outside kb, or one that does not exist, is AUTHORIZATION_ERROR." },
     "max_results": { "type": "integer", "minimum": 1, "maximum": 40, "description": "Page size; remaining children → PARTIAL + next_page_token" },
     "page_token": { "type": "string" }
   }
 }
 ```
 
-Invalid `max_results` → `INVALID_ARGUMENT`.
+Invalid `max_results`, or any argument other than `folder_id`, `max_results`, and `page_token` (for example `file_id`) → `INVALID_ARGUMENT`.
 
 ## Output (success)
 
@@ -49,4 +49,4 @@ Invalid `max_results` → `INVALID_ARGUMENT`.
 }
 ```
 
-If `page_token`/`max_results` leave more children, `status` is `PARTIAL` (or `COMPLETE` only when `next_page_token` is absent and no truncation). Empty folder → `EMPTY`, `children: []`. Walk cut by Google 429 → `PARTIAL`, `partial_reason: RATE_LIMITED`.
+If `page_token`/`max_results` leave more children, `status` is `PARTIAL` (or `COMPLETE` only when `next_page_token` is absent and no truncation). Empty folder → `EMPTY`, `children: []`. Walk cut by Google 429 → `PARTIAL`, `partial_reason: RATE_LIMITED`. A listed child whose `parents` do not include `folder_id` is dropped (stale Drive search-index entry).

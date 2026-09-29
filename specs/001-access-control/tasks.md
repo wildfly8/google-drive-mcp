@@ -52,11 +52,11 @@ description: "Task list for Access Control Boundary"
 
 **Goal**: Ordered chain `MCP auth → MCP scope → Google auth → resource` with classified errors; Drive is never called on earlier failures.
 
-**Independent Test**: Unauthenticated HTTP call → 401 and Drive **content** count 0. In-process call without an access token → `AUTHENTICATION_ERROR`. `Authorization: Bearer $MCP_AUTH_TOKEN` → 401 / `AUTHENTICATION_ERROR`. Valid MCP OAuth access token + Google not-found → `FILE_NOT_FOUND` with no file metadata. Valid access token + `evaluate_chain` with `folder_id` + granted `file_id` outside that folder → `AUTHORIZATION_ERROR`, metadata get allowed, export/`get_media` count 0. A `file_id`-only call that Google misses is `FILE_NOT_FOUND`. Do not implement `drive_grep` here.
+**Independent Test**: Unauthenticated HTTP call → 401 and Drive **content** count 0. In-process call without an access token → `AUTHENTICATION_ERROR`. `Authorization: Bearer $MCP_AUTH_TOKEN` → 401 / `AUTHENTICATION_ERROR`. Valid MCP OAuth access token + Google not-found → `AUTHORIZATION_ERROR` with no file metadata (since Retrieval T064; same reply as an id outside the allow-list folder). Valid access token + `evaluate_chain` with `folder_id` + granted `file_id` outside that folder → `AUTHORIZATION_ERROR`, metadata get allowed, export/`get_media` count 0. A `file_id`-only call that Google misses is `AUTHORIZATION_ERROR`; `FILE_NOT_FOUND` is only for an id proven inside the allow-list folder that then misses. Do not implement `drive_grep` here.
 
 ### Tests for User Story 1
 
-- [X] T011 [P] [US1] Contract tests for missing/invalid MCP access token (including `MCP_AUTH_TOKEN` as Bearer), Google-miss → `FILE_NOT_FOUND`, and folder∩file_ids AUTH mapping via `evaluate_chain` (args: `folder_id` + `file_ids`, not a `drive_grep` tool) in `tests/contract/test_auth_contract.py` (assert content I/O = 0 on AUTH; metadata get may be 1)
+- [X] T011 [P] [US1] Contract tests for missing/invalid MCP access token (including `MCP_AUTH_TOKEN` as Bearer), Google-miss → `FILE_NOT_FOUND`, and folder∩file_ids AUTH mapping via `evaluate_chain` (args: `folder_id` + `file_ids`, not a `drive_grep` tool) in `tests/contract/test_auth_contract.py` (assert content I/O = 0 on AUTH; metadata get may be 1) — Google-miss mapping superseded by Retrieval T064: a named id not proven inside the allow-list folder is `AUTHORIZATION_ERROR`
 - [X] T012 [P] [US1] Unit tests that chain steps are non-skippable, prior ALLOW is not reused, and `is_within_scope` uses an injected parent map (no Drive) in `tests/unit/access_control/test_chain.py`
 
 ### Implementation for User Story 1

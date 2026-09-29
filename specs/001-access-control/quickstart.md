@@ -6,6 +6,7 @@ Validates the authorization chain without requiring Retrieval Core tools to be c
 
 - Python 3.12, `uv`
 - Env: `MCP_AUTH_TOKEN` (consent password), `MCP_PUBLIC_URL`, `MCP_PRINCIPAL_ID`, and Google secrets (or a test double)
+- A running server also needs `DRIVE_ALLOWED_FOLDER_ID` (the only readable folder, `kb` on this deployment); it refuses to start without it. Contract tests use `Settings.for_tests()`, which sets it for the fake Drive.
 
 ## Setup
 
@@ -27,14 +28,15 @@ Expected:
 
 - No `Authorization` header → HTTP 401 on `/mcp`, or `AUTHENTICATION_ERROR` in-process; Drive metadata and content counts = 0
 - `Authorization: Bearer $MCP_AUTH_TOKEN` (static secret) → 401 / `AUTHENTICATION_ERROR`; Drive metadata and content counts = 0
-- Valid OAuth access token + Google double returns not-found → `FILE_NOT_FOUND`; response has no file name/content
+- Valid OAuth access token + Google double returns not-found → `AUTHORIZATION_ERROR`; response has no file name/content
 - Valid access token + stub/`evaluate_chain` with `folder_id` and a granted `file_id` **outside** that folder → `AUTHORIZATION_ERROR`; content (export/`get_media`) count = 0; metadata `files.get` may be 1
-- Valid access token + `file_id`-only call that Google misses → `FILE_NOT_FOUND`, never `AUTHORIZATION_ERROR`
+- Valid access token + an id that Google misses and an id outside the allow-list folder → the same `AUTHORIZATION_ERROR`. `FILE_NOT_FOUND` only when an id already proven inside that folder then misses
+- No allow-list folder → every call is `AUTHORIZATION_ERROR` before any Google call
 - Logs/captured stdout contain no token substrings
 
 ## Live Google (optional)
 
-Point `GOOGLE_*` at a throwaway account. Call any tool with a random `file_id` the account does not own → `FILE_NOT_FOUND`, not a document body.
+Point `GOOGLE_*` at a throwaway account and `DRIVE_ALLOWED_FOLDER_ID` at a test folder. Call any tool with a random `file_id`, or one outside that folder → `AUTHORIZATION_ERROR`, not a document body.
 
 ## See also
 

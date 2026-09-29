@@ -240,7 +240,7 @@ Remaining work from `/speckit-converge` (2026-09-08). Do not rewrite earlier tas
 
 Remaining work from `/speckit-converge` (2026-09-08, second pass). Do not rewrite earlier tasks.
 
-- [X] T050 CRITICAL Return `PARTIAL` with `partial_reason: RATE_LIMITED` / `max_files` / `max_execution_time` from `drive_grep` when a folder or whole-grant walk is cut short with zero searchable files, instead of raising `UNSUPPORTED_MIME_TYPE` because the all-unsupported check runs before completeness flags in `retrieval/grep.py` (FR-037, FR-041, US4/AC3, Article X, result-status.md) (contradicts)
+- [X] T050 CRITICAL Return `PARTIAL` with `partial_reason: RATE_LIMITED` / `max_files` / `max_execution_time` from `drive_grep` when a folder or whole-grant walk is cut short with zero searchable files, instead of raising `UNSUPPORTED_MIME_TYPE` because the all-unsupported check runs before completeness flags in `retrieval/grep.py` (FR-037, FR-041, US4/AC3, Article X, result-status.md) (contradicts) — whole-grant walks removed by T064
 - [X] T051 Skip `file.is_folder` in `drive_grep` without counting folders as unsupported skips, so a completed search over folders plus searchable docs is not `PARTIAL`/`unsupported_skipped` and a folder-only tree is `EMPTY` rather than `UNSUPPORTED_MIME_TYPE` in `retrieval/grep.py` (FR-037, FR-041, Article X) (contradicts)
 - [X] T052 Stop counting folder nodes toward grep `max_files` in `infra/google_drive/list.py` `walk_files`/`consider()` (or exclude folders from the grep walk payload while still using them for BFS) so nested docs remain reachable under the file budget (FR-030, FR-104) (partial)
 
@@ -259,7 +259,7 @@ Remaining work from `/speckit-converge` (2026-09-08, third pass). Do not rewrite
 
 Remaining work from `/speckit-converge` (2026-09-08, fourth pass). Do not rewrite earlier tasks.
 
-- [X] T055 CRITICAL Intercept Google HTTP 429 from `fetch_text` / export / `get_media` during multi-target `drive_grep` (folder_id, default_whole_grant, or multiple file_ids) as `status: PARTIAL` with `partial_reason: RATE_LIMITED` (preserve matches already found; empty matches still PARTIAL), instead of re-raising `map_google_error` `ErrorEnvelope` `RATE_LIMITED`; keep single-file `drive_read` and single-`file_ids` grep export 429 with no usable prefix as `ErrorEnvelope` `RATE_LIMITED` in `retrieval/grep.py` (FR-041, FR-060, US4/AC3, Article X, result-status.md, plan: walk 429) (contradicts)
+- [X] T055 CRITICAL Intercept Google HTTP 429 from `fetch_text` / export / `get_media` during multi-target `drive_grep` (folder_id, default_whole_grant, or multiple file_ids) as `status: PARTIAL` with `partial_reason: RATE_LIMITED` (preserve matches already found; empty matches still PARTIAL), instead of re-raising `map_google_error` `ErrorEnvelope` `RATE_LIMITED`; keep single-file `drive_read` and single-`file_ids` grep export 429 with no usable prefix as `ErrorEnvelope` `RATE_LIMITED` in `retrieval/grep.py` (FR-041, FR-060, US4/AC3, Article X, result-status.md, plan: walk 429) (contradicts) — `default_whole_grant` grep removed by T064
 
 ---
 
@@ -267,7 +267,7 @@ Remaining work from `/speckit-converge` (2026-09-08, fourth pass). Do not rewrit
 
 Remaining work from `/speckit-converge` (2026-09-13). Do not rewrite earlier tasks.
 
-- [X] T056 Honor `trashed=true` on folder-scoped `drive_find` by threading `include_trashed` through `walk_files` → `GoogleDriveClient.list_children` / `FakeDrive.list_children` instead of hard-coding `trashed = false` (whole-grant `list_all` already respects the flag) in `src/google_drive_mcp/infra/google_drive/list.py`, `src/google_drive_mcp/infra/google_drive/client.py`, and `tests/fakes/fake_drive.py` per FR-010 (partial)
+- [X] T056 Honor `trashed=true` on folder-scoped `drive_find` by threading `include_trashed` through `walk_files` → `GoogleDriveClient.list_children` / `FakeDrive.list_children` instead of hard-coding `trashed = false` (whole-grant `list_all` already respects the flag; `list_all` since removed by T064) in `src/google_drive_mcp/infra/google_drive/list.py`, `src/google_drive_mcp/infra/google_drive/client.py`, and `tests/fakes/fake_drive.py` per FR-010 (partial)
 - [X] T057 Advertise `FILE_ID_PATTERN` on `drive_grep` `file_ids` JSON Schema array items in `src/google_drive_mcp/mcp/server.py` so `tools/list` matches `require_file_id` validation (today items are plain `string`) per FR-091 (partial)
 
 ---
@@ -277,14 +277,14 @@ Remaining work from `/speckit-converge` (2026-09-13). Do not rewrite earlier tas
 Filename discovery and folder grep coverage (FR-012, FR-036, FR-038). No persistent index, no BM25, no per-file cap below 20 MB.
 
 - [X] T058 Push `name contains`, MIME, `modifiedTime`, and `trashed = false` into `files.list` (`pageSize` 1000) and count `drive_find` `max_results` only for matching non-folder files, without `files.get` on each listed child, in `domain/list_filter.py`, `infra/google_drive/query.py`, `infra/google_drive/client.py`, `infra/google_drive/list.py`, `retrieval/find.py`, and `tests/fakes/fake_drive.py` (FR-012)
-- [X] T059 Scan folder and whole-grant `drive_grep` known-smaller files first; defer a known size that does not fit remaining operation bytes (and the larger tail) as `deferred_file_ids` without downloading; always return `files_scanned` and `bytes_scanned`; set `next_cursor` only when the listing finished and more non-deferred files remain; never defer a single `file_id` in `retrieval/grep.py`, `mcp/server.py`, `mcp/tools.py`, and `mcp/tool_schema.py` (FR-038, FR-036)
+- [X] T059 Scan folder and whole-grant `drive_grep` known-smaller files first; defer a known size that does not fit remaining operation bytes (and the larger tail) as `deferred_file_ids` without downloading; always return `files_scanned` and `bytes_scanned`; set `next_cursor` only when the listing finished and more non-deferred files remain; never defer a single `file_id` in `retrieval/grep.py`, `mcp/server.py`, `mcp/tools.py`, and `mcp/tool_schema.py` (FR-038, FR-036) — whole-grant grep removed by T064
 - [X] T060 Contract tests for find pushdown, grep deferral, cursor resume, and coverage counts in `tests/contract/test_drive_find.py`, `tests/contract/test_drive_grep.py`, and `tests/unit/retrieval/test_list_query.py`
 
 ---
 
 ## Phase 14: Default kb scope and next_cursor input
 
-- [X] T061 When `DRIVE_DEFAULT_FOLDER_ID` is set, omitted `drive_find` and `drive_grep` search that folder (`kb` on this deployment) without disallowing a named folder or file id, and omitted `drive_ls` still lists My Drive root, in `domain/retrieval_scope.py`, `mcp/tools.py`, `infra/config.py`, and `scripts/deploy-cloud-run.sh` (FR-010, FR-030)
+- [X] T061 When `DRIVE_DEFAULT_FOLDER_ID` is set, omitted `drive_find` and `drive_grep` search that folder (`kb` on this deployment) without disallowing a named folder or file id, and omitted `drive_ls` still lists My Drive root, in `domain/retrieval_scope.py`, `mcp/tools.py`, `infra/config.py`, and `scripts/deploy-cloud-run.sh` (FR-010, FR-030) — superseded by T064: `DRIVE_DEFAULT_FOLDER_ID` removed
 - [X] T062 Advertise `next_cursor` as a `drive_grep` input (alias `cursor`) so a host can pass the previous result field back, in `mcp/server.py`, `retrieval/grep.py`, and `mcp/tool_schema.py` (FR-030)
 
 ---
@@ -292,3 +292,4 @@ Filename discovery and folder grep coverage (FR-012, FR-036, FR-038). No persist
 ## Phase 15: Allow only the kb folder
 
 - [X] T063 Set `DRIVE_ALLOWED_FOLDER_ID` to the `kb` folder on this deployment so omitted `drive_ls`, `drive_find`, and `drive_grep` run in `kb`, and a named `folder_id` or `file_id` outside `kb` is `AUTHORIZATION_ERROR`, in `scripts/deploy-cloud-run.sh`, `mcp/server.py`, `mcp/tool_schema.py`, and host copy (AC-FR-021, FR-001, FR-010, FR-030)
+- [X] T064 Fail closed so only `kb` and its descendants are readable and nothing outside `kb` can be listed: require `DRIVE_ALLOWED_FOLDER_ID` (the server refuses to start when it is unset, blank, an alias such as `root` / `appDataFolder`, or not a plain id; the chain returns `AUTHORIZATION_ERROR` `no_allowed_folder` for every call without it, before any Google call); delete `DRIVE_DEFAULT_FOLDER_ID` and `apply_default_search_folder`; refuse a call that names no folder or file after the rewrite (`whole_grant_refused`), raise `AUTHORIZATION_ERROR` from `drive_ls` with no folder instead of listing My Drive `root`, stop `walk_files` from listing the whole grant, and remove `list_all` from the Drive client, port, and fake; check the allow-list first for every named `folder_id` / `file_id` / `file_ids` so an id outside `kb`, a missing id, and an ungranted id all get the same `AUTHORIZATION_ERROR` (`FILE_NOT_FOUND` only for an id proven inside `kb` that then misses); accept only the argument keys each tool body reads (`TOOL_ARGUMENTS`, else `INVALID_ARGUMENT` before the chain) and stop blank ids from skipping the `kb` rewrite; drop listed children whose `parents` do not include the listed folder; pin the `kb` folder id in deploy, route all traffic to the newest revision, check it carries the allow-list, and delete older revisions without it, in `domain/retrieval_scope.py`, `access_control/chain.py`, `mcp/tools.py`, `mcp/server.py`, `mcp/tool_schema.py`, `infra/config.py`, `infra/google_drive/list.py`, `infra/google_drive/client.py`, `retrieval/ls.py`, `retrieval/ports.py`, `scripts/deploy-cloud-run.sh`, `.env.example`, and tests (AC-FR-021, AC-FR-023, AC-FR-024, FR-001, FR-010, FR-012, FR-030)
