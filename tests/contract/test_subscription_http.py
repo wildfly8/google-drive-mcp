@@ -74,7 +74,7 @@ def test_unpaid_authorize_redirects_to_subscribe(fake_drive: FakeDrive):
         assert "code=" not in authorize.headers["location"]
         page = client.get("/subscribe")
         assert page.status_code == 200
-        assert "Pay $20 / month" in page.text
+        assert "Pay $10 / month" in page.text
         assert "The same receipt email is not charged again." in page.text
         assert 'id="pay-form"' in page.text
         assert "Continue subscription" not in page.text
@@ -127,7 +127,7 @@ def test_setup_mentions_fee_when_paywall_on(fake_drive: FakeDrive):
     with _client(runtime) as client:
         page = client.get("/setup")
         assert page.status_code == 200
-        assert "$20" in page.text
+        assert "$10" in page.text
         assert 'href="/subscribe"' in page.text
         assert "/mcp" not in page.text
         assert "Always allow" not in page.text
@@ -216,7 +216,7 @@ def test_active_email_resumes_connect_without_a_new_charge(fake_drive: FakeDrive
         )
         assert missing.status_code == 404
         assert "nobody@example.com" not in missing.text
-        assert "Pay $20 / month" in missing.text
+        assert "Pay $10 / month" in missing.text
 
 
 def test_repeat_checkout_keeps_the_original_subscription(fake_drive: FakeDrive):

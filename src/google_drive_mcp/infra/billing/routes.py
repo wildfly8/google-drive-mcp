@@ -51,7 +51,7 @@ _SUBSCRIBE = """\
   </style>
 </head>
 <body>
-  <h1>onto-kb — $20 USD / month</h1>
+  <h1>onto-kb — $10 USD / month</h1>
   <p>Mandatory subscription to Connect this MCP from any AI chat app.
      You pay on Stripe’s checkout. This page never asks for a card. The operator’s
      bank details are not shown here.</p>
@@ -111,7 +111,7 @@ def subscribe_get(
         return page
     if not settings.mcp_subscription_required:
         status = (
-            "USD 20 per month for onto-kb. Checkout is not open yet because "
+            "USD 10 per month for onto-kb. Checkout is not open yet because "
             "the Stripe price is not connected to this server. "
             "The connector setup page is available."
         )
@@ -123,7 +123,7 @@ def subscribe_get(
         setup = ""
     else:
         status = (
-            "USD 20 each month until you cancel in the Stripe customer portal. "
+            "USD 10 each month until you cancel in the Stripe customer portal. "
             "An AI chat app that already finished Connect keeps working "
             "while the subscription is active. Another browser continues the same "
             "subscription. Pay opens Stripe only when this browser does not already "
@@ -131,7 +131,7 @@ def subscribe_get(
         )
         form = (
             '<form id="pay-form" method="post" action="/subscribe/checkout">'
-            '<button type="submit">Pay $20 / month</button></form>'
+            '<button type="submit">Pay $10 / month</button></form>'
             + browser_script()
         )
         setup = ""
@@ -217,7 +217,7 @@ async def subscribe_restore_post(
                 ),
                 form=(
                     '<form method="post" action="/subscribe/checkout">'
-                    '<button type="submit">Pay $20 / month</button></form>'
+                    '<button type="submit">Pay $10 / month</button></form>'
                 ),
                 setup="",
             ),

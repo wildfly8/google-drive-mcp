@@ -78,7 +78,7 @@ _LOCKED = """\
 </head>
 <body>
   <h1>Subscribe to onto-kb</h1>
-  <p><strong>$20 USD / month required.</strong> Connector setup is shown in this browser after Stripe Checkout.</p>
+  <p><strong>$10 USD / month required.</strong> Connector setup is shown in this browser after Stripe Checkout.</p>
   <p><a href="/subscribe">Pay on Stripe Checkout</a></p>
   <p>Cards are entered on Stripe, not here. This page does not show the operator’s bank details.</p>
 </body>

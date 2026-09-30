@@ -2,7 +2,7 @@
 
 ## Decision: Stripe Checkout + Billing (not PayPal)
 
-**Rationale**: Recurring $20/month, PCI hosted card form, Customer Portal for cancel, signed webhooks, and a customer id we can bind to MCP OAuth in the subscriber's browser. PayPal subscriptions are weaker for webhook-driven entitlement and for this OAuth binding.
+**Rationale**: Recurring $10/month, PCI hosted card form, Customer Portal for cancel, signed webhooks, and a customer id we can bind to MCP OAuth in the subscriber's browser. PayPal subscriptions are weaker for webhook-driven entitlement and for this OAuth binding.
 
 **Alternatives considered**: PayPal Subscriptions (deferred); crypto (no consumer checkout, poor Claude UX); invoicing with bank transfer (exposes owner bank — rejected).
 
@@ -10,7 +10,7 @@
 
 **Rationale**: USD payouts require a verified Stripe account and a bank (or debit) payout destination. That is disclosure **to Stripe**, not to connector users. This origin will not collect or display owner bank details.
 
-**Alternatives considered**: Anonymous cash-out — not offered (illegal/unworkable for a public $20 fee).
+**Alternatives considered**: Anonymous cash-out — not offered (illegal/unworkable for a public $10 fee).
 
 ## Decision: Stripe is source of truth; no subscriber database
 

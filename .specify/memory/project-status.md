@@ -11,7 +11,7 @@ SDD phase changes (specify / plan / tasks / implement / converge).
 | Next command | `/speckit-converge` |
 | Feature specs | `specs/001-access-control/spec.md`, `specs/002-retrieval-core/spec.md`, `specs/003-connect-counter/spec.md`, `specs/004-paid-subscription/spec.md` |
 | Git branch | Spec dirs are documentation ids |
-| Implementation | Package in `src/google_drive_mcp/`; paywall is Stripe Checkout $20/month. Active subscriptions keep any connected AI chat app working. `/subscribe` shows only the Pay button. Another browser continues the same subscription: a saved passkey skips Checkout, and a repeat Checkout for the same receipt email is refunded. Public site: `https://wisdomspringtech.github.io/` |
+| Implementation | Package in `src/google_drive_mcp/`; paywall is Stripe Checkout $10/month. Active subscriptions keep any connected AI chat app working. `/subscribe` shows only the Pay button. Another browser continues the same subscription: a saved passkey skips Checkout, and a repeat Checkout for the same receipt email is refunded. Public site: `https://wisdomspringtech.github.io/` |
 | Pull requests | Only when the user explicitly asks |
 
 v1 scope remains: one authenticated Google identity, read-only agentic

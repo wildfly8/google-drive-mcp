@@ -11,7 +11,7 @@ def test_business_page_names_wisdomspringtech_and_offer():
     assert "WisdomSpringTech" in html
     assert "onto-kb" in html
     assert "AI chat app" in html
-    assert "$20" in html or "USD 20" in html
+    assert "$10" in html or "USD 10" in html
     assert html.count(SUBSCRIBE) == 1
     assert "/setup" not in html
     lowered = html.lower()

@@ -21,11 +21,11 @@
 ## Phase 4: US4 setup copy
 
 - [x] T008 `/setup` paywall copy + README + `.env.example` + deploy env/secrets
-- [x] T009 Tests that `/setup` mentions $20 and `/stats` has no billing PII
+- [x] T009 Tests that `/setup` mentions $10 and `/stats` has no billing PII
 
 ## Phase 5: US5 public business page
 
-- [x] T011 Static public page `docs/index.html` named WisdomSpringTech, $20/month onto-kb, one subscribe link, no connector URL, no bank/card
+- [x] T011 Static public page `docs/index.html` named WisdomSpringTech, $10/month onto-kb, one subscribe link, no connector URL, no bank/card
 - [x] T012 Publish `https://wisdomspringtech.github.io/` from `WisdomSpringTech/wisdomspringtech.github.io` (not `https://wildfly8.github.io/google-drive-mcp/`, which 404s). This repo's token cannot push that org repo.
 - [x] T013 Test the page source contains the business name, price, one subscribe link, and no `/setup` URL
 - [x] T014 Active subscribers keep access without another checkout: 400-day refresh rotation while Stripe is active, receipt-email restore with no second charge, resume in-progress `/authorize`
@@ -33,3 +33,9 @@
 ## Phase 6: Pickup
 
 - [x] T010 Update `.specify/memory/project-status.md` and `.cursor/rules/spec-kit-sdd.mdc`
+
+## Phase 7: Price change to USD 10 (2026-09-30)
+
+- [x] T015 Lower the advertised price from USD 20 to USD 10 per month in `/subscribe`, `/setup`, tests, `docs/index.html`, README, and the 004 artifacts
+- [ ] T016 Operator: create a USD 10 / month recurring Price on the onto-kb product in Stripe, add it as a new `STRIPE_PRICE_ID` secret version, and redeploy. The code never sets the amount; Checkout charges whatever that Price says. Existing subscribers stay on the old Price until moved in Stripe.
+- [ ] T017 Republish `index.html` on `WisdomSpringTech/wisdomspringtech.github.io` with the USD 10 copy from `docs/index.html` (this repo's token cannot push that org repo)
