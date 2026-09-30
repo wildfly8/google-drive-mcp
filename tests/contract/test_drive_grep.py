@@ -661,7 +661,8 @@ def test_next_cursor_argument_resumes_the_same_grep(authz):
         authz,
     )
     # The contract helper above uses a tiny max_files via drive_grep(). Here the
-    # default cap is 40, so force the cap through the same resume argument the host sends.
+    # default cap is GREP_MAX_FILES, so force the cap through the same resume
+    # argument the host sends.
     from google_drive_mcp.retrieval.grep import drive_grep
 
     limited = drive_grep(drive, pattern="hit", folder_id="top", budget=Budget(max_files=1))

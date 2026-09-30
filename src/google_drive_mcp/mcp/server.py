@@ -463,7 +463,8 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
                 le=MAX_MATCHES_MAX,
                 description=(
                     f"Stop after this many matches ({MAX_MATCHES_MIN}–{MAX_MATCHES_MAX}). "
-                    "A match is one line (location.occurrences counts hits on it). "
+                    "In text files a match is one line (location.occurrences counts hits on it); "
+                    "in Sheets, Slides, CSV and JSON each hit is a match. "
                     "Hitting the cap → PARTIAL."
                 ),
             ),

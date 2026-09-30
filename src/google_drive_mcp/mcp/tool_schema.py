@@ -146,7 +146,7 @@ Example (don't): {"pattern": "Assuming I understand the function of Foundations 
 If both folder_id and file_ids are set, every named id must be in that folder or the call is AUTHORIZATION_ERROR.
 Folder walks scan known-smaller files first and keep the 20 MB per-file cap. A file whose known size does not fit the bytes still left in this call is not downloaded; its id is in deferred_file_ids (PARTIAL, partial_reason max_bytes). Grep each deferred id on its own. One call scans up to 200 files. If the listing finished and more files remain because of that file cap or the time cap, the result field next_cursor is the last file id actually scanned. Pass that value back as the next_cursor argument (cursor is the same argument). Do not pass next_cursor with file_ids. A single file_id is never deferred.
 
-One match per matching line: location.line and location.offset give the first hit on that line, location.occurrences counts every hit on it, and the context holds the whole line. max_matches counts lines, not hits. Sheets, Slides, CSV and JSON have no lines: each hit is its own match with a 200-character window and location.offset only.
+One match per matching line: location.line and location.offset give the first hit on that line, location.occurrences counts every hit on it, and the context holds the whole line. max_matches counts lines, not hits. Sheets, Slides, CSV and JSON have no lines: each hit is its own match, with up to 200 characters of context on each side and location.offset only.
 
 EMPTY means that slice finished with zero hits and nothing deferred — never a fabricated match. files_scanned and bytes_scanned are always present.
 
