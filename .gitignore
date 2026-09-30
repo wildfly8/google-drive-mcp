@@ -7,6 +7,9 @@
 !.cursor/rules/**
 !.cursor/environment.json
 
+# Personal Claude Code settings (permission rules for this machine)
+.claude/settings.local.json
+
 # Environment and secrets
 .env
 .env.*
