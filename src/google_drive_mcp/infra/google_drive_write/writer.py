@@ -22,9 +22,13 @@ class GoogleDriveWriter:
         self._service = build("drive", "v3", credentials=credentials, cache_discovery=False)
 
     def replace_text(self, file_id: str, text: str, upload_mime: str) -> dict:
-        """Replace the whole body of one file with text."""
+        """Replace the whole body of one file with text.
+
+        Resumable, because Drive refuses simple uploads over 5 MB and kb chat
+        exports run up to 20 MB. execute() sends every chunk.
+        """
         media = MediaIoBaseUpload(
-            io.BytesIO(text.encode("utf-8")), mimetype=upload_mime, resumable=False
+            io.BytesIO(text.encode("utf-8")), mimetype=upload_mime, resumable=True
         )
         try:
             resource = (

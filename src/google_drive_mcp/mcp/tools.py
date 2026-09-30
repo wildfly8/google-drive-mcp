@@ -20,9 +20,12 @@ from google_drive_mcp.infra.mcp_auth.tokens import (
     verify_authorization_header,
 )
 from google_drive_mcp.kb_write import (
+    MAX_REPLACEMENTS_DEFAULT,
     WRITE_TOOLS,
+    drive_replace,
     drive_trash,
     drive_write,
+    validate_replace_args,
     validate_trash_args,
     validate_write_args,
 )
@@ -70,6 +73,9 @@ TOOL_ARGUMENTS: dict[str, frozenset[str]] = {
         }
     ),
     "drive_write": frozenset({"file_id", "content"}),
+    "drive_replace": frozenset(
+        {"file_id", "pattern", "replacement", "regex", "case_sensitive", "max_replacements"}
+    ),
     "drive_trash": frozenset({"file_id"}),
     SCOPE_PROBE: frozenset({"folder_id", "file_id", "file_ids"}),
 }
@@ -128,6 +134,8 @@ def handle_tool(
             validate_grep_args(args)
         elif name == "drive_write":
             validate_write_args(args)
+        elif name == "drive_replace":
+            validate_replace_args(args)
         elif name == "drive_trash":
             validate_trash_args(args)
     except DomainError as exc:
@@ -191,6 +199,19 @@ def handle_tool(
                 runtime.write_client(),
                 file_id=args["file_id"],
                 content=args["content"],
+                request_id=request_id,
+            )
+        if name == "drive_replace":
+            limit = args.get("max_replacements")
+            return drive_replace(
+                drive,
+                runtime.write_client(),
+                file_id=args["file_id"],
+                pattern=args["pattern"],
+                replacement=args.get("replacement") or "",
+                regex=bool(args.get("regex", False)),
+                case_sensitive=args.get("case_sensitive") is not False,
+                max_replacements=limit if limit is not None else MAX_REPLACEMENTS_DEFAULT,
                 request_id=request_id,
             )
         if name == "drive_trash":
