@@ -1377,3 +1377,49 @@ def test_large_unsupported_files_are_skipped_not_deferred():
     )
     assert "deferred_file_ids" not in result
     assert result["partial_reason"] == "unsupported_skipped"
+
+
+def test_fresh_call_with_a_429_cut_listing_scans_nothing():
+    from fakes.fake_drive import FOLDER_MIME, FakeFile
+    from google_drive_mcp.domain.budgets import Budget
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    drive = _folder(_md("a", "hit"), _md("big", "hit " + "x" * 500))
+    drive.add(FakeFile(id="sub", name="Sub", mime_type=FOLDER_MIME, parents=["top"]))
+    deep = _md("deep", "hit")
+    deep.parents = ["sub"]
+    drive.add(deep)
+    drive.rate_limit_lists_after = 1  # listing "top" works, "sub" gets a 429
+    result = drive_grep(
+        drive,
+        pattern="hit",
+        folder_id="top",
+        budget=Budget(max_files=200, max_bytes_per_operation=100),
+    )
+    # Repeating this call is the host's next step, so nothing from the
+    # partial listing is returned now to come back twice.
+    assert result["status"] == "PARTIAL"
+    assert result["partial_reason"] == "RATE_LIMITED"
+    assert result["matches"] == []
+    assert "deferred_file_ids" not in result
+    assert "next_cursor" not in result
+
+
+def test_single_file_continuation_429_keeps_its_cursor():
+    from fakes.fake_drive import FakeDrive
+    from google_drive_mcp.domain.errors import DomainError
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    drive = FakeDrive()
+    drive.add(_lines_file("five", 5))
+    drive.rate_limit_export = True  # get_media raises 429 too
+    resumed = drive_grep(drive, pattern="hit", file_ids=["five"], cursor="five:2")
+    assert resumed["status"] == "PARTIAL"
+    assert resumed["partial_reason"] == "RATE_LIMITED"
+    assert resumed["next_cursor"] == "five:2"
+    try:
+        drive_grep(drive, pattern="hit", file_ids=["five"])
+    except DomainError as exc:
+        assert exc.error.category.value == "RATE_LIMITED"
+    else:
+        raise AssertionError("a fresh single-file 429 stays an error")

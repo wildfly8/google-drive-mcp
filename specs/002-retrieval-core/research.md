@@ -68,7 +68,7 @@ Descendant checks use domain `is_within_scope` (same helper as Access Control). 
 Rate-limit split (locked):
 
 - Walk (ls/find/grep) cut by Google 429, even with zero items: `status: PARTIAL`, `partial_reason: RATE_LIMITED`. Never `EMPTY`/`COMPLETE`. Never `ErrorEnvelope.category = RATE_LIMITED`.
-- Single-file read/export 429 with no prefix: `ErrorEnvelope` `RATE_LIMITED`.
+- Single-file read/export 429 with no prefix: `ErrorEnvelope` `RATE_LIMITED`. A `drive_grep` continuation on a single file is the exception: it returns `PARTIAL` `RATE_LIMITED` with its own cursor so its place is kept (FR-038a).
 
 Prefix vs hard cap: usable prefix → `PARTIAL`; no prefix → `RESOURCE_LIMIT`.
 

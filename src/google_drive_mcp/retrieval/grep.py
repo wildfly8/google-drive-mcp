@@ -236,9 +236,11 @@ def drive_grep(
             seen.add(item.id)
             files.append(item)
     listing_complete = not walk.time_exceeded and not walk.rate_limited
-    if cursor and not listing_complete:
-        # The cursor cannot be placed in a cut listing. Hand it back instead
-        # of rescanning from the first file and repeating earlier matches.
+    if not listing_complete:
+        # A cut listing scans nothing: the cursor cannot be placed in it, and
+        # a fresh call is repeated as a whole, so any match or deferral from
+        # a partial listing would come back twice. A continuation hands back
+        # its own cursor.
         reason = (
             PartialReason.RATE_LIMITED if walk.rate_limited else PartialReason.max_execution_time
         )
@@ -248,12 +250,12 @@ def drive_grep(
             matches=[],
             files_scanned=0,
             bytes_scanned=0,
-            next_cursor=cursor,
+            next_cursor=cursor or None,
         )
     if not single_target:
         files.sort(key=_sort_key)
     skip = 0
-    if cursor and listing_complete:
+    if cursor:
         resume_id, skip = split_cursor(cursor)
         ids = [item.id for item in files]
         if resume_id not in ids:
@@ -305,9 +307,10 @@ def drive_grep(
                 index += 1
                 continue
             pending = [item.id for item in files[index:] if not item.is_folder]
-            # After a finished listing every call handles at least one file, so
-            # a time stop always progresses. A cut listing gets no exemption.
-            if (files_scanned or not listing_complete) and budget.time_exceeded():
+            # Every call handles at least one file (the listing is finished
+            # here), so a time stop always progresses. Read the clock once.
+            late = budget.time_exceeded()
+            if files_scanned and late:
                 if pending:
                     resume = True
                     stopped_for_time = True
@@ -339,24 +342,19 @@ def drive_grep(
                     continue
             try:
                 exported = None
-                # Resuming inside a file usually stops in it again, so do not
-                # download later files until the scan has moved past it.
-                # Nor once the deadline has passed: only this file is scanned.
-                if (
-                    prefetch is not None
-                    and not (index == 0 and skip)
-                    and not budget.time_exceeded()
-                ):
-                    prefetch.top_up(
-                        index,
-                        bytes_left=budget.max_bytes_per_operation - budget.bytes_seen,
-                        files_left=budget.max_files - files_scanned,
-                    )
+                if prefetch is not None:
+                    # Resuming inside a file usually stops in it again, so do
+                    # not download later files until the scan has moved past
+                    # it; nor once the deadline has passed (only this file is
+                    # scanned then). A file already fetched ahead is still used.
+                    if not (index == 0 and skip) and not late:
+                        prefetch.top_up(
+                            index,
+                            bytes_left=budget.max_bytes_per_operation - budget.bytes_seen,
+                            files_left=budget.max_files - files_scanned,
+                        )
                     exported = prefetch.take(
-                        index,
-                        timeout=None
-                        if listing_complete and not files_scanned
-                        else budget.time_left(),
+                        index, timeout=budget.time_left() if files_scanned else None
                     )
                 if exported is None:
                     exported = fetch(file)
@@ -377,7 +375,9 @@ def drive_grep(
                     index += 1
                     continue
                 if exc.error.category == ErrorCategory.RATE_LIMITED:
-                    if single_target:
+                    # A fresh single-file call reports the 429 as an error; a
+                    # continuation keeps its place with a PARTIAL and cursor.
+                    if single_target and not cursor:
                         raise
                     download_rate_limited = True
                     break
@@ -469,17 +469,17 @@ def drive_grep(
             last_unsupported or ErrorCategory.UNSUPPORTED_MIME_TYPE, request_id=request_id
         )
 
+    # The listing is finished here (a cut listing returned early).
     next_cursor = None
-    if listing_complete:
-        if match_cursor:
-            next_cursor = match_cursor
-        elif resume or download_rate_limited:
-            # Continue after the last file scanned, or from the incoming cursor
-            # when this call stopped before scanning anything.
-            next_cursor = last_scanned_id or cursor or None
-            if next_cursor is None:
-                # Nothing was scanned; repeating the call revisits every file.
-                deferred = []
+    if match_cursor:
+        next_cursor = match_cursor
+    elif resume or download_rate_limited:
+        # Continue after the last file scanned, or from the incoming cursor
+        # when this call stopped before scanning anything.
+        next_cursor = last_scanned_id or cursor or None
+        if next_cursor is None:
+            # Nothing was scanned; repeating the call revisits every file.
+            deferred = []
     if next_cursor and deferred:
         # The next call revisits every file after the cursor, so a file there
         # is not also handed back for its own call.
