@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import threading
+
+import google_auth_httplib2
 from google.auth.exceptions import RefreshError
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from googleapiclient.http import build_http
 
 from google_drive_mcp.domain.budgets import Budget
 from google_drive_mcp.domain.google_errors import GoogleApiError
@@ -57,11 +61,25 @@ class GoogleDriveClient:
     """Read-only Drive client. No mutating files() methods."""
 
     def __init__(self, credentials: Credentials) -> None:
+        self._credentials = credentials
         self._service = build("drive", "v3", credentials=credentials, cache_discovery=False)
+        self._local = threading.local()
         self.metadata_get_count = 0
         self.content_export_count = 0
         self.content_media_count = 0
         self.list_time_exceeded = False
+
+    def _http(self) -> google_auth_httplib2.AuthorizedHttp:
+        """This thread's authorized connection.
+
+        httplib2.Http is not thread-safe, and drive_grep downloads small files on
+        worker threads, so every request runs on a connection owned by its thread.
+        """
+        http = getattr(self._local, "http", None)
+        if http is None:
+            http = google_auth_httplib2.AuthorizedHttp(self._credentials, http=build_http())
+            self._local.http = http
+        return http
 
     @property
     def content_count(self) -> int:
@@ -73,7 +91,7 @@ class GoogleDriveClient:
             resource = (
                 self._service.files()
                 .get(fileId=file_id, fields=_FIELDS, supportsAllDrives=True)
-                .execute()
+                .execute(http=self._http())
             )
         except (HttpError, RefreshError) as exc:
             _reraise_google(exc)
@@ -130,7 +148,7 @@ class GoogleDriveClient:
                 }
                 if page_token:
                     kwargs["pageToken"] = page_token
-                response = self._service.files().list(**kwargs).execute()
+                response = self._service.files().list(**kwargs).execute(http=self._http())
                 for resource in response.get("files", []):
                     items.append(_meta(resource))
                     if budget is not None and budget.time_exceeded():
@@ -150,7 +168,7 @@ class GoogleDriveClient:
             data = (
                 self._service.files()
                 .export(fileId=file_id, mimeType=mime)
-                .execute()
+                .execute(http=self._http())
             )
         except RefreshError as exc:
             _reraise_google(exc)
@@ -168,7 +186,7 @@ class GoogleDriveClient:
     def get_media(self, file_id: str) -> bytes:
         self.content_media_count += 1
         try:
-            data = self._service.files().get_media(fileId=file_id).execute()
+            data = self._service.files().get_media(fileId=file_id).execute(http=self._http())
         except (HttpError, RefreshError) as exc:
             _reraise_google(exc)
             raise

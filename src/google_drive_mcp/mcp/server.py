@@ -325,7 +325,11 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
                 default=None,
                 ge=MAX_RESULTS_MIN,
                 le=MAX_RESULTS_MAX,
-                description=f"Max candidates {MAX_RESULTS_MIN}–{MAX_RESULTS_MAX}. Remaining descendants → PARTIAL.",
+                description=(
+                    f"Max matching files {MAX_RESULTS_MIN}–{MAX_RESULTS_MAX}. Matching folders are "
+                    "listed but not counted, unless mime_type is the folder type. "
+                    "More matches remaining → PARTIAL."
+                ),
             ),
         ] = None,
         ctx: Context | None = None,
@@ -433,9 +437,10 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
             Field(
                 default="",
                 description=(
-                    "Continue a previous drive_grep. Paste that result's next_cursor value here. "
-                    "Use the same pattern and the same folder_id (omit folder_id again to stay in kb). "
-                    "Do not send this together with file_ids. Empty string starts at the first file."
+                    "Continue a previous drive_grep. Paste that result's next_cursor value here exactly "
+                    "(a file id, or file_id:N to continue inside that file). Use the same pattern, "
+                    "max_matches and scope: the same folder_id (omit it again to stay in kb) or the "
+                    "same file_ids. Empty string starts at the first file."
                 ),
             ),
         ] = "",
@@ -465,7 +470,7 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
                     f"Stop after this many matches ({MAX_MATCHES_MIN}–{MAX_MATCHES_MAX}). "
                     "In text files a match is one line (location.occurrences counts hits on it); "
                     "in Sheets, Slides, CSV and JSON each hit is a match. "
-                    "Hitting the cap → PARTIAL."
+                    "Stopping at the cap with more left → PARTIAL with next_cursor."
                 ),
             ),
         ] = None,
@@ -475,7 +480,7 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
                 default="",
                 description=(
                     "Alias of next_cursor. Paste the previous drive_grep result's next_cursor value. "
-                    "If both names are set they must be the same file id. Empty string starts at the first file."
+                    "If both names are set they must be the same value. Empty string starts at the first file."
                 ),
             ),
         ] = "",

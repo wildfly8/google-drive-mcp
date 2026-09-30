@@ -300,3 +300,13 @@ Filename discovery and folder grep coverage (FR-012, FR-036, FR-038). No persist
 
 - [X] T065 Return one `drive_grep` match per (file, line) in line-oriented text: first hit's `matched_text` and `location.offset`, `location.occurrences` for every hit on that line, so `max_matches` counts lines; Sheets, Slides, CSV and JSON keep one match per hit, in `infra/exact_search/regex.py`, `mcp/tool_schema.py`, `mcp/server.py`, and tests (FR-034, FR-039)
 - [X] T066 Raise the `drive_grep` file cap to 200 per call (`GREP_MAX_FILES`); the 20 MB operation cap and the 25 s time cap still bound each call, and `drive_ls` / `drive_find` keep 40, in `domain/budgets.py`, `retrieval/grep.py`, `mcp/tool_schema.py`, and tests (FR-038, FR-104)
+
+---
+
+## Phase 17: Whole-kb grep in fewer calls
+
+- [X] T067 Download small files ahead in `drive_grep` on 8 worker threads (known size up to 2 MB, at most 16 files and 8 MB ahead, within the operation's remaining bytes), keep the scan in size order so matches equal a sequential scan, never download a deferred file, bound each wait by the time left, and give every thread its own authorized connection, in `retrieval/grep.py`, `domain/budgets.py`, `infra/google_drive/client.py`, and tests (FR-031, FR-038, FR-038a)
+- [X] T068 Return `next_cursor` after a `max_matches` stop (`file_id:N` inside a file with more matches, the file id when later files remain), make an exact fill with nothing left `COMPLETE`, and accept a cursor with `file_ids` when it names one of them, in `retrieval/grep.py`, `mcp/server.py`, `mcp/tool_schema.py`, and tests (FR-030, FR-039a)
+- [X] T069 Return `next_cursor` (last file scanned) when a download is rate-limited after the listing finished, in `retrieval/grep.py` and tests (FR-038a)
+- [X] T070 Stop matching folders from consuming `drive_find` `max_results` unless `mime_type` is the folder type, in `retrieval/find.py`, `mcp/server.py`, `mcp/tool_schema.py`, and tests (FR-012)
+

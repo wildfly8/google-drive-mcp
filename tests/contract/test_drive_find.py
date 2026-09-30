@@ -92,3 +92,36 @@ def test_find_max_results_counts_matches_only():
     assert capped["status"] == "PARTIAL"
     assert capped["partial_reason"] == "max_files"
     assert len(capped["candidates"]) == 1
+
+
+def test_find_folders_do_not_consume_max_results():
+    from fakes.fake_drive import DOC_MIME, FOLDER_MIME, FakeDrive, FakeFile
+    from google_drive_mcp.retrieval.find import drive_find
+
+    drive = FakeDrive()
+    drive.add(FakeFile(id="root", name="My Drive", mime_type=FOLDER_MIME, parents=[]))
+    drive.add(FakeFile(id="top", name="Top", mime_type=FOLDER_MIME, parents=["root"]))
+    drive.add(FakeFile(id="f-dir", name="activity-dir", mime_type=FOLDER_MIME, parents=["top"]))
+    drive.add(FakeFile(id="a-doc", name="activity-a", mime_type=DOC_MIME, parents=["f-dir"]))
+    drive.add(FakeFile(id="b-doc", name="activity-b", mime_type=DOC_MIME, parents=["top"]))
+    result = drive_find(drive, folder_id="top", name_pattern="activity", max_results=2)
+    assert result["status"] == "COMPLETE"
+    assert {c["file"]["id"] for c in result["candidates"]} == {"f-dir", "a-doc", "b-doc"}
+    unfiltered = drive_find(drive, folder_id="top", max_results=2)
+    assert unfiltered["status"] == "COMPLETE"
+    assert {c["file"]["id"] for c in unfiltered["candidates"]} == {"f-dir", "a-doc", "b-doc"}
+
+
+def test_find_counts_folders_when_asking_for_folders():
+    from fakes.fake_drive import FOLDER_MIME, FakeDrive, FakeFile
+    from google_drive_mcp.retrieval.find import drive_find
+
+    drive = FakeDrive()
+    drive.add(FakeFile(id="root", name="My Drive", mime_type=FOLDER_MIME, parents=[]))
+    drive.add(FakeFile(id="top", name="Top", mime_type=FOLDER_MIME, parents=["root"]))
+    drive.add(FakeFile(id="d1", name="one", mime_type=FOLDER_MIME, parents=["top"]))
+    drive.add(FakeFile(id="d2", name="two", mime_type=FOLDER_MIME, parents=["top"]))
+    capped = drive_find(drive, folder_id="top", mime_type=FOLDER_MIME, max_results=1)
+    assert capped["status"] == "PARTIAL"
+    assert capped["partial_reason"] == "max_files"
+    assert len(capped["candidates"]) == 1

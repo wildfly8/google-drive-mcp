@@ -9,6 +9,13 @@ MAX_FILES = 40
 # drive_grep scans up to this many files per call. The per-operation byte cap
 # and the time cap still bound the work; ls and find keep MAX_FILES.
 GREP_MAX_FILES = 200
+# drive_grep downloads small files ahead of the scan on worker threads: only a
+# known size up to GREP_PREFETCH_MAX_FILE_BYTES, at most GREP_PREFETCH_DEPTH
+# files and GREP_PREFETCH_WINDOW_BYTES ahead, so memory stays near a one-file scan.
+GREP_PREFETCH_WORKERS = 8
+GREP_PREFETCH_DEPTH = 16
+GREP_PREFETCH_MAX_FILE_BYTES = 2_000_000
+GREP_PREFETCH_WINDOW_BYTES = 8_000_000
 MAX_BYTES_PER_FILE = 20_000_000
 MAX_BYTES_PER_OPERATION = 20_000_000
 MAX_MATCHES = 50
@@ -35,6 +42,9 @@ class Budget:
 
     def __post_init__(self) -> None:
         self._start = float(self.clock())  # type: ignore[operator]
+
+    def time_left(self) -> float:
+        return self.max_execution_time - (float(self.clock()) - self._start)  # type: ignore[operator]
 
     def time_exceeded(self) -> bool:
         return (float(self.clock()) - self._start) >= self.max_execution_time  # type: ignore[operator]

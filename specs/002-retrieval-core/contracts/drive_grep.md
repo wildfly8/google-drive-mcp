@@ -15,7 +15,7 @@ Must run Access Control chain first.
     "pattern": { "type": "string", "minLength": 1, "description": "Exact phrase in exported bytes (literal unless regex=true). Short term of art, not the whole user question. Not Drive fullText." },
     "file_ids": { "type": "array", "items": { "type": "string" } },
     "folder_id": { "type": "string", "description": "Omit to search DRIVE_ALLOWED_FOLDER_ID (kb on this deployment). A named id outside kb, or one that does not exist, is AUTHORIZATION_ERROR." },
-    "next_cursor": { "type": "string", "description": "Previous result field next_cursor. Empty starts at the first file. Alias: cursor." },
+    "next_cursor": { "type": "string", "description": "Previous result field next_cursor, unchanged: a file id (continue after it) or file_id:N (continue inside it after its first N matches). Empty starts at the first file. Alias: cursor." },
     "cursor": { "type": "string", "description": "Alias of next_cursor." },
     "case_sensitive": { "type": "boolean", "default": true },
     "regex": { "type": "boolean", "default": false },
@@ -25,7 +25,7 @@ Must run Access Control chain first.
 }
 ```
 
-If both `file_ids` and `folder_id` are omitted (blank ids count as omitted), grep searches the required `DRIVE_ALLOWED_FOLDER_ID` (`kb` on this deployment). There is no whole-grant grep. A named folder or file that is not `kb` or a descendant is `AUTHORIZATION_ERROR`, whether it exists or not. `regex=false` → literal (`re.escape`). Invalid regex, out-of-range budgets, an argument not in this schema, `next_cursor` or `cursor` combined with `file_ids`, or a continuation id that is not a file id in a finished listing → `INVALID_ARGUMENT`. An empty `next_cursor` starts at the first file. Runtime engine failure after a valid compile → `SEARCH_ERROR`.
+If both `file_ids` and `folder_id` are omitted (blank ids count as omitted), grep searches the required `DRIVE_ALLOWED_FOLDER_ID` (`kb` on this deployment). There is no whole-grant grep. A named folder or file that is not `kb` or a descendant is `AUTHORIZATION_ERROR`, whether it exists or not. `regex=false` → literal (`re.escape`). Invalid regex, out-of-range budgets, an argument not in this schema, a cursor that names a file not in `file_ids` (when `file_ids` is set), a malformed `file_id:N` (N must be a positive integer), or a continuation id that is not a file id in a finished listing → `INVALID_ARGUMENT`. An empty `next_cursor` starts at the first file. Runtime engine failure after a valid compile → `SEARCH_ERROR`.
 
 A folder call scans known-smaller files first, up to 200 files per call (then `PARTIAL`, `partial_reason: max_files`, with `next_cursor`). The folder walk drops a listed child whose `parents` do not include the folder being listed. The per-file cap stays 20 MB, so one named `file_id` (including a ~19 MB `.mdx`) is exported in that call and is never placed in `deferred_file_ids`. A known size that does not fit the bytes left in the operation is not downloaded; that id and the larger tail are `deferred_file_ids`. Unknown size is not deferred only because remaining bytes are below 20 MB.
 
@@ -42,7 +42,7 @@ When **both** `folder_id` and `file_ids` are set: Access Control step 4 first ch
     "partial_reason": { "type": "string" },
     "files_scanned": { "type": "integer" },
     "bytes_scanned": { "type": "integer" },
-    "next_cursor": { "type": "string", "description": "Last file id scanned, when the listing finished and more non-deferred files remain" },
+    "next_cursor": { "type": "string", "description": "Set when the listing finished and more remains: the last file id scanned (file cap, time cap, download 429), the file id where max_matches stopped when later files remain, or file_id:N to continue inside that file" },
     "deferred_file_ids": { "type": "array", "items": { "type": "string" } },
     "matches": {
       "type": "array",
@@ -67,7 +67,7 @@ When **both** `folder_id` and `file_ids` are set: Access Control step 4 first ch
 }
 ```
 
-In line-oriented text (Docs, Markdown, plain text) each match is one line: `matched_text` and `location.offset` are the first hit, `location.occurrences` counts every hit on that line, the context holds the whole line, and `max_matches` counts lines. Sheets, Slides, CSV and JSON have no lines, so each hit is its own match, with up to 200 characters of context on each side. `files_scanned` and `bytes_scanned` are always present. No matches after a finished slice with nothing deferred → `EMPTY`, `matches: []` (never fabricate). Deferred files or a `next_cursor` mean `PARTIAL`, not `EMPTY`. `next_cursor` is set only when the listing finished and more non-deferred files remain because of `max_files` or `max_execution_time`. A listing cut by time or Google 429 does not include `next_cursor`. Identical bytes + identical params in this request → identical `matches`. Content discarded after the call. Walk cut by Google 429 → `PARTIAL`, `partial_reason: RATE_LIMITED` (even if `matches` is empty). Hosts grep each `deferred_file_ids` entry as its own `file_ids` call, and repeat the same pattern and scope with `cursor` when `next_cursor` is set.
+In line-oriented text (Docs, Markdown, plain text) each match is one line: `matched_text` and `location.offset` are the first hit, `location.occurrences` counts every hit on that line, the context holds the whole line, and `max_matches` counts lines. Sheets, Slides, CSV and JSON have no lines, so each hit is its own match, with up to 200 characters of context on each side. `files_scanned` and `bytes_scanned` are always present. No matches after a finished slice with nothing deferred → `EMPTY`, `matches: []` (never fabricate). Deferred files or a `next_cursor` mean `PARTIAL`, not `EMPTY`. `next_cursor` is set only when the listing finished and more remains: non-deferred files after the file cap, the time cap or a Google 429 on a download (the last file id scanned), or more matches after a `max_matches` stop (the file id when later files remain, `file_id:N` when that file has more after its first N matches). Stopping at exactly `max_matches` with nothing left is `COMPLETE`. A listing cut by time or Google 429 does not include `next_cursor`. Small files may be downloaded ahead on worker threads; matches are still taken in size order, so results do not depend on download timing. Identical bytes + identical params in this request → identical `matches`. Content discarded after the call. Walk cut by Google 429 → `PARTIAL`, `partial_reason: RATE_LIMITED` (even if `matches` is empty). Hosts grep each `deferred_file_ids` entry as its own `file_ids` call, and repeat the same pattern and scope with `cursor` when `next_cursor` is set.
 
 ## Unsupported files
 

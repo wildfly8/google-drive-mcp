@@ -11,6 +11,7 @@ from google_drive_mcp.infra.google_drive.client import GoogleDriveClient
 def test_list_stops_before_paging_when_time_budget_is_zero():
     client = GoogleDriveClient.__new__(GoogleDriveClient)
     client._service = MagicMock()
+    client._http = MagicMock()
     client.metadata_get_count = 0
     client.content_export_count = 0
     client.content_media_count = 0
@@ -28,6 +29,7 @@ def test_list_stops_before_paging_when_time_budget_is_zero():
 def test_list_children_query_includes_trashed_only_when_requested():
     client = GoogleDriveClient.__new__(GoogleDriveClient)
     client._service = MagicMock()
+    client._http = MagicMock()
     client.list_time_exceeded = False
     listing = client._service.files.return_value.list
     listing.return_value.execute.return_value = {"files": []}
@@ -39,3 +41,18 @@ def test_list_children_query_includes_trashed_only_when_requested():
     listing.return_value.execute.return_value = {"files": []}
     client.list_children("folder-a", include_trashed=True)
     assert listing.call_args.kwargs["q"] == "'folder-a' in parents"
+
+
+def test_each_thread_gets_its_own_authorized_connection():
+    import threading
+
+    from google.oauth2.credentials import Credentials
+
+    client = GoogleDriveClient(Credentials(token="t"))
+    main = client._http()
+    assert client._http() is main
+    other: list[object] = []
+    worker = threading.Thread(target=lambda: other.append(client._http()))
+    worker.start()
+    worker.join()
+    assert other and other[0] is not main

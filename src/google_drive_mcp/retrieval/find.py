@@ -6,7 +6,7 @@ from datetime import datetime
 
 from google_drive_mcp.domain.budgets import Budget
 from google_drive_mcp.domain.candidates import SearchCandidate
-from google_drive_mcp.domain.drive_file import DriveFile
+from google_drive_mcp.domain.drive_file import FOLDER_MIME, DriveFile
 from google_drive_mcp.domain.errors import DomainError, ErrorCategory
 from google_drive_mcp.domain.list_filter import ListFilter
 from google_drive_mcp.domain.operation import OperationStatus, PartialReason
@@ -93,6 +93,10 @@ def drive_find(
         request_id=request_id,
     )
     candidates: list[SearchCandidate] = []
+    # max_results counts matching files, not folders (FR-012), unless the call
+    # asks for folders by MIME type.
+    folders_count = mime_type == FOLDER_MIME
+    counted = 0
     for index, file in enumerate(walk.files):
         reason = _matches(
             file,
@@ -105,7 +109,10 @@ def drive_find(
         if reason is None:
             continue
         candidates.append(SearchCandidate(file=file, reason=reason))
-        if len(candidates) >= budget.max_files:
+        if file.is_folder and not folders_count:
+            continue
+        counted += 1
+        if counted >= budget.max_files:
             rest = walk.files[index + 1 :]
             if any(
                 _matches(
