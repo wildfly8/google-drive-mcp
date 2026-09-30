@@ -24,17 +24,6 @@ def mint_readonly_credentials(settings: Settings) -> Credentials:
     login can be reused without a second OAuth consent. Falls back to the
     three-field refresh-token mint used by the original deploy path.
     """
-    creds = build_credentials(settings, refresh_scopes=[DRIVE_READONLY_SCOPE])
-    _request_credentials.set(creds)
-    return creds
-
-
-def build_credentials(settings: Settings, *, refresh_scopes: list[str]) -> Credentials:
-    """Credentials from the deployment's Google secrets.
-
-    The ADC blob keeps the scopes it was granted. The refresh-token path asks
-    for ``refresh_scopes``.
-    """
     blob = settings.google_authorized_user_json.get_secret_value().strip()
     if blob:
         info = json.loads(blob)
@@ -56,10 +45,11 @@ def build_credentials(settings: Settings, *, refresh_scopes: list[str]) -> Crede
             token_uri="https://oauth2.googleapis.com/token",
             client_id=settings.google_client_id or None,
             client_secret=settings.google_client_secret.get_secret_value() or None,
-            scopes=list(refresh_scopes),
+            scopes=[DRIVE_READONLY_SCOPE],
         )
     # Unique per mint so isolation tests can distinguish objects.
     creds._mcp_request_key = str(uuid.uuid4())  # type: ignore[attr-defined]
+    _request_credentials.set(creds)
     return creds
 
 

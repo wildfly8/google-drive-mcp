@@ -64,11 +64,9 @@ class Runtime:
         drive: Any | None = None,
         telemetry: ConnectRecorder | None = None,
         billing: BillingGateway | None = None,
-        writer: Any | None = None,
     ) -> None:
         self.settings = settings
         self.drive = drive
-        self.writer = writer
         self.telemetry = telemetry or ConnectRecorder()
         self.billing = billing or InactiveBilling()
 
@@ -93,15 +91,6 @@ class Runtime:
 
     def active_drive(self) -> Any:
         return _request_drive.get() or self.drive
-
-    def write_client(self) -> Any:
-        """Drive writer for the temporary kb write tools. Tests inject one."""
-        if self.writer is not None:
-            return self.writer
-        from google_drive_mcp.infra.google_auth.write_token import mint_write_credentials
-        from google_drive_mcp.infra.google_drive_write.writer import GoogleDriveWriter
-
-        return GoogleDriveWriter(mint_write_credentials(self.settings))
 
 
 def authorize(

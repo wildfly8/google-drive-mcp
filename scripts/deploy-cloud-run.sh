@@ -143,12 +143,6 @@ DEPLOY_ENV="MCP_PUBLIC_URL=${CANONICAL_PUBLIC}"
 KB_FOLDER_ID="1qod47BRgPlRnXVboaJsElSNj1WkofLRQ"
 DEPLOY_ENV="${DEPLOY_ENV},DRIVE_ALLOWED_FOLDER_ID=${KB_FOLDER_ID}"
 DEPLOY_ENV="${DEPLOY_ENV},MCP_OAUTH_AUTO_APPROVE=true"
-# Temporary kb write tools (drive_write, drive_trash). Off unless this deploy
-# is run with DRIVE_WRITE_ENABLED=true; a later deploy without it turns them off.
-if [[ "${DRIVE_WRITE_ENABLED:-}" == "true" ]]; then
-  echo "DRIVE_WRITE_ENABLED=true: drive_write and drive_trash will be live for files in kb." >&2
-  DEPLOY_ENV="${DEPLOY_ENV},DRIVE_WRITE_ENABLED=true"
-fi
 DEPLOY_ENV="${DEPLOY_ENV},GOOGLE_CLOUD_PROJECT=${PROJECT}"
 DEPLOY_ENV="${DEPLOY_ENV},MCP_STATS_FROM_LOGS=true"
 if secret_exists STRIPE_SECRET_KEY && secret_exists STRIPE_PRICE_ID; then

@@ -39,17 +39,7 @@ from google_drive_mcp.infra.mcp_auth.tokens import (
     verify_authorization_header,
 )
 
-PROTECTED_TOOLS = frozenset(
-    {
-        "drive_ls",
-        "drive_find",
-        "drive_read",
-        "drive_grep",
-        "drive_write",
-        "drive_replace",
-        "drive_trash",
-    }
-)
+PROTECTED_TOOLS = frozenset({"drive_ls", "drive_find", "drive_read", "drive_grep"})
 
 OAUTH2_SECURITY_SCHEMES: list[dict[str, Any]] = [{"type": "oauth2", "scopes": [MCP_OAUTH_SCOPE]}]
 

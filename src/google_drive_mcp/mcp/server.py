@@ -45,7 +45,6 @@ from google_drive_mcp.infra.mcp_auth.setup import setup_get
 from google_drive_mcp.infra.mcp_auth.stats import stats_get, stats_snapshot
 from google_drive_mcp.infra.mcp_auth.provider import DriveMcpOAuthProvider
 from google_drive_mcp.infra.mcp_auth.tokens import MCP_OAUTH_SCOPE, issuer_url, resource_url
-from google_drive_mcp.kb_write import MAX_REPLACEMENTS_DEFAULT, MAX_REPLACEMENTS_LIMIT
 from google_drive_mcp.mcp.middleware import (
     Runtime,
     get_authorization,
@@ -61,17 +60,9 @@ from google_drive_mcp.mcp.tool_schema import (
     DRIVE_LS_TITLE,
     DRIVE_READ_DESCRIPTION,
     DRIVE_READ_TITLE,
-    DRIVE_REPLACE_DESCRIPTION,
-    DRIVE_REPLACE_TITLE,
-    DRIVE_TRASH_DESCRIPTION,
-    DRIVE_TRASH_TITLE,
-    DRIVE_WRITE_DESCRIPTION,
-    DRIVE_WRITE_TITLE,
     READ_ONLY_ANNOTATIONS,
     SERVER_DESCRIPTION,
     SERVER_INSTRUCTIONS,
-    WRITE_ANNOTATIONS,
-    WRITE_INSTRUCTIONS,
     SERVER_NAME,
     SERVER_TITLE,
     SERVER_VERSION,
@@ -155,7 +146,7 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
         SERVER_NAME,
         title=SERVER_TITLE,
         description=SERVER_DESCRIPTION,
-        instructions=WRITE_INSTRUCTIONS if settings.drive_write_enabled else SERVER_INSTRUCTIONS,
+        instructions=SERVER_INSTRUCTIONS,
         version=SERVER_VERSION,
         auth=_auth_settings(settings),
         auth_server_provider=provider,
@@ -501,107 +492,8 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
             ctx,
         )
 
-    if settings.drive_write_enabled:
-        _register_write_tools(server, _dispatch, tool_meta)
-
     server._runtime = runtime  # type: ignore[attr-defined]
     return server
-
-
-def _register_write_tools(server: MCPServer, dispatch: Any, tool_meta: dict[str, Any]) -> None:
-    """Temporary drive_write / drive_replace / drive_trash for kb files (DRIVE_WRITE_ENABLED)."""
-
-    @server.tool(
-        title=DRIVE_WRITE_TITLE,
-        description=DRIVE_WRITE_DESCRIPTION,
-        annotations=WRITE_ANNOTATIONS,
-        meta=tool_meta,
-        structured_output=False,
-    )
-    def drive_write(
-        file_id: Annotated[
-            str,
-            Field(pattern=FILE_ID_PATTERN, description="Drive file id of one file inside kb."),
-        ],
-        content: Annotated[
-            str,
-            Field(description="The full new text. It replaces everything in the file."),
-        ],
-        ctx: Context | None = None,
-    ) -> Any:
-        return dispatch("drive_write", {"file_id": file_id, "content": content}, ctx)
-
-    @server.tool(
-        title=DRIVE_REPLACE_TITLE,
-        description=DRIVE_REPLACE_DESCRIPTION,
-        annotations=WRITE_ANNOTATIONS,
-        meta=tool_meta,
-        structured_output=False,
-    )
-    def drive_replace(
-        file_id: Annotated[
-            str,
-            Field(pattern=FILE_ID_PATTERN, description="Drive file id of one file inside kb."),
-        ],
-        pattern: Annotated[
-            str,
-            Field(
-                min_length=1,
-                max_length=1000,
-                description="Text to find (literal unless regex=true), e.g. a phone number.",
-            ),
-        ],
-        replacement: Annotated[
-            str,
-            Field(max_length=10_000, description='Text that replaces each match. "" deletes it.'),
-        ] = "",
-        regex: Annotated[
-            bool, Field(description="If true, pattern is a regular expression.")
-        ] = False,
-        case_sensitive: Annotated[
-            bool, Field(description="Case-sensitive match. Default true.")
-        ] = True,
-        max_replacements: Annotated[
-            int,
-            Field(
-                ge=1,
-                le=MAX_REPLACEMENTS_LIMIT,
-                description=(
-                    "Upper bound on matches. More matches than this → nothing changes. "
-                    f"Default {MAX_REPLACEMENTS_DEFAULT}."
-                ),
-            ),
-        ] = MAX_REPLACEMENTS_DEFAULT,
-        ctx: Context | None = None,
-    ) -> Any:
-        return dispatch(
-            "drive_replace",
-            {
-                "file_id": file_id,
-                "pattern": pattern,
-                "replacement": replacement,
-                "regex": regex,
-                "case_sensitive": case_sensitive,
-                "max_replacements": max_replacements,
-            },
-            ctx,
-        )
-
-    @server.tool(
-        title=DRIVE_TRASH_TITLE,
-        description=DRIVE_TRASH_DESCRIPTION,
-        annotations=WRITE_ANNOTATIONS,
-        meta=tool_meta,
-        structured_output=False,
-    )
-    def drive_trash(
-        file_id: Annotated[
-            str,
-            Field(pattern=FILE_ID_PATTERN, description="Drive file id of one file inside kb."),
-        ],
-        ctx: Context | None = None,
-    ) -> Any:
-        return dispatch("drive_trash", {"file_id": file_id}, ctx)
 
 
 class _AuthorizationHeaderMiddleware:
