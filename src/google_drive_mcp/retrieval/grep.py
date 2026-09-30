@@ -191,6 +191,22 @@ def _valid_skip(count: str) -> bool:
     )
 
 
+def _files_needed(match_room: int, matches_so_far: int, files_searched: int) -> int:
+    """How many more files this call is likely to scan before max_matches.
+
+    Files fetched ahead past a max_matches stop are thrown away and fetched
+    again by the next call, so look ahead only as far as the hits seen so far
+    suggest: match_room + 1 before any file is searched, no limit while no
+    file has matched, and the room divided by the hits per file after that.
+    """
+    if files_searched == 0:
+        return match_room + 1
+    if matches_so_far == 0:
+        return GREP_PREFETCH_DEPTH
+    per_file = matches_so_far / files_searched
+    return int(match_room / per_file) + 1
+
+
 def _searchable(file) -> bool:
     return not file.is_folder and default_representation(file.mime_type, file.name) is not None
 
@@ -351,7 +367,12 @@ def drive_grep(
                         prefetch.top_up(
                             index,
                             bytes_left=budget.max_bytes_per_operation - budget.bytes_seen,
-                            files_left=budget.max_files - files_scanned,
+                            files_left=min(
+                                budget.max_files - files_scanned,
+                                _files_needed(
+                                    budget.max_matches - len(matches), len(matches), searchable
+                                ),
+                            ),
                         )
                     exported = prefetch.take(
                         index, timeout=budget.time_left() if files_scanned else None
@@ -443,8 +464,12 @@ def drive_grep(
                 match_cursor = file.id
                 break
             if not single_target and (exported.truncated or budget.bytes_exhausted()):
-                deferred.extend(item.id for item in files[index + 1 :] if _searchable(item))
-                break
+                rest = [item.id for item in files[index + 1 :] if _searchable(item)]
+                if rest:
+                    deferred.extend(rest)
+                    break
+                # Nothing searchable is left out: an unsupported tail is still
+                # counted as skipped, and the slice can finish.
             index += 1
     finally:
         if prefetch is not None:
@@ -513,7 +538,7 @@ def drive_grep(
             partial_reason=PartialReason.max_matches.value,
             **common,
         )
-    if truncated_bytes or deferred or budget.bytes_exhausted():
+    if truncated_bytes or deferred:
         return _coverage(
             status=OperationStatus.PARTIAL,
             partial_reason=PartialReason.max_bytes.value,

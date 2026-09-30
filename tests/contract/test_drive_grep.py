@@ -1423,3 +1423,42 @@ def test_single_file_continuation_429_keeps_its_cursor():
         assert exc.error.category.value == "RATE_LIMITED"
     else:
         raise AssertionError("a fresh single-file 429 stays an error")
+
+
+def test_max_matches_chains_do_not_refetch_files_downloaded_ahead():
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    base = _text_folder(20, "one hit here")
+    slow = _SlowDrive(base, lambda fid: 0.0)
+    cursor = None
+    calls = 0
+    while True:
+        calls += 1
+        result = drive_grep(slow, pattern="hit", folder_id="top", max_matches=1, cursor=cursor)
+        cursor = result.get("next_cursor")
+        if not cursor:
+            break
+    assert calls == 20
+    # Look-ahead is sized by the match room left, so each call downloads at
+    # most its own file plus one ahead (before: up to 8 per call).
+    assert len(slow.fetched) <= 2 * 20
+
+
+def test_last_workspace_file_over_the_byte_cap_finishes_the_slice():
+    from fakes.fake_drive import DOC_MIME, FakeFile
+    from google_drive_mcp.domain.budgets import Budget
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    drive = _folder(
+        _md("a", "hit"),
+        FakeFile(id="doc", name="Doc", mime_type=DOC_MIME, content="hit " + "x" * 300),
+    )
+    result = drive_grep(
+        drive,
+        pattern="hit",
+        folder_id="top",
+        budget=Budget(max_files=200, max_bytes_per_operation=100),
+    )
+    assert result["status"] == "COMPLETE"
+    assert "partial_reason" not in result
+    assert {m["file_id"] for m in result["matches"]} == {"a", "doc"}
