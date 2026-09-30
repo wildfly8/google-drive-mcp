@@ -188,10 +188,12 @@ if [[ -z "$LATEST" || "$(revision_folder "$LATEST")" != "$KB_FOLDER_ID" ]]; then
   exit 1
 fi
 echo "Routing all traffic to ${LATEST} and clearing traffic tags..."
+# --to-latest, not a pinned revision name: pinned traffic keeps the next
+# deploy's new revision at 0%, while latest follows each new deploy.
 gcloud run services update-traffic "$SERVICE" \
   --project="$PROJECT" \
   --region="$REGION" \
-  --to-revisions="${LATEST}=100" \
+  --to-latest \
   --clear-tags \
   --quiet >/dev/null
 echo "Deleting every older revision..."
