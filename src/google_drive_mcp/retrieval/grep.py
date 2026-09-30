@@ -28,6 +28,7 @@ from google_drive_mcp.infra.google_drive.export import (
     SLIDE_MIME,
     default_representation,
     fetch_text,
+    is_workspace,
     representation_for,
 )
 from google_drive_mcp.infra.google_drive.list import walk_files
@@ -42,8 +43,20 @@ def _line_oriented(representation: str) -> bool:
     return representation.startswith("text/plain") or representation.startswith("text/")
 
 
+def _blob_size(file) -> int | None:
+    """Bytes a download of this file returns, when Drive knows it.
+
+    Drive reports a storage size for Docs, Sheets and Slides too, but their
+    text export has a different length, so they count as unknown size.
+    """
+    if file.size is None or is_workspace(file.mime_type):
+        return None
+    return file.size
+
+
 def _sort_key(file) -> tuple:
-    return (file.size is None, file.size or 0, file.id)
+    size = _blob_size(file)
+    return (size is None, size or 0, file.id)
 
 
 def _coverage(
@@ -83,9 +96,13 @@ class _Prefetch:
     always fits when the scan reaches it and a deferred file is never downloaded.
     """
 
-    def __init__(self, files: list, fetch: Callable[[object], ExportResult]) -> None:
+    def __init__(
+        self, files: list, fetch: Callable[[object], ExportResult], *, max_file_bytes: int
+    ) -> None:
         self._files = files
         self._fetch = fetch
+        # A file the per-file cap would truncate ends the scan, so never fetch one ahead.
+        self._max_file_bytes = min(GREP_PREFETCH_MAX_FILE_BYTES, max_file_bytes)
         self._pool = ThreadPoolExecutor(
             max_workers=GREP_PREFETCH_WORKERS, thread_name_prefix="grep-fetch"
         )
@@ -99,8 +116,9 @@ class _Prefetch:
         room = min(GREP_PREFETCH_WINDOW_BYTES, bytes_left) - sum(self._sizes[i] for i in queued)
         depth = min(GREP_PREFETCH_DEPTH, files_left)
         count = len(queued)
-        # Unsupported files also use up the scan's file budget.
-        slots = files_left - (self._next - index) - len(queued)
+        # Every position already passed (queued, or unsupported) uses up one
+        # of the scan's files.
+        slots = files_left - (self._next - index)
         while self._next < len(self._files) and count < depth and slots > 0:
             file = self._files[self._next]
             if file.is_folder:
@@ -110,16 +128,12 @@ class _Prefetch:
                 slots -= 1
                 self._next += 1
                 continue
-            if (
-                room <= 0
-                or file.size is None
-                or file.size > GREP_PREFETCH_MAX_FILE_BYTES
-                or file.size > room
-            ):
+            size = _blob_size(file)
+            if room <= 0 or size is None or size > self._max_file_bytes or size > room:
                 break
             self._futures[self._next] = self._pool.submit(self._fetch, file)
-            self._sizes[self._next] = file.size
-            room -= file.size
+            self._sizes[self._next] = size
+            room -= size
             count += 1
             slots -= 1
             self._next += 1
@@ -127,17 +141,17 @@ class _Prefetch:
     def has(self, index: int) -> bool:
         return index in self._futures
 
-    def take(self, index: int, timeout: float) -> ExportResult | None:
+    def take(self, index: int, timeout: float | None) -> ExportResult | None:
         """The prefetched text for files[index], or None if it was not fetched ahead.
 
-        Raises TimeoutError when the download does not finish in time, and the
-        fetch's own error (for example DomainError) when it failed.
+        Raises TimeoutError when the download does not finish in time (None
+        waits for it), and the fetch's own error (for example DomainError).
         """
         future = self._futures.pop(index, None)
         self._sizes.pop(index, None)
         if future is None:
             return None
-        return future.result(timeout=max(timeout, 0.0))
+        return future.result(timeout=None if timeout is None else max(timeout, 0.0))
 
     def discard(self, index: int) -> None:
         future = self._futures.pop(index, None)
@@ -222,6 +236,20 @@ def drive_grep(
             seen.add(item.id)
             files.append(item)
     listing_complete = not walk.time_exceeded and not walk.rate_limited
+    if cursor and not listing_complete:
+        # The cursor cannot be placed in a cut listing. Hand it back instead
+        # of rescanning from the first file and repeating earlier matches.
+        reason = (
+            PartialReason.RATE_LIMITED if walk.rate_limited else PartialReason.max_execution_time
+        )
+        return _coverage(
+            status=OperationStatus.PARTIAL,
+            partial_reason=reason.value,
+            matches=[],
+            files_scanned=0,
+            bytes_scanned=0,
+            next_cursor=cursor,
+        )
     if not single_target:
         files.sort(key=_sort_key)
     skip = 0
@@ -259,7 +287,11 @@ def drive_grep(
             name=file.name,
         )
 
-    prefetch = None if single_target else _Prefetch(files, fetch)
+    prefetch = (
+        None
+        if single_target
+        else _Prefetch(files, fetch, max_file_bytes=budget.max_bytes_per_file)
+    )
     try:
         index = 0
         while index < len(files):
@@ -273,7 +305,9 @@ def drive_grep(
                 index += 1
                 continue
             pending = [item.id for item in files[index:] if not item.is_folder]
-            if budget.time_exceeded():
+            # Every call handles at least one file after a finished listing,
+            # so repeating a call or following its cursor always progresses.
+            if files_scanned and budget.time_exceeded():
                 if pending:
                     resume = True
                     stopped_for_time = True
@@ -287,7 +321,8 @@ def drive_grep(
                 if remaining <= 0:
                     deferred.extend(pending)
                     break
-                if file.size is not None and file.size > remaining:
+                size = _blob_size(file)
+                if size is not None and size > remaining:
                     deferred.append(file.id)
                     if prefetch is not None:
                         prefetch.discard(index)
@@ -310,7 +345,9 @@ def drive_grep(
                         bytes_left=budget.max_bytes_per_operation - budget.bytes_seen,
                         files_left=budget.max_files - files_scanned,
                     )
-                    exported = prefetch.take(index, timeout=budget.time_left())
+                    exported = prefetch.take(
+                        index, timeout=budget.time_left() if files_scanned else None
+                    )
                 if exported is None:
                     exported = fetch(file)
             except TimeoutError:
@@ -338,9 +375,13 @@ def drive_grep(
             files_scanned += 1
             last_scanned_id = file.id
             searchable += 1
-            # Charge Drive's size when known: prefetch plans with the same
-            # number, so what it fetched always fits (FR-038a).
-            budget.note_bytes(file.size if file.size is not None else exported.byte_length)
+            # Charge a blob's Drive size: prefetch plans with the same number,
+            # so what it fetched always fits (FR-038a). Exports and truncated
+            # downloads are charged what was actually read.
+            size = _blob_size(file)
+            budget.note_bytes(
+                size if size is not None and not exported.truncated else exported.byte_length
+            )
             if exported.truncated:
                 truncated_bytes = True
             match_room = budget.max_matches - len(matches)
@@ -426,6 +467,9 @@ def drive_grep(
             # Continue after the last file scanned, or from the incoming cursor
             # when this call stopped before scanning anything.
             next_cursor = last_scanned_id or cursor or None
+            if next_cursor is None:
+                # Nothing was scanned; repeating the call revisits every file.
+                deferred = []
     if next_cursor and deferred:
         # The next call revisits every file after the cursor, so a file there
         # is not also handed back for its own call.

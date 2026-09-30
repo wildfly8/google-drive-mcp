@@ -95,11 +95,12 @@ def drive_find(
     candidates: list[SearchCandidate] = []
     # max_results counts matching files, not folders (FR-012), unless the call
     # asks for folders by MIME type. Matching folders get their own cap of the
-    # same size, so the response stays bounded.
+    # same size, so the response stays bounded. Hitting either cap while more
+    # matches remain is PARTIAL.
     folders_count = mime_type == FOLDER_MIME
     counted = 0
     folders_listed = 0
-    for index, file in enumerate(walk.files):
+    for file in walk.files:
         reason = _matches(
             file,
             name_pattern=name_pattern,
@@ -115,25 +116,12 @@ def drive_find(
                 walk.truncated = True
                 continue
             folders_listed += 1
-            candidates.append(SearchCandidate(file=file, reason=reason))
-            continue
-        candidates.append(SearchCandidate(file=file, reason=reason))
-        counted += 1
-        if counted >= budget.max_files:
-            rest = walk.files[index + 1 :]
-            if any(
-                _matches(
-                    later,
-                    name_pattern=name_pattern,
-                    mime_type=mime_type,
-                    modified_after=after,
-                    modified_before=before,
-                    include_trashed=trashed,
-                )
-                for later in rest
-            ):
+        else:
+            if counted >= budget.max_files:
                 walk.truncated = True
-            break
+                continue
+            counted += 1
+        candidates.append(SearchCandidate(file=file, reason=reason))
 
     payload = [c.to_wire() for c in candidates]
     if walk.rate_limited:

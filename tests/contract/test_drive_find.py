@@ -140,3 +140,22 @@ def test_find_matching_folders_have_their_own_cap():
     assert result["status"] == "PARTIAL"
     assert result["partial_reason"] == "max_files"
     assert len(result["candidates"]) == 2
+
+
+def test_find_file_cap_stops_the_walk_and_reports_partial():
+    from fakes.fake_drive import DOC_MIME, FOLDER_MIME, FakeDrive, FakeFile
+    from google_drive_mcp.retrieval.find import drive_find
+
+    drive = FakeDrive()
+    drive.add(FakeFile(id="root", name="My Drive", mime_type=FOLDER_MIME, parents=[]))
+    drive.add(FakeFile(id="top", name="Top", mime_type=FOLDER_MIME, parents=["root"]))
+    drive.add(FakeFile(id="a-doc", name="plan-a", mime_type=DOC_MIME, parents=["top"]))
+    drive.add(FakeFile(id="b-doc", name="plan-b", mime_type=DOC_MIME, parents=["top"]))
+    drive.add(FakeFile(id="z-dir", name="plan-dir", mime_type=FOLDER_MIME, parents=["top"]))
+    # The walk stops listing at the file cap, so a folder listed after it may
+    # be omitted; the result says so with PARTIAL.
+    result = drive_find(drive, folder_id="top", name_pattern="plan", max_results=1)
+    files = [c for c in result["candidates"] if not c["file"]["is_folder"]]
+    assert len(files) == 1
+    assert result["status"] == "PARTIAL"
+    assert result["partial_reason"] == "max_files"

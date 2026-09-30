@@ -389,8 +389,10 @@ def test_folder_export_429_preserves_matches_already_found(runtime, fake_drive, 
     )
     assert result["status"] == "PARTIAL"
     assert result["partial_reason"] == "RATE_LIMITED"
-    assert result["matches"]
-    assert {m["file_id"] for m in result["matches"]} == {"text-file"}
+    # Matches found before the 429 are kept (Docs, sized unknown, sort after
+    # the blobs), and the finished listing gives a cursor to resume from.
+    assert "text-file" in {m["file_id"] for m in result["matches"]}
+    assert result["next_cursor"]
 
 
 def test_text_blob_get_media_429_on_folder_grep_is_partial(authz):
@@ -1179,3 +1181,105 @@ def test_resuming_inside_a_file_does_not_download_later_files():
     )
     assert result["next_cursor"] == "aa:4"
     assert slow.fetched == ["aa"]
+
+
+def test_every_call_scans_a_file_after_a_slow_listing():
+    import time
+
+    from google_drive_mcp.domain.budgets import Budget
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    base = _text_folder(4, "nothing here")
+
+    class _SlowList(_SlowDrive):
+        def list_children(self, *args, **kwargs):
+            time.sleep(0.25)
+            return self._drive.list_children(*args, **kwargs)
+
+    slow = _SlowList(base, lambda fid: 0.1)
+    cursor = None
+    calls = 0
+    while True:
+        calls += 1
+        result = drive_grep(
+            slow,
+            pattern="absent",
+            folder_id="top",
+            cursor=cursor,
+            budget=Budget(max_files=200, max_execution_time=0.3),
+        )
+        assert result["files_scanned"] >= 1
+        cursor = result.get("next_cursor")
+        if not cursor:
+            break
+        assert calls < 10
+    assert result["status"] == "EMPTY"
+
+
+def test_workspace_drive_size_is_not_used_as_export_length():
+    from fakes.fake_drive import DOC_MIME, FakeFile
+    from google_drive_mcp.domain.budgets import Budget
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    class _HeavyDoc(FakeFile):
+        def metadata_dict(self) -> dict:
+            data = super().metadata_dict()
+            data["size"] = 50_000_000  # storage size, e.g. embedded images
+            return data
+
+    drive = _folder(
+        _md("note", "hit"),
+        _HeavyDoc(id="doc", name="Doc", mime_type=DOC_MIME, content="hit in the doc"),
+    )
+    slow = _SlowDrive(drive, lambda fid: 0.0)
+    result = drive_grep(
+        slow,
+        pattern="hit",
+        folder_id="top",
+        budget=Budget(max_files=200, max_bytes_per_operation=1000),
+    )
+    assert "deferred_file_ids" not in result
+    assert {m["file_id"] for m in result["matches"]} == {"note", "doc"}
+    assert result["bytes_scanned"] == len("hit") + len("hit in the doc")
+
+
+def test_truncated_file_is_charged_the_bytes_read():
+    from fakes.fake_drive import FakeDrive
+    from google_drive_mcp.domain.budgets import Budget
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    drive = FakeDrive()
+    drive.add(_md("long", "x" * 500))
+    result = drive_grep(
+        drive, pattern="absent", file_ids=["long"], budget=Budget(max_bytes_per_file=100)
+    )
+    assert result["bytes_scanned"] == 100
+    assert result["partial_reason"] == "max_bytes"
+
+
+def test_continuation_with_a_cut_listing_keeps_its_cursor():
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    drive = _text_folder(3, "hit")
+    drive.rate_limit_lists_after = 0
+    result = drive_grep(drive, pattern="hit", folder_id="top", cursor="note-000")
+    assert result["status"] == "PARTIAL"
+    assert result["partial_reason"] == "RATE_LIMITED"
+    assert result["next_cursor"] == "note-000"
+    assert result["matches"] == []
+
+
+def test_files_the_per_file_cap_would_truncate_are_not_fetched_ahead():
+    from google_drive_mcp.domain.budgets import Budget
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    drive = _folder(_md("a", "x" * 10), _md("b", "y" * 200), _md("c", "z" * 300))
+    slow = _SlowDrive(drive, lambda fid: 0.0)
+    drive_grep(
+        slow,
+        pattern="absent",
+        folder_id="top",
+        budget=Budget(max_files=200, max_bytes_per_file=100),
+    )
+    assert slow.threads.get("b", "MainThread") == "MainThread"
+    assert slow.threads.get("c", "MainThread") == "MainThread"
