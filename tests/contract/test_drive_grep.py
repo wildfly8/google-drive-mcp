@@ -1013,3 +1013,169 @@ def test_download_rate_limit_after_listing_keeps_a_cursor():
     resumed = drive_grep(base, pattern="absent", folder_id="top", cursor=result["next_cursor"])
     assert resumed["status"] == "EMPTY"
     assert resumed["files_scanned"] == 1
+
+
+def _folder(*files):
+    from fakes.fake_drive import FOLDER_MIME, FakeDrive, FakeFile
+
+    drive = FakeDrive()
+    drive.add(FakeFile(id="root", name="My Drive", mime_type=FOLDER_MIME, parents=[]))
+    drive.add(FakeFile(id="top", name="Top", mime_type=FOLDER_MIME, parents=["root"]))
+    for item in files:
+        item.parents = ["top"]
+        drive.add(item)
+    return drive
+
+
+def _md(file_id: str, content: str):
+    from fakes.fake_drive import FakeFile
+
+    return FakeFile(id=file_id, name=f"{file_id}.md", mime_type="text/markdown", content=content)
+
+
+def test_repeated_file_ids_are_scanned_once_and_cursors_finish():
+    from fakes.fake_drive import FakeDrive
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    drive = FakeDrive()
+    drive.add(_lines_file("aaa", 3))
+    drive.add(_lines_file("bbb", 1))
+    ids = ["aaa", "aaa", "bbb"]
+    seen = []
+    cursor = None
+    for _ in range(10):
+        result = drive_grep(drive, pattern="hit", file_ids=ids, max_matches=2, cursor=cursor)
+        seen.extend((m["file_id"], m["location"]["line"]) for m in result["matches"])
+        cursor = result.get("next_cursor")
+        if not cursor:
+            break
+    assert cursor is None
+    assert sorted(seen) == [("aaa", 1), ("aaa", 2), ("aaa", 3), ("bbb", 1)]
+
+
+def test_no_cursor_when_only_unsupported_files_remain():
+    from fakes.fake_drive import FakeFile
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    drive = _folder(
+        _md("a", "hit 1\nhit 2"),
+        # Larger than a.md, so it sorts after it.
+        FakeFile(id="z", name="z.png", mime_type="image/png", content=b"\x89PNG" + b"." * 60),
+    )
+    result = drive_grep(drive, pattern="hit", folder_id="top", max_matches=2)
+    assert "next_cursor" not in result
+    assert result["partial_reason"] == "unsupported_skipped"
+    assert len(result["matches"]) == 2
+    # A continuation slice left with only unsupported files is PARTIAL, not an error.
+    tail = drive_grep(drive, pattern="hit", folder_id="top", cursor="a")
+    assert tail["status"] == "PARTIAL"
+    assert tail["partial_reason"] == "unsupported_skipped"
+
+
+def test_cursor_after_a_download_429_does_not_also_defer_revisited_files():
+    from fakes.fake_drive import DOC_MIME, FakeFile
+    from google_drive_mcp.domain.budgets import Budget
+    from google_drive_mcp.domain.google_errors import GoogleApiError
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    class _UnsizedDoc(FakeFile):
+        def metadata_dict(self) -> dict:
+            data = super().metadata_dict()
+            data["size"] = None
+            return data
+
+    drive = _folder(
+        _md("small", "x" * 10),
+        _md("big", "x" * 500),
+        _UnsizedDoc(id="doc", name="Doc", mime_type=DOC_MIME, content="text"),
+    )
+
+    class _Limited(_SlowDrive):
+        def export(self, file_id: str, mime: str) -> str:
+            raise GoogleApiError(429)
+
+    result = drive_grep(
+        _Limited(drive, lambda fid: 0.0),
+        pattern="absent",
+        folder_id="top",
+        budget=Budget(max_files=200, max_bytes_per_operation=100),
+    )
+    assert result["partial_reason"] == "RATE_LIMITED"
+    assert result["next_cursor"] == "small"
+    # "big" comes after the cursor, so the next call handles it; it is not
+    # also returned for its own call.
+    assert "deferred_file_ids" not in result
+
+
+def test_oversized_or_deep_cursor_counts():
+    from fakes.fake_drive import FakeDrive
+    from google_drive_mcp.retrieval.grep import drive_grep, grep_resume_cursor
+    from google_drive_mcp.domain.errors import DomainError
+
+    for bad in ("five:" + "9" * 11, "five:" + "1" * 5000, "five:١٢"):
+        try:
+            grep_resume_cursor({"cursor": bad})
+        except DomainError as exc:
+            assert exc.error.category.value == "INVALID_ARGUMENT"
+        else:
+            raise AssertionError(bad)
+    drive = FakeDrive()
+    drive.add(_lines_file("five", 5))
+    deep = drive_grep(drive, pattern="hit", file_ids=["five"], cursor="five:9999999999")
+    assert deep["status"] == "EMPTY"
+    assert deep["matches"] == []
+
+
+def test_invalid_utf8_does_not_make_a_prefetched_file_deferred():
+    from fakes.fake_drive import FakeFile
+    from google_drive_mcp.domain.budgets import Budget
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    drive = _folder(
+        FakeFile(id="a", name="a.txt", mime_type="text/plain", content=b"\xff" * 300),
+        FakeFile(id="b", name="b.txt", mime_type="text/plain", content="b" * 301),
+        FakeFile(id="c", name="c.txt", mime_type="text/plain", content="c" * 302),
+        FakeFile(id="d", name="d.txt", mime_type="text/plain", content="d" * 303),
+    )
+    slow = _SlowDrive(drive, lambda fid: 0.0)
+    result = drive_grep(
+        slow,
+        pattern="absent",
+        folder_id="top",
+        budget=Budget(max_files=200, max_bytes_per_operation=1000),
+    )
+    assert result["deferred_file_ids"] == ["d"]
+    assert "d" not in slow.fetched
+    assert result["bytes_scanned"] == 903
+
+
+def test_prefetch_counts_unsupported_files_against_max_files():
+    from fakes.fake_drive import FakeFile
+    from google_drive_mcp.domain.budgets import Budget
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    drive = _folder(
+        FakeFile(id="bin-1", name="1.bin", mime_type="application/octet-stream", content=b"\x00"),
+        FakeFile(id="bin-2", name="2.bin", mime_type="application/octet-stream", content=b"\x01"),
+        *[_md(f"md-{n}", "x" * (10 + n)) for n in range(5)],
+    )
+    slow = _SlowDrive(drive, lambda fid: 0.0)
+    result = drive_grep(slow, pattern="absent", folder_id="top", budget=Budget(max_files=3))
+    assert result["partial_reason"] == "max_files"
+    assert slow.fetched == ["md-0"]
+
+
+def test_resuming_inside_a_file_does_not_download_later_files():
+    from fakes.fake_drive import FakeDrive
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    drive = FakeDrive()
+    drive.add(_lines_file("aa", 6))
+    drive.add(_lines_file("bb", 7))
+    drive.add(_lines_file("cc", 8))
+    slow = _SlowDrive(drive, lambda fid: 0.0)
+    result = drive_grep(
+        slow, pattern="hit", file_ids=["aa", "bb", "cc"], max_matches=2, cursor="aa:2"
+    )
+    assert result["next_cursor"] == "aa:4"
+    assert slow.fetched == ["aa"]

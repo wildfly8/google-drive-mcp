@@ -125,3 +125,18 @@ def test_find_counts_folders_when_asking_for_folders():
     assert capped["status"] == "PARTIAL"
     assert capped["partial_reason"] == "max_files"
     assert len(capped["candidates"]) == 1
+
+
+def test_find_matching_folders_have_their_own_cap():
+    from fakes.fake_drive import FOLDER_MIME, FakeDrive, FakeFile
+    from google_drive_mcp.retrieval.find import drive_find
+
+    drive = FakeDrive()
+    drive.add(FakeFile(id="root", name="My Drive", mime_type=FOLDER_MIME, parents=[]))
+    drive.add(FakeFile(id="top", name="Top", mime_type=FOLDER_MIME, parents=["root"]))
+    for n in range(5):
+        drive.add(FakeFile(id=f"d{n}", name=f"notes-{n}", mime_type=FOLDER_MIME, parents=["top"]))
+    result = drive_find(drive, folder_id="top", name_pattern="notes", max_results=2)
+    assert result["status"] == "PARTIAL"
+    assert result["partial_reason"] == "max_files"
+    assert len(result["candidates"]) == 2

@@ -327,7 +327,8 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
                 le=MAX_RESULTS_MAX,
                 description=(
                     f"Max matching files {MAX_RESULTS_MIN}–{MAX_RESULTS_MAX}. Matching folders are "
-                    "listed but not counted, unless mime_type is the folder type. "
+                    "listed under their own cap of the same size, unless mime_type is the folder "
+                    "type. "
                     "More matches remaining → PARTIAL."
                 ),
             ),
@@ -439,8 +440,8 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
                 description=(
                     "Continue a previous drive_grep. Paste that result's next_cursor value here exactly "
                     "(a file id, or file_id:N to continue inside that file). Use the same pattern, "
-                    "max_matches and scope: the same folder_id (omit it again to stay in kb) or the "
-                    "same file_ids. Empty string starts at the first file."
+                    "case_sensitive, regex and scope: the same folder_id (omit it again to stay in "
+                    "kb) or the same file_ids. Empty string starts at the first file."
                 ),
             ),
         ] = "",

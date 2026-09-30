@@ -33,11 +33,17 @@ def search_text(
     line_oriented: bool,
     context_lines: int,
     remaining: int,
+    skip: int = 0,
 ) -> list[RawMatch]:
+    """Up to ``remaining`` matches after the first ``skip``.
+
+    Skipped matches are only counted, never built, so a deep continuation
+    cursor costs time proportional to the matches passed over, not memory.
+    """
     try:
         if line_oriented:
-            return _line_matches(text, compiled, context_lines, remaining)
-        return _window_matches(text, compiled, remaining)
+            return _line_matches(text, compiled, context_lines, remaining, skip)
+        return _window_matches(text, compiled, remaining, skip)
     except re.error as exc:
         raise DomainError.of(ErrorCategory.SEARCH_ERROR) from exc
     except RecursionError as exc:
@@ -45,7 +51,7 @@ def search_text(
 
 
 def _line_matches(
-    text: str, compiled: re.Pattern[str], context_lines: int, remaining: int
+    text: str, compiled: re.Pattern[str], context_lines: int, remaining: int, skip: int = 0
 ) -> list[RawMatch]:
     """One match per matching line; further hits on that line only raise occurrences.
 
@@ -54,7 +60,12 @@ def _line_matches(
     """
     lines = text.splitlines()
     found: list[RawMatch] = []
+    skipped = 0
     for index, line in enumerate(lines):
+        if skipped < skip:
+            if compiled.search(line) is not None:
+                skipped += 1
+            continue
         first: re.Match[str] | None = None
         occurrences = 0
         for match in compiled.finditer(line):
@@ -81,9 +92,15 @@ def _line_matches(
     return found
 
 
-def _window_matches(text: str, compiled: re.Pattern[str], remaining: int) -> list[RawMatch]:
+def _window_matches(
+    text: str, compiled: re.Pattern[str], remaining: int, skip: int = 0
+) -> list[RawMatch]:
     found: list[RawMatch] = []
+    skipped = 0
     for match in compiled.finditer(text):
+        if skipped < skip:
+            skipped += 1
+            continue
         lo = max(0, match.start() - WINDOW_CHARS)
         hi = min(len(text), match.end() + WINDOW_CHARS)
         found.append(

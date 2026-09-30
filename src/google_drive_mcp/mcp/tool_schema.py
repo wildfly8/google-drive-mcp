@@ -37,7 +37,7 @@ Loop (repeat with different terms if needed):
 3. drive_read for the full text of one file_id
 4. If status is PARTIAL, continue; do not treat the result as exhaustive.
    drive_grep may include next_cursor and deferred_file_ids.
-   - next_cursor: call drive_grep again with that exact value in the next_cursor argument (cursor is an alias). Same pattern and max_matches. Same folder_id (or omit it again), or the same file_ids. The value is a file id, or file_id:N to continue inside that file after a max_matches stop.
+   - next_cursor: call drive_grep again with that exact value in the next_cursor argument (cursor is an alias). Same pattern, case_sensitive and regex. Same folder_id (or omit it again), or the same file_ids. The value is a file id, or file_id:N to continue inside that file after a max_matches stop.
    - deferred_file_ids: those files were not downloaded. Call drive_grep once per id (a single file_id is never deferred; each call still stops at 20 MB).
 5. If status is EMPTY, that slice finished with zero hits — change the phrase or scope. Do not invent hits. Do not treat EMPTY as covering deferred_file_ids; a deferral is PARTIAL.
 
@@ -98,7 +98,7 @@ name_pattern is NOT a glob: "activity" matches activity-2025.mdx; "*activity*" l
 Example (do): {"name_pattern": "activity-2025", "max_results": 40}
 Example (don't): {"name_pattern": "what role does pure mathematics play in the philosophical foundations of mathematics?"} — that is a question, not a filename.
 
-Returns: status, candidates[{file, reason, discovery_method}]. file has id/name/mime/modified_time/source_url (drive:{id}, not http), never content. max_results counts matching files; matching folders are listed but not counted unless mime_type is the folder type. Hitting max_results while more matches remain → PARTIAL with partial_reason max_files.
+Returns: status, candidates[{file, reason, discovery_method}]. file has id/name/mime/modified_time/source_url (drive:{id}, not http), never content. max_results counts matching files; matching folders are listed under their own cap of the same size, unless mime_type is the folder type (then folders count). Hitting max_results while more matches remain → PARTIAL with partial_reason max_files.
 """
 
 DRIVE_READ_TITLE = "Read current file text"
@@ -146,7 +146,7 @@ Example (don't): {"pattern": "Assuming I understand the function of Foundations 
 If both folder_id and file_ids are set, every named id must be in that folder or the call is AUTHORIZATION_ERROR.
 Folder walks scan known-smaller files first and keep the 20 MB per-file cap. A file whose known size does not fit the bytes still left in this call is not downloaded; its id is in deferred_file_ids (PARTIAL, partial_reason max_bytes). Grep each deferred id on its own. One call scans up to 200 files. A single file_id is never deferred.
 
-Continuing: when a call stops early and the listing finished, the result has next_cursor. Pass it back unchanged as the next_cursor argument (cursor is the same argument) with the same pattern, max_matches and scope (same folder_id, or the same file_ids). After the file cap, the time cap or a Google rate limit it is the last file id scanned; after max_matches it is that file id when later files remain, or file_id:N to continue inside that file after its first N matches. Stopping at exactly max_matches with nothing left is COMPLETE, not PARTIAL.
+Continuing: when a call stops early and the listing finished, the result has next_cursor. Pass it back unchanged as the next_cursor argument (cursor is the same argument) with the same pattern, case_sensitive, regex and scope (same folder_id, or the same file_ids). After the file cap, the time cap or a Google rate limit it is the last file id scanned; after max_matches it is that file id when later files remain, or file_id:N to continue inside that file after its first N matches. Stopping at exactly max_matches with nothing left is COMPLETE, not PARTIAL.
 
 One match per matching line: location.line and location.offset give the first hit on that line, location.occurrences counts every hit on it, and the context holds the whole line. max_matches counts lines, not hits. Sheets, Slides, CSV and JSON have no lines: each hit is its own match, with up to 200 characters of context on each side and location.offset only.
 

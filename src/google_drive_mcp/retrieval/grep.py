@@ -78,7 +78,9 @@ class _Prefetch:
     depend on which download finishes first. Only supported files with a known
     size up to GREP_PREFETCH_MAX_FILE_BYTES are fetched ahead, at most
     GREP_PREFETCH_DEPTH files and GREP_PREFETCH_WINDOW_BYTES at once, and never
-    more bytes than the operation has left.
+    more bytes than the operation has left. The scan charges a file with a
+    known size by that size, the same number used here, so a file fetched ahead
+    always fits when the scan reaches it and a deferred file is never downloaded.
     """
 
     def __init__(self, files: list, fetch: Callable[[object], ExportResult]) -> None:
@@ -97,18 +99,33 @@ class _Prefetch:
         room = min(GREP_PREFETCH_WINDOW_BYTES, bytes_left) - sum(self._sizes[i] for i in queued)
         depth = min(GREP_PREFETCH_DEPTH, files_left)
         count = len(queued)
-        while self._next < len(self._files) and count < depth:
+        # Unsupported files also use up the scan's file budget.
+        slots = files_left - (self._next - index) - len(queued)
+        while self._next < len(self._files) and count < depth and slots > 0:
             file = self._files[self._next]
-            if file.is_folder or default_representation(file.mime_type, file.name) is None:
+            if file.is_folder:
                 self._next += 1
                 continue
-            if file.size is None or file.size > GREP_PREFETCH_MAX_FILE_BYTES or file.size > room:
+            if default_representation(file.mime_type, file.name) is None:
+                slots -= 1
+                self._next += 1
+                continue
+            if (
+                room <= 0
+                or file.size is None
+                or file.size > GREP_PREFETCH_MAX_FILE_BYTES
+                or file.size > room
+            ):
                 break
             self._futures[self._next] = self._pool.submit(self._fetch, file)
             self._sizes[self._next] = file.size
             room -= file.size
             count += 1
+            slots -= 1
             self._next += 1
+
+    def has(self, index: int) -> bool:
+        return index in self._futures
 
     def take(self, index: int, timeout: float) -> ExportResult | None:
         """The prefetched text for files[index], or None if it was not fetched ahead.
@@ -143,7 +160,25 @@ def split_cursor(cursor: str) -> tuple[str, int]:
     file_id, sep, count = cursor.partition(":")
     if not sep:
         return file_id, 0
+    if not _valid_skip(count):
+        raise DomainError.of(ErrorCategory.INVALID_ARGUMENT)
     return file_id, int(count)
+
+
+_CURSOR_SKIP_DIGITS = 10
+
+
+def _valid_skip(count: str) -> bool:
+    return (
+        0 < len(count) <= _CURSOR_SKIP_DIGITS
+        and count.isascii()
+        and count.isdigit()
+        and int(count) > 0
+    )
+
+
+def _searchable(file) -> bool:
+    return not file.is_folder and default_representation(file.mime_type, file.name) is not None
 
 
 def drive_grep(
@@ -163,6 +198,9 @@ def drive_grep(
     budget = budget or Budget(max_files=GREP_MAX_FILES)
     if max_matches is not None:
         budget.max_matches = min(budget.max_matches, max_matches)
+    if file_ids:
+        # A repeated id would be scanned twice and would stall a cursor on it.
+        file_ids = list(dict.fromkeys(file_ids))
     compiled = compile_pattern(pattern, regex=regex, case_sensitive=case_sensitive)
     scope = RetrievalScope.from_tool_args(folder_id=folder_id, file_ids=file_ids)
     named_only = bool(file_ids) and not folder_id
@@ -176,7 +214,13 @@ def drive_grep(
         count_listed=False,
         request_id=request_id,
     )
-    files = list(walk.files)
+    files = []
+    seen: set[str] = set()
+    for item in walk.files:
+        # A file with two parents in the tree is listed twice; scan it once.
+        if item.id not in seen:
+            seen.add(item.id)
+            files.append(item)
     listing_complete = not walk.time_exceeded and not walk.rate_limited
     if not single_target:
         files.sort(key=_sort_key)
@@ -258,7 +302,9 @@ def drive_grep(
                 continue
             try:
                 exported = None
-                if prefetch is not None:
+                # Resuming inside a file usually stops in it again, so do not
+                # download later files until the scan has moved past it.
+                if prefetch is not None and not (index == 0 and skip):
                     prefetch.top_up(
                         index,
                         bytes_left=budget.max_bytes_per_operation - budget.bytes_seen,
@@ -292,7 +338,9 @@ def drive_grep(
             files_scanned += 1
             last_scanned_id = file.id
             searchable += 1
-            budget.note_bytes(exported.byte_length)
+            # Charge Drive's size when known: prefetch plans with the same
+            # number, so what it fetched always fits (FR-038a).
+            budget.note_bytes(file.size if file.size is not None else exported.byte_length)
             if exported.truncated:
                 truncated_bytes = True
             match_room = budget.max_matches - len(matches)
@@ -309,13 +357,13 @@ def drive_grep(
                     compiled,
                     line_oriented=line_oriented,
                     context_lines=context_lines,
-                    remaining=skip_here + match_room + 1,
+                    remaining=match_room + 1,
+                    skip=skip_here,
                 )
             except DomainError:
                 raise
             except Exception as exc:  # runtime engine failure after valid compile
                 raise DomainError.of(ErrorCategory.SEARCH_ERROR, request_id=request_id) from exc
-            raw = raw[skip_here:]
             more_in_file = len(raw) > match_room
             raw = raw[:match_room]
             retrieved_at = _now()
@@ -339,9 +387,7 @@ def drive_grep(
                 hit_match_cap = True
                 match_cursor = f"{file.id}:{skip_here + len(raw)}"
                 break
-            if budget.matches_exhausted() and any(
-                not item.is_folder for item in files[index + 1 :]
-            ):
+            if budget.matches_exhausted() and any(_searchable(item) for item in files[index + 1 :]):
                 hit_match_cap = True
                 match_cursor = file.id
                 break
@@ -365,7 +411,9 @@ def drive_grep(
         or hit_match_cap
     )
 
-    if searchable == 0 and skipped_unsupported and not stopped:
+    # A continuation slice left with only unsupported files is the tail of a
+    # mixed walk (FR-037), not a walk where every target is unsupported.
+    if searchable == 0 and skipped_unsupported and not stopped and not cursor:
         raise DomainError.of(
             last_unsupported or ErrorCategory.UNSUPPORTED_MIME_TYPE, request_id=request_id
         )
@@ -378,6 +426,14 @@ def drive_grep(
             # Continue after the last file scanned, or from the incoming cursor
             # when this call stopped before scanning anything.
             next_cursor = last_scanned_id or cursor or None
+    if next_cursor and deferred:
+        # The next call revisits every file after the cursor, so a file there
+        # is not also handed back for its own call.
+        resume_id, resume_skip = split_cursor(next_cursor)
+        order = {item.id: k for k, item in enumerate(files)}
+        cut = order.get(resume_id, -1)
+        first_revisited = cut if resume_skip else cut + 1
+        deferred = [fid for fid in deferred if order[fid] < first_revisited]
     common = {
         "matches": wire,
         "files_scanned": files_scanned,
@@ -415,7 +471,7 @@ def drive_grep(
             partial_reason=PartialReason.max_files.value,
             **common,
         )
-    if skipped_unsupported and searchable:
+    if skipped_unsupported and (searchable or cursor):
         return _coverage(
             status=OperationStatus.PARTIAL,
             partial_reason=PartialReason.unsupported_skipped.value,
@@ -424,9 +480,6 @@ def drive_grep(
     if not wire:
         return _coverage(status=OperationStatus.EMPTY, **common)
     return _coverage(status=OperationStatus.COMPLETE, **common)
-
-
-_CURSOR_SKIP_MAX = 10**9
 
 
 def grep_resume_cursor(arguments: dict) -> str | None:
@@ -456,9 +509,7 @@ def grep_resume_cursor(arguments: dict) -> str | None:
         return None
     file_id, sep, count = chosen.partition(":")
     require_file_id(file_id)
-    if sep and not (
-        count.isdigit() and count.isascii() and 0 < int(count) <= _CURSOR_SKIP_MAX
-    ):
+    if sep and not _valid_skip(count):
         raise DomainError.of(ErrorCategory.INVALID_ARGUMENT)
     named = arguments.get("file_ids")
     if named and file_id not in named:
