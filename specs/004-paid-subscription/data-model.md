@@ -15,7 +15,7 @@ Copied from entitlement into authorization code, access token, and refresh token
 ## Stripe objects (not stored here)
 
 - Customer
-- Subscription (price = $10/month; statuses treated as entitled: `active`, `trialing`)
+- Subscription (price = $20/month; statuses treated as entitled: `active`, `trialing`)
 - Checkout Session (`mode=subscription`)
 
 ## Relationships

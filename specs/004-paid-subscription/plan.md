@@ -6,7 +6,7 @@
 
 ## Summary
 
-Gate MCP Connect on an active **USD 10/month** Stripe Billing subscription. Hosted Checkout collects cards (PCI). This origin never displays the owner's bank or stores PANs. Stripe is the entitlement source of truth. One deployment Google identity is unchanged. PayPal is out of this feature.
+Gate MCP Connect on an active **USD 20/month** Stripe Billing subscription. Hosted Checkout collects cards (PCI). This origin never displays the owner's bank or stores PANs. Stripe is the entitlement source of truth. One deployment Google identity is unchanged. PayPal is out of this feature.
 
 ## Technical Context
 
@@ -26,7 +26,7 @@ Gate MCP Connect on an active **USD 10/month** Stripe Billing subscription. Host
 
 **Constraints**: No PAN/bank in logs; `/stats` unchanged; `MCP_OAUTH_AUTO_APPROVE` must not skip the paywall
 
-**Scale/Scope**: one $10/month price; public connector
+**Scale/Scope**: one $20/month price; public connector
 
 ## Constitution Check
 

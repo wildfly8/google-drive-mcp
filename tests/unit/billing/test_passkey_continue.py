@@ -107,7 +107,7 @@ def test_passkey_from_one_browser_sets_cookie_on_another(fake_drive: FakeDrive):
 
         client.cookies.clear()
         fresh = client.get("/subscribe")
-        assert "Pay $10 / month" in fresh.text
+        assert "Pay $20 / month" in fresh.text
         assert "Continue subscription" not in fresh.text
         assert "device-email" not in fresh.text
         login_options = client.post("/subscribe/passkey/options")
