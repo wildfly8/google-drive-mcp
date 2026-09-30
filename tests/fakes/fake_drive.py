@@ -71,6 +71,8 @@ class FakeDrive:
         self.list_count = 0
         self.subfolder_list_count = 0
         self.parent_lookup_count = 0
+        self.write_count = 0
+        self.last_upload_mime: str | None = None
         self.rate_limit_lists_after: int | None = None
         self.rate_limit_export: bool = False
         self.fail_tempfile: bool = False
@@ -161,6 +163,25 @@ class FakeDrive:
             for f in self.files.values()
             if f.is_folder and wanted.intersection(f.parents)
         ]
+
+    def replace_text(self, file_id: str, text: str, upload_mime: str) -> dict:
+        """Writer port for the temporary kb write tools."""
+        self.write_count += 1
+        item = self.files.get(file_id)
+        if item is None:
+            raise GoogleApiError(404)
+        item.content = text
+        item.modified_time = _now()
+        self.last_upload_mime = upload_mime
+        return item.metadata_dict()
+
+    def trash(self, file_id: str) -> dict:
+        self.write_count += 1
+        item = self.files.get(file_id)
+        if item is None:
+            raise GoogleApiError(404)
+        item.trashed = True
+        return item.metadata_dict()
 
     def export(self, file_id: str, mime: str) -> str:
         self.content_export_count += 1

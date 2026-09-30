@@ -1,7 +1,8 @@
 """MCP tool registration. Mounted from server.py through access-control middleware.
 
 Structural read-only guarantee: only drive_ls, drive_find, drive_read, drive_grep
-are registered. No mutating tools exist.
+are registered, unless DRIVE_WRITE_ENABLED temporarily adds drive_write and
+drive_trash for files inside kb.
 """
 
 from __future__ import annotations
@@ -17,6 +18,13 @@ from google_drive_mcp.infra.mcp_auth.bearer import extract_bearer
 from google_drive_mcp.infra.mcp_auth.tokens import (
     verify_access_claims,
     verify_authorization_header,
+)
+from google_drive_mcp.kb_write import (
+    WRITE_TOOLS,
+    drive_trash,
+    drive_write,
+    validate_trash_args,
+    validate_write_args,
 )
 from google_drive_mcp.mcp.middleware import Runtime, new_request_id, run_with_chain
 from google_drive_mcp.retrieval.find import drive_find, validate_find_args
@@ -61,6 +69,8 @@ TOOL_ARGUMENTS: dict[str, frozenset[str]] = {
             "cursor",
         }
     ),
+    "drive_write": frozenset({"file_id", "content"}),
+    "drive_trash": frozenset({"file_id"}),
     SCOPE_PROBE: frozenset({"folder_id", "file_id", "file_ids"}),
 }
 
@@ -100,10 +110,12 @@ def handle_tool(
             category="AUTHENTICATION_ERROR",
         )
         return envelope(ErrorCategory.AUTHENTICATION_ERROR, request_id=rid).to_dict()
-    if name in READ_ONLY_TOOLS:
+    if name in READ_ONLY_TOOLS or name in WRITE_TOOLS:
         _note_drive_first_use(runtime, authorization)
     try:
         known = TOOL_ARGUMENTS.get(name)
+        if name in WRITE_TOOLS and not runtime.settings.drive_write_enabled:
+            known = None
         if known is None or not supplied <= known:
             raise DomainError.of(ErrorCategory.INVALID_ARGUMENT)
         if name == "drive_ls":
@@ -114,6 +126,10 @@ def handle_tool(
             validate_read_args(args)
         elif name == "drive_grep":
             validate_grep_args(args)
+        elif name == "drive_write":
+            validate_write_args(args)
+        elif name == "drive_trash":
+            validate_trash_args(args)
     except DomainError as exc:
         err = exc.error
         if err.request_id is None:
@@ -168,6 +184,18 @@ def handle_tool(
                 max_matches=args.get("max_matches"),
                 cursor=grep_resume_cursor(args),
                 request_id=request_id,
+            )
+        if name == "drive_write":
+            return drive_write(
+                drive,
+                runtime.write_client(),
+                file_id=args["file_id"],
+                content=args["content"],
+                request_id=request_id,
+            )
+        if name == "drive_trash":
+            return drive_trash(
+                drive, runtime.write_client(), file_id=args["file_id"], request_id=request_id
             )
         raise DomainError.of(ErrorCategory.INVALID_ARGUMENT)
 

@@ -22,6 +22,8 @@ class Settings(BaseModel):
     google_refresh_token: SecretStr = SecretStr("")
     google_authorized_user_json: SecretStr = SecretStr("")
     drive_allowed_folder_id: str = ""
+    # Temporary: registers drive_write / drive_trash for files inside kb.
+    drive_write_enabled: bool = False
     mcp_public_url: str = "http://127.0.0.1"
     mcp_oauth_auto_approve: bool = False
     mcp_oauth_signing_key: SecretStr = SecretStr("")
@@ -39,6 +41,7 @@ class Settings(BaseModel):
         principal = os.environ.get("MCP_PRINCIPAL_ID", "deployment")
         auto = os.environ.get("MCP_OAUTH_AUTO_APPROVE", "").strip().lower()
         paid = os.environ.get("MCP_SUBSCRIPTION_REQUIRED", "").strip().lower()
+        write = os.environ.get("DRIVE_WRITE_ENABLED", "").strip().lower()
         return cls(
             mcp_auth_token=SecretStr(token),
             mcp_principal_id=principal,
@@ -49,6 +52,7 @@ class Settings(BaseModel):
                 os.environ.get("GOOGLE_AUTHORIZED_USER_JSON", "")
             ),
             drive_allowed_folder_id=os.environ.get("DRIVE_ALLOWED_FOLDER_ID", "").strip(),
+            drive_write_enabled=write in {"1", "true", "yes"},
             mcp_public_url=os.environ.get("MCP_PUBLIC_URL", "").strip(),
             mcp_oauth_auto_approve=auto in {"1", "true", "yes"},
             mcp_oauth_signing_key=SecretStr(os.environ.get("MCP_OAUTH_SIGNING_KEY", "")),
@@ -95,6 +99,7 @@ class Settings(BaseModel):
         return (
             f"Settings(mcp_principal_id={self.mcp_principal_id!r}, "
             f"drive_allowed_folder_id={self.drive_allowed_folder_id!r}, "
+            f"drive_write_enabled={self.drive_write_enabled!r}, "
             f"mcp_public_url={self.mcp_public_url!r}, "
             "mcp_auth_token=***, google_*=***)"
         )
