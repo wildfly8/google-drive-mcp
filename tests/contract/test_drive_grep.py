@@ -715,3 +715,100 @@ def test_unknown_cursor_and_cursor_with_file_ids_are_invalid(runtime, authz):
     )
     assert blank["status"] == "COMPLETE"
     assert blank["matches"]
+
+
+def _text_folder(count: int, content: str):
+    from fakes.fake_drive import FOLDER_MIME, FakeDrive, FakeFile
+
+    drive = FakeDrive()
+    drive.add(FakeFile(id="root", name="My Drive", mime_type=FOLDER_MIME, parents=[]))
+    drive.add(FakeFile(id="top", name="Top", mime_type=FOLDER_MIME, parents=["root"]))
+    for n in range(count):
+        drive.add(
+            FakeFile(
+                id=f"note-{n:03d}",
+                name=f"note-{n:03d}.md",
+                mime_type="text/markdown",
+                parents=["top"],
+                content=content,
+            )
+        )
+    return drive
+
+
+def test_one_match_per_line_counts_occurrences():
+    from fakes.fake_drive import FakeDrive, FakeFile
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    drive = FakeDrive()
+    drive.add(
+        FakeFile(
+            id="se-entry",
+            name="entry.md",
+            mime_type="text/markdown",
+            content="Causation, correlation and causation\nunrelated\nmore causation",
+        )
+    )
+    result = drive_grep(
+        drive, pattern="causation", file_ids=["se-entry"], case_sensitive=False, max_matches=3
+    )
+    assert result["status"] == "COMPLETE"
+    assert [m["location"] for m in result["matches"]] == [
+        {"line": 1, "offset": 0, "occurrences": 2},
+        {"line": 3, "offset": 5, "occurrences": 1},
+    ]
+    assert result["matches"][0]["matched_text"] == "Causation"
+    assert result["matches"][0]["context"].startswith("Causation, correlation and causation")
+
+
+def test_repeat_hits_on_one_line_do_not_spend_max_matches():
+    from fakes.fake_drive import FakeDrive, FakeFile
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    drive = FakeDrive()
+    drive.add(
+        FakeFile(
+            id="one-line",
+            name="one.md",
+            mime_type="text/markdown",
+            content="hit hit hit",
+        )
+    )
+    # Three hits on one line take one slot, so max_matches=2 is not reached.
+    result = drive_grep(drive, pattern="hit", file_ids=["one-line"], max_matches=2)
+    assert result["status"] == "COMPLETE"
+    assert len(result["matches"]) == 1
+    assert result["matches"][0]["location"]["occurrences"] == 3
+
+
+def test_folder_grep_scans_more_than_40_files_by_default():
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    drive = _text_folder(45, "nothing here")
+    result = drive_grep(drive, pattern="absent-term", folder_id="top")
+    assert result["status"] == "EMPTY"
+    assert result["files_scanned"] == 45
+    assert "next_cursor" not in result
+
+
+def test_folder_grep_stops_at_grep_file_cap_with_cursor():
+    from google_drive_mcp.domain.budgets import GREP_MAX_FILES
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    drive = _text_folder(GREP_MAX_FILES + 1, "nothing here")
+    first = drive_grep(drive, pattern="absent-term", folder_id="top")
+    assert first["status"] == "PARTIAL"
+    assert first["partial_reason"] == "max_files"
+    assert first["files_scanned"] == GREP_MAX_FILES
+    assert first["next_cursor"] == f"note-{GREP_MAX_FILES - 1:03d}"
+    rest = drive_grep(drive, pattern="absent-term", folder_id="top", cursor=first["next_cursor"])
+    assert rest["status"] == "EMPTY"
+    assert rest["files_scanned"] == 1
+
+
+def test_grep_description_states_the_file_cap_and_per_line_matches():
+    from google_drive_mcp.domain.budgets import GREP_MAX_FILES
+    from google_drive_mcp.mcp.tool_schema import DRIVE_GREP_DESCRIPTION
+
+    assert f"up to {GREP_MAX_FILES} files" in DRIVE_GREP_DESCRIPTION
+    assert "location.occurrences" in DRIVE_GREP_DESCRIPTION

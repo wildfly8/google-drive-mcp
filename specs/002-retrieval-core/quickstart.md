@@ -41,6 +41,7 @@ Expected:
 13. `drive_find` with a filename stem among many non-matching siblings returns that file and does not `files.get` each child (`tests/contract/test_drive_find.py`)
 14. Folder `drive_grep` scans a small file, returns a larger id in `deferred_file_ids`, and resumes with `cursor` (`tests/contract/test_drive_grep.py`)
 15. Omitted `drive_ls` lists the allow-list folder, never My Drive root; an id outside that folder and a missing id get the same `AUTHORIZATION_ERROR`; an argument the tool does not take is `INVALID_ARGUMENT`; no allow-list refuses every call (`tests/contract/test_allowed_folder.py`)
+16. Several hits on one line are one match with `location.occurrences`; a folder `drive_grep` scans more than 40 files in one call and stops at 200 with `next_cursor` (`tests/contract/test_drive_grep.py`)
 
 ## Optional live smoke
 

@@ -13,7 +13,8 @@ def test_same_bytes_and_flags_yield_identical_matches():
     assert [(m.matched_text, m.location) for m in first] == [
         (m.matched_text, m.location) for m in second
     ]
-    assert len(first) == 3
+    assert len(first) == 1
+    assert first[0].location == {"line": 1, "offset": 0, "occurrences": 3}
 
 
 def test_ignorecase_differs_from_sensitive():
@@ -22,5 +23,5 @@ def test_ignorecase_differs_from_sensitive():
     insensitive = compile_pattern("Foo", regex=False, case_sensitive=False)
     a = search_text(text, sensitive, line_oriented=True, context_lines=0, remaining=10)
     b = search_text(text, insensitive, line_oriented=True, context_lines=0, remaining=10)
-    assert len(a) == 1
-    assert len(b) == 2
+    assert [m.location["occurrences"] for m in a] == [1]
+    assert [m.location["occurrences"] for m in b] == [2]

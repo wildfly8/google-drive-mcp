@@ -461,7 +461,11 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
                 default=None,
                 ge=MAX_MATCHES_MIN,
                 le=MAX_MATCHES_MAX,
-                description=f"Stop after this many hits ({MAX_MATCHES_MIN}–{MAX_MATCHES_MAX}). Hitting the cap → PARTIAL.",
+                description=(
+                    f"Stop after this many matches ({MAX_MATCHES_MIN}–{MAX_MATCHES_MAX}). "
+                    "A match is one line (location.occurrences counts hits on it). "
+                    "Hitting the cap → PARTIAL."
+                ),
             ),
         ] = None,
         cursor: Annotated[

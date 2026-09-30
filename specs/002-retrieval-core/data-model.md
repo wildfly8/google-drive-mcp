@@ -69,7 +69,7 @@ Invalid if `file_id` missing. Not a cache key. Plays the **evidence** role when 
 | `file_name` | string | |
 | `pattern` | string | As supplied |
 | `matched_text` | string | Required |
-| `location` | object | `{ "line"?: int, "offset"?: int }` |
+| `location` | object | `{ "line"?: int, "offset"?: int, "occurrences"?: int }`; line-oriented text has one match per line, `occurrences` counting every hit on it (FR-039) |
 | `context` | string? | Surrounding text per plan (lines or 200-char window) |
 
 A SearchMatch MUST correspond to bytes actually retrieved in this operation. Plays the **evidence** role when returned from `drive_grep` with provenance.

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from google_drive_mcp.domain.budgets import Budget
+from google_drive_mcp.domain.budgets import GREP_MAX_FILES, Budget
 from google_drive_mcp.domain.errors import DomainError, ErrorCategory
 from google_drive_mcp.domain.matches import SearchMatch
 from google_drive_mcp.domain.operation import OperationStatus, PartialReason
@@ -74,7 +74,7 @@ def drive_grep(
     budget: Budget | None = None,
     request_id: str | None = None,
 ) -> dict:
-    budget = budget or Budget()
+    budget = budget or Budget(max_files=GREP_MAX_FILES)
     if max_matches is not None:
         budget.max_matches = min(budget.max_matches, max_matches)
     compiled = compile_pattern(pattern, regex=regex, case_sensitive=case_sensitive)

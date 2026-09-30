@@ -6,6 +6,9 @@ from dataclasses import dataclass
 import time
 
 MAX_FILES = 40
+# drive_grep scans up to this many files per call. The per-operation byte cap
+# and the time cap still bound the work; ls and find keep MAX_FILES.
+GREP_MAX_FILES = 200
 MAX_BYTES_PER_FILE = 20_000_000
 MAX_BYTES_PER_OPERATION = 20_000_000
 MAX_MATCHES = 50

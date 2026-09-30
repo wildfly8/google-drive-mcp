@@ -47,22 +47,37 @@ def search_text(
 def _line_matches(
     text: str, compiled: re.Pattern[str], context_lines: int, remaining: int
 ) -> list[RawMatch]:
+    """One match per matching line; further hits on that line only raise occurrences.
+
+    The context always holds the whole line, so a second hit on it would spend
+    another max_matches slot on text the caller already has.
+    """
     lines = text.splitlines()
     found: list[RawMatch] = []
     for index, line in enumerate(lines):
+        first: re.Match[str] | None = None
+        occurrences = 0
         for match in compiled.finditer(line):
-            start = max(0, index - context_lines)
-            end = min(len(lines), index + context_lines + 1)
-            context = "\n".join(lines[start:end])
-            found.append(
-                RawMatch(
-                    matched_text=match.group(0),
-                    location={"line": index + 1, "offset": match.start()},
-                    context=context,
-                )
+            if first is None:
+                first = match
+            occurrences += 1
+        if first is None:
+            continue
+        start = max(0, index - context_lines)
+        end = min(len(lines), index + context_lines + 1)
+        found.append(
+            RawMatch(
+                matched_text=first.group(0),
+                location={
+                    "line": index + 1,
+                    "offset": first.start(),
+                    "occurrences": occurrences,
+                },
+                context="\n".join(lines[start:end]),
             )
-            if len(found) >= remaining:
-                return found
+        )
+        if len(found) >= remaining:
+            return found
     return found
 
 
