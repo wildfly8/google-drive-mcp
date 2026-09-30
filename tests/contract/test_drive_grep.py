@@ -1283,3 +1283,97 @@ def test_files_the_per_file_cap_would_truncate_are_not_fetched_ahead():
     )
     assert slow.threads.get("b", "MainThread") == "MainThread"
     assert slow.threads.get("c", "MainThread") == "MainThread"
+
+
+class _ClockDrive(_SlowDrive):
+    """Moves a fake clock forward inside chosen Drive calls."""
+
+    def __init__(self, drive, now, *, on_metadata=None, on_list=0.0):
+        super().__init__(drive, lambda fid: 0.0)
+        self._now = now
+        self._on_metadata = on_metadata or {}
+        self._on_list = on_list
+
+    def get_metadata(self, file_id: str) -> dict:
+        self._now[0] += self._on_metadata.get(file_id, 0.0)
+        return self._drive.get_metadata(file_id)
+
+    def list_children(self, *args, **kwargs):
+        self._now[0] += self._on_list
+        return self._drive.list_children(*args, **kwargs)
+
+
+def test_named_listing_cut_at_the_deadline_is_not_a_finished_slice():
+    from fakes.fake_drive import FakeDrive
+    from google_drive_mcp.domain.budgets import Budget
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    drive = FakeDrive()
+    drive.add(_md("a", "nothing"))
+    drive.add(_md("b", "hit"))
+    now = [0.0]
+    clocked = _ClockDrive(drive, now, on_metadata={"b": 30.0})
+    result = drive_grep(
+        clocked,
+        pattern="hit",
+        file_ids=["a", "b"],
+        budget=Budget(max_files=200, clock=lambda: now[0]),
+    )
+    assert result["status"] == "PARTIAL"
+    assert result["partial_reason"] == "max_execution_time"
+    now[0] = 0.0
+    resumed = drive_grep(
+        _ClockDrive(drive, now, on_metadata={"b": 30.0}),
+        pattern="hit",
+        file_ids=["a", "b"],
+        cursor="a",
+        budget=Budget(max_files=200, clock=lambda: now[0]),
+    )
+    assert resumed["status"] == "PARTIAL"
+    assert resumed["next_cursor"] == "a"
+
+
+def test_fresh_call_with_a_time_cut_listing_downloads_nothing():
+    from fakes.fake_drive import FOLDER_MIME, FakeFile
+    from google_drive_mcp.domain.budgets import Budget
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    base = _text_folder(3, "hit")
+    base.add(FakeFile(id="sub", name="Sub", mime_type=FOLDER_MIME, parents=["top"]))
+    base.add(_md("deep", "hit"))
+    base.files["deep"].parents = ["sub"]
+    now = [0.0]
+
+    class _CutAtSub(_ClockDrive):
+        def list_children(self, folder_id=None, **kwargs):
+            if folder_id == "sub":
+                self._now[0] += 30.0
+            return self._drive.list_children(folder_id=folder_id, **kwargs)
+
+    clocked = _CutAtSub(base, now)
+    result = drive_grep(
+        clocked, pattern="hit", folder_id="top", budget=Budget(max_files=200, clock=lambda: now[0])
+    )
+    assert result["status"] == "PARTIAL"
+    assert result["partial_reason"] == "max_execution_time"
+    assert "next_cursor" not in result
+    assert clocked.fetched == []
+
+
+def test_large_unsupported_files_are_skipped_not_deferred():
+    from fakes.fake_drive import FakeFile
+    from google_drive_mcp.domain.budgets import Budget
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    drive = _folder(
+        _md("a", "hit"),
+        FakeFile(id="img", name="img.png", mime_type="image/png", content=b"\x89" * 5000),
+    )
+    result = drive_grep(
+        drive,
+        pattern="hit",
+        folder_id="top",
+        budget=Budget(max_files=200, max_bytes_per_operation=1000),
+    )
+    assert "deferred_file_ids" not in result
+    assert result["partial_reason"] == "unsupported_skipped"

@@ -120,6 +120,9 @@ def walk_files(
             return
         counts = count_folders or not file.is_folder
         if budget.time_exceeded():
+            # An in-scope file left out for time is a cut listing, even when it
+            # is the last one (the loops only check time before the next item).
+            result.time_exceeded = True
             return
         if honor_file_cap and counts and budget.files_exhausted():
             return

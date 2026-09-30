@@ -92,7 +92,7 @@ class _Prefetch:
     size up to GREP_PREFETCH_MAX_FILE_BYTES are fetched ahead, at most
     GREP_PREFETCH_DEPTH files and GREP_PREFETCH_WINDOW_BYTES at once, and never
     more bytes than the operation has left. The scan charges a file with a
-    known size by that size, the same number used here, so a file fetched ahead
+    known blob size by that size, the same number used here, so a file fetched ahead
     always fits when the scan reaches it and a deferred file is never downloaded.
     """
 
@@ -305,9 +305,9 @@ def drive_grep(
                 index += 1
                 continue
             pending = [item.id for item in files[index:] if not item.is_folder]
-            # Every call handles at least one file after a finished listing,
-            # so repeating a call or following its cursor always progresses.
-            if files_scanned and budget.time_exceeded():
+            # After a finished listing every call handles at least one file, so
+            # a time stop always progresses. A cut listing gets no exemption.
+            if (files_scanned or not listing_complete) and budget.time_exceeded():
                 if pending:
                     resume = True
                     stopped_for_time = True
@@ -316,10 +316,19 @@ def drive_grep(
                 if pending:
                     resume = True
                 break
+            # An unsupported file is skipped, never deferred: a deferred id is
+            # one the host can grep on its own.
+            if default_representation(file.mime_type, file.name) is None:
+                skipped_unsupported += 1
+                files_scanned += 1
+                last_scanned_id = file.id
+                last_unsupported = ErrorCategory.UNSUPPORTED_MIME_TYPE
+                index += 1
+                continue
             if not single_target:
                 remaining = budget.max_bytes_per_operation - budget.bytes_seen
                 if remaining <= 0:
-                    deferred.extend(pending)
+                    deferred.extend(item.id for item in files[index:] if _searchable(item))
                     break
                 size = _blob_size(file)
                 if size is not None and size > remaining:
@@ -328,25 +337,26 @@ def drive_grep(
                         prefetch.discard(index)
                     index += 1
                     continue
-            if default_representation(file.mime_type, file.name) is None:
-                skipped_unsupported += 1
-                files_scanned += 1
-                last_scanned_id = file.id
-                last_unsupported = ErrorCategory.UNSUPPORTED_MIME_TYPE
-                index += 1
-                continue
             try:
                 exported = None
                 # Resuming inside a file usually stops in it again, so do not
                 # download later files until the scan has moved past it.
-                if prefetch is not None and not (index == 0 and skip):
+                # Nor once the deadline has passed: only this file is scanned.
+                if (
+                    prefetch is not None
+                    and not (index == 0 and skip)
+                    and not budget.time_exceeded()
+                ):
                     prefetch.top_up(
                         index,
                         bytes_left=budget.max_bytes_per_operation - budget.bytes_seen,
                         files_left=budget.max_files - files_scanned,
                     )
                     exported = prefetch.take(
-                        index, timeout=budget.time_left() if files_scanned else None
+                        index,
+                        timeout=None
+                        if listing_complete and not files_scanned
+                        else budget.time_left(),
                     )
                 if exported is None:
                     exported = fetch(file)
@@ -433,7 +443,7 @@ def drive_grep(
                 match_cursor = file.id
                 break
             if not single_target and (exported.truncated or budget.bytes_exhausted()):
-                deferred.extend(item.id for item in files[index + 1 :] if not item.is_folder)
+                deferred.extend(item.id for item in files[index + 1 :] if _searchable(item))
                 break
             index += 1
     finally:
