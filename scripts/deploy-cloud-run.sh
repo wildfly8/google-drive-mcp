@@ -11,6 +11,11 @@ fi
 REGION="${GCP_REGION:-us-central1}"
 SERVICE="${CLOUD_RUN_SERVICE:-onto-kb}"
 AR_REPO="${ARTIFACT_REPO:-cloud-run-source-deploy}"
+# ONE_TIME_SETUP=0 (the GitHub deploy job) skips enabling APIs, granting IAM and the
+# telemetry dashboard: those need far broader rights than a deploy, and an
+# operator runs them once (this script with the default 1, or
+# scripts/setup-github-deploy.sh).
+ONE_TIME_SETUP="${ONE_TIME_SETUP:-1}"
 
 # Preflight: --source uploads the working tree, so deploy only committed, tested code.
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -52,16 +57,18 @@ secret_exists() {
 need_gcloud
 gcloud config set project "$PROJECT" >/dev/null
 
-echo "Enabling APIs on ${PROJECT}..."
-gcloud services enable \
-  run.googleapis.com \
-  artifactregistry.googleapis.com \
-  cloudbuild.googleapis.com \
-  secretmanager.googleapis.com \
-  drive.googleapis.com \
-  logging.googleapis.com \
-  monitoring.googleapis.com \
-  --project="$PROJECT"
+if [[ "$ONE_TIME_SETUP" == "1" ]]; then
+  echo "Enabling APIs on ${PROJECT}..."
+  gcloud services enable \
+    run.googleapis.com \
+    artifactregistry.googleapis.com \
+    cloudbuild.googleapis.com \
+    secretmanager.googleapis.com \
+    drive.googleapis.com \
+    logging.googleapis.com \
+    monitoring.googleapis.com \
+    --project="$PROJECT"
+fi
 
 if ! secret_exists MCP_AUTH_TOKEN; then
   echo "Missing Secret Manager secret: MCP_AUTH_TOKEN" >&2
@@ -77,13 +84,13 @@ else
 fi
 
 if ! secret_exists MCP_PRINCIPAL_ID; then
+  if [[ "$ONE_TIME_SETUP" != "1" ]]; then
+    echo "Missing Secret Manager secret MCP_PRINCIPAL_ID. Run one deploy with ONE_TIME_SETUP=1." >&2
+    exit 1
+  fi
   printf '%s' "${MCP_PRINCIPAL_ID:-throwaway-drive}" | gcloud secrets create MCP_PRINCIPAL_ID \
     --project="$PROJECT" --data-file=-
 fi
-
-PROJECT_NUMBER="$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')"
-RUNTIME_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
-CLOUDBUILD_SA="${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com"
 
 SECRET_BIND="MCP_AUTH_TOKEN=MCP_AUTH_TOKEN:latest,MCP_PRINCIPAL_ID=MCP_PRINCIPAL_ID:latest"
 GRANT_SECRETS=(MCP_AUTH_TOKEN MCP_PRINCIPAL_ID)
@@ -122,32 +129,38 @@ if secret_exists IDENTITY_TOOLKIT_API_KEY; then
   GRANT_SECRETS+=(IDENTITY_TOOLKIT_API_KEY)
 fi
 
-echo "Granting runtime SA Secret Manager access..."
-for name in "${GRANT_SECRETS[@]}"; do
-  gcloud secrets add-iam-policy-binding "$name" \
-    --project="$PROJECT" \
-    --member="serviceAccount:${RUNTIME_SA}" \
-    --role="roles/secretmanager.secretAccessor" \
-    --quiet >/dev/null
-done
+if [[ "$ONE_TIME_SETUP" == "1" ]]; then
+  PROJECT_NUMBER="$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')"
+  RUNTIME_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+  CLOUDBUILD_SA="${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com"
 
-gcloud projects add-iam-policy-binding "$PROJECT" \
-  --member="serviceAccount:${CLOUDBUILD_SA}" \
-  --role="roles/run.admin" \
-  --quiet >/dev/null || true
+  echo "Granting runtime SA Secret Manager access..."
+  for name in "${GRANT_SECRETS[@]}"; do
+    gcloud secrets add-iam-policy-binding "$name" \
+      --project="$PROJECT" \
+      --member="serviceAccount:${RUNTIME_SA}" \
+      --role="roles/secretmanager.secretAccessor" \
+      --quiet >/dev/null
+  done
 
-echo "Granting Cloud Build compute SA storage and Artifact Registry access..."
-for role in \
-  roles/storage.objectViewer \
-  roles/artifactregistry.writer \
-  roles/logging.logWriter \
-  roles/logging.viewer \
-  roles/cloudbuild.builds.builder; do
   gcloud projects add-iam-policy-binding "$PROJECT" \
-    --member="serviceAccount:${RUNTIME_SA}" \
-    --role="$role" \
+    --member="serviceAccount:${CLOUDBUILD_SA}" \
+    --role="roles/run.admin" \
     --quiet >/dev/null || true
-done
+
+  echo "Granting Cloud Build compute SA storage and Artifact Registry access..."
+  for role in \
+    roles/storage.objectViewer \
+    roles/artifactregistry.writer \
+    roles/logging.logWriter \
+    roles/logging.viewer \
+    roles/cloudbuild.builds.builder; do
+    gcloud projects add-iam-policy-binding "$PROJECT" \
+      --member="serviceAccount:${RUNTIME_SA}" \
+      --role="$role" \
+      --quiet >/dev/null || true
+  done
+fi
 
 # A 20 MB drive_read holds several copies of its text while it is decoded and
 # serialized (around 100 MB), and two such downloads may run at once per
@@ -261,8 +274,10 @@ if (( ${#NOT_DELETED[@]} )); then
   exit 1
 fi
 echo "LIVE_MCP_URL=${URL}/mcp"
-echo "Ensuring connect-counter log metrics and Monitoring dashboard..."
-GOOGLE_CLOUD_PROJECT="$PROJECT" GCP_PROJECT="$PROJECT" \
-  bash "$(cd "$(dirname "$0")" && pwd)/ensure-connect-telemetry-gcp.sh"
+if [[ "$ONE_TIME_SETUP" == "1" ]]; then
+  echo "Ensuring connect-counter log metrics and Monitoring dashboard..."
+  GOOGLE_CLOUD_PROJECT="$PROJECT" GCP_PROJECT="$PROJECT" \
+    bash "$(cd "$(dirname "$0")" && pwd)/ensure-connect-telemetry-gcp.sh"
+fi
 echo "Deploy complete. Hosts use MCP OAuth 2.1 against this origin."
 echo "Set LIVE_MCP_URL and MCP_AUTH_TOKEN (consent password from Secret Manager, not chat) for live E2E."

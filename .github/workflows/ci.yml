@@ -40,3 +40,62 @@ jobs:
           uv export --frozen --no-dev --no-emit-project --format requirements-txt \
             > requirements-audit.txt
           uvx pip-audit --disable-pip --require-hashes -r requirements-audit.txt
+
+  # Deploys main to Cloud Run after the tests pass. Skipped until the repository
+  # variables from scripts/setup-github-deploy.sh exist. The "production"
+  # environment holds the approval rule; Google accepts this job's identity only
+  # for this repository, the main branch and that environment (no key stored).
+  deploy:
+    needs: test
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/main'
+      && vars.GCP_WIF_PROVIDER != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      # The repository is public, so its Actions logs are too: hide project ids.
+      - name: Mask project identifiers
+        run: |
+          echo "::add-mask::${{ vars.GCP_PROJECT_ID }}"
+          echo "::add-mask::${{ vars.GCP_PROJECT_NUMBER }}"
+          echo "::add-mask::${{ vars.GCP_DEPLOY_SA }}"
+
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+
+      - name: Deploy to Cloud Run
+        env:
+          GCP_PROJECT: ${{ vars.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+          # APIs, IAM grants and dashboards are one-time operator steps.
+          ONE_TIME_SETUP: "0"
+          # The test job above already passed on this commit.
+          SKIP_TESTS: "1"
+          CLOUDSDK_CORE_DISABLE_PROMPTS: "1"
+        run: bash scripts/deploy-cloud-run.sh
+
+      - name: Smoke test
+        env:
+          GCP_PROJECT: ${{ vars.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+        run: |
+          url="$(gcloud run services describe onto-kb --project="$GCP_PROJECT" \
+            --region="$GCP_REGION" --format='value(status.url)')"
+          curl -fsS -o /dev/null "${url%/}/subscribe"
+          curl -fsS -o /dev/null "${url%/}/.well-known/oauth-protected-resource"
+          echo "Live: /subscribe and protected-resource metadata answer."

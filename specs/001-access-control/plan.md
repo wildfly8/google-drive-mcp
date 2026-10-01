@@ -162,3 +162,5 @@ tests/
 ## Complexity Tracking
 
 > No constitution violations requiring justification.
+
+**Deploy pipeline (2026-10-01):** CI deploys `main` to Cloud Run after the tests pass, through the GitHub environment `production` (owner approval) and Workload Identity Federation (no stored key). The deploy identity `onto-kb-deployer` holds `run.admin` on the `onto-kb` service only, read-only Cloud Run and secret-metadata roles, Cloud Build, the source bucket, the image repository, the `DRIVE_ALLOWED_FOLDER_ID` secret and actAs on the runtime account. Code it deploys runs as the runtime account, so approval of each deploy is the real control.
