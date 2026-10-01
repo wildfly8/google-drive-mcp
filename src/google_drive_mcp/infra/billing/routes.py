@@ -5,9 +5,10 @@ from __future__ import annotations
 import hashlib
 import html
 import logging
+import re
 import threading
 import time
-from collections import deque
+from collections import OrderedDict, deque
 from urllib.parse import unquote
 
 from starlette.background import BackgroundTask
@@ -30,6 +31,7 @@ from google_drive_mcp.infra.mcp_auth.jwt import decode_jwt, encode_jwt
 from google_drive_mcp.infra.mcp_auth.tokens import _now, issuer_url, signing_key
 
 _LOG = logging.getLogger("google_drive_mcp")
+_SESSION_ID = re.compile(r"cs_(live|test)_[A-Za-z0-9]{10,200}")
 
 _SUBSCRIBE = """\
 <!DOCTYPE html>
@@ -173,6 +175,17 @@ async def subscribe_complete_get(
     request: Request, settings: Settings, billing: BillingGateway
 ) -> Response:
     session_id = request.query_params.get("session_id") or ""
+    if not _SESSION_ID.fullmatch(session_id) or not _LIMITS.allow(
+        f"complete:{_client_ip(request)}", 30, 3600
+    ):
+        return HTMLResponse(
+            _SUBSCRIBE.format(
+                status=html.escape("Payment not confirmed. Start again from the Pay button."),
+                form=_PAY_FORM,
+                setup="",
+            ),
+            status_code=400,
+        )
     found = billing.customer_id_from_checkout_session(session_id)
     if not found:
         return HTMLResponse(
@@ -221,24 +234,40 @@ _PRIVATE_HEADERS = {
 
 
 class _RateLimit:
-    """Sliding-window counters per key, in this instance's memory (best effort)."""
+    """Sliding-window counters per key, in this instance's memory (best effort).
 
-    def __init__(self) -> None:
-        self._hits: dict[str, deque[float]] = {}
+    Keys are kept in least-recently-used order: each call drops keys idle past
+    the longest window and evicts the oldest beyond max_keys, so memory and
+    time stay bounded however many addresses an attacker uses.
+    """
+
+    def __init__(self, max_keys: int = 20000, max_window: float = 3600.0) -> None:
+        self._hits: OrderedDict[str, deque[float]] = OrderedDict()
         self._lock = threading.Lock()
+        self._max_keys = max_keys
+        self._max_window = max_window
 
     def allow(self, key: str, limit: int, window: float) -> bool:
         now = time.monotonic()
         with self._lock:
-            hits = self._hits.setdefault(key, deque())
+            while self._hits:
+                oldest_key, oldest = next(iter(self._hits.items()))
+                if oldest and now - oldest[-1] <= self._max_window:
+                    break
+                self._hits.popitem(last=False)
+            hits = self._hits.pop(key, None) or deque()
             while hits and now - hits[0] > window:
                 hits.popleft()
-            if len(hits) >= limit:
-                return False
-            hits.append(now)
-            if len(self._hits) > 10000:
-                self._hits = {k: v for k, v in self._hits.items() if v}
-            return True
+            allowed = len(hits) < limit
+            if allowed:
+                hits.append(now)
+            self._hits[key] = hits
+            while len(self._hits) > self._max_keys:
+                self._hits.popitem(last=False)
+            return allowed
+
+    def __len__(self) -> int:
+        return len(self._hits)
 
 
 _LIMITS = _RateLimit()
@@ -246,7 +275,7 @@ _LIMITS = _RateLimit()
 
 def _client_ip(request: Request) -> str:
     # Cloud Run's front end appends the caller's address; earlier entries can be forged.
-    forwarded = request.headers.get("x-forwarded-for") or ""
+    forwarded = ",".join(request.headers.getlist("x-forwarded-for"))
     parts = [part.strip() for part in forwarded.split(",") if part.strip()]
     if parts:
         return parts[-1]
@@ -257,7 +286,13 @@ def _clean_email(value: object) -> str | None:
     if not isinstance(value, str):
         return None
     email = value.strip()
-    if not email or len(email) > 254 or email.count("@") != 1 or any(c.isspace() for c in email):
+    if (
+        not email
+        or len(email) > 254
+        or not email.isascii()
+        or email.count("@") != 1
+        or any(c.isspace() for c in email)
+    ):
         return None
     local, domain = email.split("@")
     if not local or "." not in domain:
@@ -406,7 +441,9 @@ async def subscribe_email_verify_post(
             _RESTORE_FORM,
             code=400,
         )
-    customer = billing.active_customer_id_for_email(verified)
+    # Google returns the address lower-cased; look up the one the subscriber typed,
+    # which the adapter also tries lower-cased and case-insensitively.
+    customer = billing.active_customer_id_for_email(email)
     if not customer:
         return _page(
             "That email has no active onto-kb subscription. Pay to start one.",

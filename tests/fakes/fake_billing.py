@@ -16,7 +16,7 @@ class FakeBilling:
 
     def create_checkout_url(self, *, success_url: str, cancel_url: str) -> str:
         self.checkouts += 1
-        sid = f"cs_test_{self.checkouts}"
+        sid = f"cs_test_fake{self.checkouts:012d}"
         cus = f"cus_test_{self.checkouts}"
         self.sessions[sid] = cus
         self.active.add(cus)

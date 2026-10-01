@@ -59,3 +59,34 @@ def test_unpaid_or_incomplete_checkout_grants_nothing():
     gateway = _gateway(handler)
     for sid in ("cs_open", "cs_unpaid", "cs_nocus"):
         assert gateway.customer_id_from_checkout_session(sid) is None, sid
+
+
+def test_email_lookup_ignores_case_through_search():
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        if request.url.path == "/v1/customers":
+            # Stripe's list filter matches the stored "Payer@Example.com" exactly.
+            return httpx.Response(200, json={"data": []})
+        if request.url.path == "/v1/customers/search":
+            assert request.url.params["query"] == "email:'payer@example.com'"
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {"id": "cus_other", "email": "someone@example.com"},
+                        {"id": "cus_payer", "email": "Payer@Example.com"},
+                    ]
+                },
+            )
+        if request.url.path == "/v1/subscriptions":
+            active = request.url.params["customer"] in {"cus_payer", "cus_other"}
+            status = "active" if active else "canceled"
+            return httpx.Response(200, json={"data": [{"status": status}]})
+        raise AssertionError(request.url.path)
+
+    gateway = _gateway(handler)
+    # A search hit whose stored email differs is never used.
+    assert gateway.active_customer_id_for_email("payer@example.com") == "cus_payer"
+    assert gateway.active_customer_id_for_email("Kate@example.com") is None

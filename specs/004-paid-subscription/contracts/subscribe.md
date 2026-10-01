@@ -6,7 +6,7 @@ HTML. States USD 20/month. Controls: the Pay button (opens Stripe Checkout) and,
 
 ## `POST /subscribe/email`
 
-Form field `email`. Always the same 200 reply ("if that email has an active subscription, a one-time sign-in link is on its way"), with no entitlement and without echoing the email, so the endpoint does not reveal subscribers. After the reply is sent, the server looks up an active processor customer for that email and only then asks Google Identity Platform to email a one-time sign-in link (continue URL `/subscribe/email/verify`). Sets a short-lived signed cookie (path `/subscribe/email`) holding the typed email so the link can be finished in this browser without retyping it. Rate limits per client address and per email (best effort, per instance). An email address alone never grants access.
+Form field `email`. Always the same 200 reply ("if that email has an active subscription, a one-time sign-in link is on its way"), with no entitlement and without echoing the email, so the endpoint does not reveal subscribers. After the reply is sent, the server looks up an active processor customer for that email and only then asks Google Identity Platform to email a one-time sign-in link (continue URL `/subscribe/email/verify`). Sets a short-lived signed cookie (path `/subscribe/email`) holding the typed email so the link can be finished in this browser without retyping it. Rate limits per client address and per email (best effort, per instance, bounded memory). Only ASCII addresses are accepted; the subscriber lookup ignores letter case. An email address alone never grants access.
 
 ## `GET /subscribe/email/verify?oobCode=`
 
@@ -22,7 +22,7 @@ Starts hosted Checkout (`mode=subscription`). Redirects to Stripe. 503 if Stripe
 
 ## `GET /subscribe/complete?session_id=`
 
-Retrieves the Checkout Session. Only `status=complete` with `payment_status` `paid` (or `no_payment_required`) counts. Set-Cookie entitlement for the customer who paid in that session, never another customer (the email typed at Checkout is not verified). HTML: return to the AI chat app. Optional one-time `entitlement` code displayed.
+A `session_id` that is not shaped like a Checkout Session id (`cs_live_…` or `cs_test_…`) → 400 without calling the processor; rate limited per client address. Retrieves the Checkout Session. Only `status=complete` with `payment_status` `paid` (or `no_payment_required`) counts. Set-Cookie entitlement for the customer who paid in that session, never another customer (the email typed at Checkout is not verified). HTML: return to the AI chat app. Optional one-time `entitlement` code displayed.
 
 ## `POST /webhooks/stripe`
 

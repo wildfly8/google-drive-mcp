@@ -123,36 +123,53 @@ class StripeHttpGateway:
                 http.close()
 
     def active_customer_id_for_email(self, email: str) -> str | None:
-        """Active subscriber for this receipt email. Does not log the address."""
+        """Active subscriber for this receipt email. Does not log the address.
+
+        Stripe's list filter matches the stored email exactly, including case,
+        so the address is also found through Search, which ignores case.
+        """
         cleaned = email.strip()
-        if "@" not in cleaned or len(cleaned) > 320 or not self._key():
+        if "@" not in cleaned or len(cleaned) > 320 or not cleaned.isascii() or not self._key():
             return None
         owns = self._client is None
         http = self._http()
         try:
-            candidates = [cleaned]
             lowered = cleaned.lower()
-            if lowered != cleaned:
-                candidates.append(lowered)
             seen: set[str] = set()
-            for candidate in candidates:
+
+            def first_active(items: list) -> str | None:
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    customer_id = str(item.get("id") or "")
+                    stored = str(item.get("email") or "").strip().lower()
+                    if not customer_id.startswith("cus_") or customer_id in seen:
+                        continue
+                    if stored and stored != lowered:
+                        continue
+                    seen.add(customer_id)
+                    if self.is_subscription_active(customer_id):
+                        return customer_id
+                return None
+
+            for candidate in dict.fromkeys([cleaned, lowered]):
                 response = http.get(
                     f"{_STRIPE}/v1/customers",
                     params={"email": candidate, "limit": 10},
                     auth=self._auth(),
                 )
-                if response.status_code != 200:
-                    continue
-                data = response.json().get("data") or []
-                for item in data:
-                    if not isinstance(item, dict):
-                        continue
-                    customer_id = str(item.get("id") or "")
-                    if not customer_id.startswith("cus_") or customer_id in seen:
-                        continue
-                    seen.add(customer_id)
-                    if self.is_subscription_active(customer_id):
-                        return customer_id
+                if response.status_code == 200:
+                    found = first_active(response.json().get("data") or [])
+                    if found:
+                        return found
+            if "'" not in lowered and "\\" not in lowered:
+                response = http.get(
+                    f"{_STRIPE}/v1/customers/search",
+                    params={"query": f"email:'{lowered}'", "limit": 10},
+                    auth=self._auth(),
+                )
+                if response.status_code == 200:
+                    return first_active(response.json().get("data") or [])
             return None
         except httpx.HTTPError:
             return None

@@ -378,10 +378,10 @@ def test_repeat_checkout_grants_only_the_paying_customer(fake_drive: FakeDrive):
     billing = FakeBilling()
     billing.active.update({"cus_old", "cus_new"})
     billing.emails["payer@example.com"] = "cus_old"
-    billing.sessions["cs_dup"] = "cus_new"
+    billing.sessions["cs_test_duplicate000001"] = "cus_new"
     runtime = Runtime(settings=settings, drive=fake_drive, billing=billing)
     with _client(runtime) as client:
-        done = client.get("/subscribe/complete", params={"session_id": "cs_dup"})
+        done = client.get("/subscribe/complete", params={"session_id": "cs_test_duplicate000001"})
         assert done.status_code == 200
         assert "Payment received" in done.text
         assert "refunded" not in done.text
@@ -432,3 +432,46 @@ def test_verify_stripe_signature_unit():
     sig = hmac.new(b"secret", f"{ts}.".encode() + payload, hashlib.sha256).hexdigest()
     assert verify_stripe_signature(payload, f"t={ts},v1={sig}", "secret", now=ts)
     assert not verify_stripe_signature(payload, f"t={ts},v1=nope", "secret", now=ts)
+
+
+def test_rate_limiter_stays_bounded_under_many_addresses():
+    from google_drive_mcp.infra.billing.routes import _RateLimit
+
+    limiter = _RateLimit(max_keys=100)
+    for n in range(5000):
+        assert limiter.allow(f"ip:10.0.{n // 256}.{n % 256}", 3, 3600)
+    assert len(limiter) <= 100
+    for _ in range(3):
+        limiter.allow("email:x", 3, 900)
+    assert not limiter.allow("email:x", 3, 900)
+
+
+def test_malformed_checkout_session_ids_never_reach_stripe(fake_drive: FakeDrive):
+    settings = _paid_settings()
+
+    class _Spy(FakeBilling):
+        def __init__(self) -> None:
+            super().__init__()
+            self.lookups = 0
+
+        def customer_id_from_checkout_session(self, session_id: str) -> str | None:
+            self.lookups += 1
+            return super().customer_id_from_checkout_session(session_id)
+
+    billing = _Spy()
+    runtime = Runtime(settings=settings, drive=fake_drive, billing=billing)
+    with _client(runtime) as client:
+        for bad in ("", "cs_x", "cus_123", "cs_live_" + "a" * 300, "cs_test_abc/../x"):
+            page = client.get("/subscribe/complete", params={"session_id": bad})
+            assert page.status_code == 400
+            assert COOKIE_NAME not in page.cookies
+    assert billing.lookups == 0
+
+
+def test_non_ascii_emails_are_rejected(fake_drive: FakeDrive):
+    settings, billing, email_link, runtime = _email_runtime(fake_drive)
+    with _client(runtime) as client:
+        # U+212A KELVIN SIGN lower-cases to "k".
+        reply = client.post("/subscribe/email", data={"email": "Kate@example.com"})
+        assert reply.status_code == 400
+    assert email_link.sent == []
