@@ -4,14 +4,21 @@ version = "0.1.0"
 description = "Read-only Google Drive MCP server for agentic retrieval"
 requires-python = ">=3.12"
 dependencies = [
-    "mcp>=2.0",
+    "mcp>=2.2,<3",
+    "starlette>=1.0",
+    "uvicorn>=0.31",
     "google-auth",
     "google-api-python-client",
     "pydantic>=2",
     "httpx",
+    "regex>=2024.11.6",
+]
+
+[dependency-groups]
+dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
-    "regex>=2024.11.6",
+    "ruff>=0.15",
 ]
 
 [project.scripts]

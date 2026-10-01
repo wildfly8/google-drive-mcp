@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+
+      # Fails when pyproject.toml changed without re-running uv lock.
+      - name: Lockfile matches pyproject.toml
+        run: uv lock --check
+
+      - name: Install from the lockfile
+        run: uv sync --frozen
+
+      - name: Tests
+        run: uv run pytest -q --ignore=tests/e2e
+
+      # Real errors only (undefined names, unused imports, syntax); style is not gated.
+      - name: Ruff
+        run: uv run ruff check --select F,E9 src tests
+
+      # Runtime dependencies as locked, with hashes.
+      - name: Dependency audit
+        run: |
+          uv export --frozen --no-dev --no-emit-project --format requirements-txt \
+            > requirements-audit.txt
+          uvx pip-audit --disable-pip --require-hashes -r requirements-audit.txt

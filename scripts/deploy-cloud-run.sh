@@ -12,6 +12,27 @@ REGION="${GCP_REGION:-us-central1}"
 SERVICE="${CLOUD_RUN_SERVICE:-onto-kb}"
 AR_REPO="${ARTIFACT_REPO:-cloud-run-source-deploy}"
 
+# Preflight: --source uploads the working tree, so deploy only committed, tested code.
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if [[ "${ALLOW_DIRTY:-0}" != "1" ]]; then
+  if ! GIT_DIRTY="$(git -C "$REPO_ROOT" status --porcelain)"; then
+    echo "Cannot read git status of ${REPO_ROOT}. Set ALLOW_DIRTY=1 to deploy anyway." >&2
+    exit 1
+  fi
+  if [[ -n "$GIT_DIRTY" ]]; then
+    echo "Uncommitted changes in ${REPO_ROOT}. Commit them, or set ALLOW_DIRTY=1." >&2
+    exit 1
+  fi
+fi
+if [[ "${SKIP_TESTS:-0}" != "1" ]] && command -v uv >/dev/null 2>&1; then
+  echo "Running tests before deploy (SKIP_TESTS=1 skips)..."
+  # --locked: a stale uv.lock fails here instead of being rewritten (the image uses the lock).
+  if ! (cd "$REPO_ROOT" && uv run --locked pytest -q --ignore=tests/e2e); then
+    echo "Tests failed. Not deploying." >&2
+    exit 1
+  fi
+fi
+
 need_gcloud() {
   if ! command -v gcloud >/dev/null 2>&1; then
     echo "gcloud is not on PATH. Install the Google Cloud SDK and authenticate." >&2
