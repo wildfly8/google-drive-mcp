@@ -70,3 +70,20 @@ def test_dependabot_covers_uv_docker_and_actions_weekly():
     for ecosystem in ("uv", "docker", "github-actions"):
         assert f'package-ecosystem: "{ecosystem}"' in text
     assert text.count('interval: "weekly"') == 3
+
+
+def test_deploy_waits_for_tests_and_a_working_image():
+    text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    image = text[text.index("\n  image:") : text.index("\n  deploy:")]
+    for needle in (
+        "docker build --pull --tag onto-kb:ci .",
+        'test "$(docker run --rm onto-kb:ci id -u)" = "10001"',
+        'python -c "import google_drive_mcp.mcp.server"',
+        'grep -q "DRIVE_ALLOWED_FOLDER_ID"',
+    ):
+        assert needle in image, needle
+    deploy = text[text.index("\n  deploy:") :]
+    assert "needs: [test, image]" in deploy
+    assert "environment: production" in deploy
+    assert "github.ref == 'refs/heads/main'" in deploy
+    assert "ONE_TIME_SETUP: \"0\"" in deploy

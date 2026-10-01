@@ -41,12 +41,41 @@ jobs:
             > requirements-audit.txt
           uvx pip-audit --disable-pip --require-hashes -r requirements-audit.txt
 
+  # Builds the production image exactly as Cloud Build will (same Dockerfile, uv.lock,
+  # non-root user) and checks it starts, so a broken image fails here, before anyone
+  # is asked to approve a deploy. Nothing is pushed.
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Build the production image
+        run: docker build --pull --tag onto-kb:ci .
+
+      - name: Runs as the non-root user and imports the server
+        run: |
+          test "$(docker run --rm onto-kb:ci id -u)" = "10001"
+          docker run --rm onto-kb:ci python -c "import google_drive_mcp.mcp.server"
+
+      # Without its configuration the server must refuse to start (fail closed),
+      # which also proves the image's start command runs the app.
+      - name: Refuses to start without configuration
+        run: |
+          if out="$(docker run --rm onto-kb:ci 2>&1)"; then
+            echo "The server started without DRIVE_ALLOWED_FOLDER_ID." >&2
+            exit 1
+          fi
+          echo "$out" | grep -q "DRIVE_ALLOWED_FOLDER_ID"
+
   # Deploys main to Cloud Run after the tests pass. Skipped until the repository
   # variables from scripts/setup-github-deploy.sh exist. The "production"
   # environment holds the approval rule; Google accepts this job's identity only
   # for this repository, the main branch and that environment (no key stored).
   deploy:
-    needs: test
+    needs: [test, image]
     if: >-
       github.event_name == 'push' && github.ref == 'refs/heads/main'
       && vars.GCP_WIF_PROVIDER != ''
