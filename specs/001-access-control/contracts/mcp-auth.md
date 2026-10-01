@@ -128,7 +128,7 @@ Access, refresh, authorization-code, consent-ticket, and DCR `client_id` values 
   reads it. A body under the cap is passed on whole.
 - Per client address (the last `X-Forwarded-For` entry, which Cloud Run appends; earlier
   entries can be forged), in that instance’s memory: `POST /register` 20 per hour;
-  `POST /token` 120 per minute; `GET` and `POST /authorize` together 120 per minute (a new
+  `POST /token` 600 per minute (AI chat apps refresh many subscribers from shared server addresses); `GET` and `POST /authorize` together 120 per minute (a new
   CIMD `client_id` there makes this server fetch a URL). Over the limit → HTTP 429 with
   `Retry-After` (the window in seconds). 413 and 429 replies carry
   `Access-Control-Allow-Origin: *` so browser-based clients can read them.

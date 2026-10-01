@@ -11,7 +11,6 @@ from google_drive_mcp.access_control.chain import evaluate_chain
 from google_drive_mcp.access_control.decisions import AuthorizationDecision
 from google_drive_mcp.domain.errors import DomainError, ErrorCategory, ErrorEnvelope
 from google_drive_mcp.domain.retrieval_scope import apply_allowed_folder
-from google_drive_mcp.infra.billing.entitlement import COOKIE_NAME, set_current_scid, verify_entitlement
 from google_drive_mcp.infra.billing.gateway import BillingGateway, InactiveBilling
 from google_drive_mcp.infra.config import Settings
 from google_drive_mcp.infra.google_auth.refresh_token import mint_readonly_credentials

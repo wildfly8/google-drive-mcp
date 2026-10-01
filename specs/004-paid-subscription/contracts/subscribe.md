@@ -62,7 +62,7 @@ Cookie renewal: every response to a browser with a valid entitlement cookie rene
 
 ## `GET /consent?ticket=` / `POST /consent`
 
-Paid ticket: an Allow page showing the client's self-declared name and the host the browser returns to, marked as a known AI chat app address or not. No password. `POST` issues the code only when the browser's own entitlement names the same subscriber and Stripe still reports it active; otherwise 400. All consent responses: `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`, `Cache-Control: no-store`. Unpaid deployments keep the `MCP_AUTH_TOKEN` password page.
+Paid ticket: an Allow page showing the client's self-declared name and the host the browser returns to, marked as a known AI chat app address, a program on this computer (loopback; shown as a warning), or not recognized. No password. `POST` issues the code only when the browser's own entitlement names the same subscriber and Stripe still reports it active; otherwise 400. All consent responses: `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`, `Cache-Control: no-store`. Unpaid deployments keep the `MCP_AUTH_TOKEN` password page.
 
 ## `POST /token` refresh
 

@@ -183,7 +183,11 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
                 scid and await run_in_threadpool(runtime.billing.is_subscription_active, scid)
             )
         # The paid setup page never shows usage counts, so skip the log scan.
-        stats = None if settings.mcp_subscription_required else stats_snapshot(runtime.telemetry)
+        stats = (
+            None
+            if settings.mcp_subscription_required
+            else await run_in_threadpool(stats_snapshot, runtime.telemetry)
+        )
         return setup_get(
             request, settings, stats, entitled=entitled, lapsed=bool(scid) and not entitled
         )

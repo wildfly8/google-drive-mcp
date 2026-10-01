@@ -492,7 +492,10 @@ def test_register_is_rate_limited_per_address(runtime):
 
 def test_token_and_authorize_are_rate_limited(runtime):
     with _client(runtime) as client:
-        for _ in range(120):
+        from google_drive_mcp.mcp.limits import RATE_LIMITS
+
+        token_limit = RATE_LIMITS[("POST", "/token")][0]
+        for _ in range(token_limit):
             assert client.post("/token", data={"grant_type": "x"}).status_code != 429
         limited = client.post("/token", data={"grant_type": "x"})
         assert limited.status_code == 429

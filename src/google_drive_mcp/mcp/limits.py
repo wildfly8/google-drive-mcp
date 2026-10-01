@@ -21,7 +21,9 @@ DEFAULT_BODY_LIMIT = 64 * 1024
 # (method, path) -> (requests, window in seconds) per client address.
 RATE_LIMITS: dict[tuple[str, str], tuple[int, int]] = {
     ("POST", "/register"): (20, 3600),
-    ("POST", "/token"): (120, 60),
+    # AI chat apps refresh every subscriber's token from a few shared server
+    # addresses, so this limit is per address but generous.
+    ("POST", "/token"): (600, 60),
     ("POST", "/authorize"): (120, 60),
     # GET too: a new CIMD client_id on /authorize makes this server fetch a URL.
     ("GET", "/authorize"): (120, 60),
