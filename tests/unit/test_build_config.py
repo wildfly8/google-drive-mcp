@@ -89,6 +89,24 @@ def test_deploy_waits_for_tests_and_a_working_image():
     assert "ONE_TIME_SETUP: \"0\"" in deploy
 
 
+def test_deploy_actions_are_pinned_by_commit_sha():
+    # They run with the deploy identity and no approval click, so a moved tag must not
+    # change what runs. Dependabot updates the SHA and the release comment together.
+    text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    deploy = text[text.index("\n  deploy:") :]
+    uses = re.findall(r"^\s*(?:- )?uses:\s*(\S+)(.*)$", deploy, re.M)
+    assert {ref.split("@")[0] for ref, _ in uses} >= {
+        "actions/checkout",
+        "google-github-actions/auth",
+        "google-github-actions/setup-gcloud",
+    }
+    # A step written another way (flow style, quoted key) must not slip past the check.
+    assert len(uses) == len(re.findall(r"\buses\b", deploy))
+    for ref, comment in uses:
+        assert re.fullmatch(r"[\w.-]+/[\w.-]+@[0-9a-f]{40}", ref), ref
+        assert re.fullmatch(r"\s+# v\d+\.\d+\.\d+", comment), ref
+
+
 def test_ci_credentials_are_never_committed_or_uploaded():
     # google-github-actions/auth writes gha-creds-*.json into the workspace.
     assert "gha-creds-*.json" in (ROOT / ".gitignore").read_text(encoding="utf-8")

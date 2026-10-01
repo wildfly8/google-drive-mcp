@@ -11,7 +11,7 @@ Workflow name `CI`. Pinned by `tests/unit/test_build_config.py`.
 
 - Workflow default: `contents: read`. No other scope.
 - `deploy` job: `contents: read`, `id-token: write`. No other job can request an OIDC token.
-- Every `actions/checkout@v7` runs with `persist-credentials: false`, so no GitHub token is left in `.git/config`.
+- Every `actions/checkout` step runs with `persist-credentials: false`, so no GitHub token is left in `.git/config`.
 
 ## Jobs
 
@@ -50,13 +50,14 @@ Nothing is pushed. The image is a check only; Cloud Build builds the deployed im
 
 - `environment: production`: allows only `main`, and its name is in the OIDC token that Google checks. No required reviewer (owner decision, FR-005), so the job starts once `test` and `image` pass; with a reviewer added back, GitHub would hold it until approval.
 - `concurrency: { group: deploy-production, cancel-in-progress: false }`: one deploy runs at a time; a newer pending deploy replaces an older pending one.
+- Every action is pinned by full commit SHA with its release in a trailing comment (FR-007, T021). Dependabot updates both.
 
 | Step | Detail | Fails when |
 | --- | --- | --- |
 | Mask project identifiers | `::add-mask::` for `secrets.X \|\| vars.X` with X = `GCP_PROJECT_ID`, `GCP_PROJECT_NUMBER`, `GCP_DEPLOY_SA` | — (a value from a variable shows in this step's header, T015) |
-| Checkout | `actions/checkout@v7`, `persist-credentials: false` | — |
-| Sign in | `google-github-actions/auth@v3` with `workload_identity_provider` and `service_account` from `GCP_WIF_PROVIDER` and `GCP_DEPLOY_SA` (secret, else variable) | the token does not meet the provider condition, or the account cannot be impersonated |
-| Set up gcloud | `google-github-actions/setup-gcloud@v3` | — |
+| Checkout | `actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1` (v7.0.1), `persist-credentials: false` | — |
+| Sign in | `google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093` (v3.0.0) with `workload_identity_provider` and `service_account` from `GCP_WIF_PROVIDER` and `GCP_DEPLOY_SA` (secret, else variable) | the token does not meet the provider condition, or the account cannot be impersonated |
+| Set up gcloud | `google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db` (v3.0.1) | — |
 | Deploy to Cloud Run | `bash scripts/deploy-cloud-run.sh` with `GCP_PROJECT` from `GCP_PROJECT_ID` (secret, else variable), `GCP_REGION=vars.GCP_REGION` (the `\|\| 'us-central1'` default cannot apply, because the job runs only when it is set), `ONE_TIME_SETUP=0`, `SKIP_TESTS=1`, `CLOUDSDK_CORE_DISABLE_PROMPTS=1` | any refusal or failure in [deploy-scripts.md](./deploy-scripts.md) |
 | Smoke test | `gcloud run services describe onto-kb … --format='value(status.url)'`, then `curl -fsS -o /dev/null` on `/subscribe` and `/.well-known/oauth-protected-resource` | either URL answers an HTTP error (400 or above) or not at all |
 

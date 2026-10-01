@@ -76,7 +76,7 @@ Check: the next push to `main` runs the `deploy` job right after `test` and `ima
 
 7. **Revisions left behind.** If the deploy says `Could not delete revisions: …`, move any traffic off them and delete them in the Cloud Run console or with `gcloud run revisions delete <revision> --region=<region>`.
 
-8. **Dependabot.** Weekly pull requests for `uv.lock`, the Docker images and the actions. Merge after CI passes and you have read the change; each merge to `main` deploys at once. Close any pull request that moves Python to a new minor version.
+8. **Dependabot.** Weekly pull requests for `uv.lock`, the Docker images and the actions (for the `deploy` job's actions, a new commit SHA and release comment). Merge after CI passes and you have read the change and, for an action, its release notes; each merge to `main` deploys at once. Close any pull request that moves Python to a new minor version.
 
 ## Automated checks
 

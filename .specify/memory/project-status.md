@@ -7,7 +7,7 @@ SDD phase changes (specify / plan / tasks / implement / converge).
 | --- | --- |
 | Spec-Kit | Initialized (specify-cli 1.0.4, cursor-agent, bash) |
 | Constitution | Ratified v1.0.0 (`.specify/memory/constitution.md`) |
-| Current phase | Launch hardening of the paid service (2026-10-01): cancellation proven end to end (004 T025-T030), launch-gap fixes merged (001 T049-T052, 002 T078-T080, 003 T019-T020, 004 T031-T032); delivery pipeline specified as 005 (CI `test` and `image` on every push, `deploy` of `main` as soon as both pass, with no approval click by the owner's decision (005 FR-005, T024); first pipeline deploy completed in run 17 (6fa3143) after fixes e436ea0 and 6fa3143; open items 005 T015, T017, T018, T021, optional T019-T020); manual deploys still use `scripts/deploy-cloud-run.sh` from a clean `main` |
+| Current phase | Launch hardening of the paid service (2026-10-01): cancellation proven end to end (004 T025-T030), launch-gap fixes merged (001 T049-T052, 002 T078-T080, 003 T019-T020, 004 T031-T032); delivery pipeline specified as 005 (CI `test` and `image` on every push, `deploy` of `main` as soon as both pass, with no approval click by the owner's decision (005 FR-005, T024); first pipeline deploy completed in run 17 (6fa3143) after fixes e436ea0 and 6fa3143; deploy actions pinned by commit SHA (005 T021); open items 005 T015, T017, T018, optional T019-T020); manual deploys still use `scripts/deploy-cloud-run.sh` from a clean `main` |
 | Next command | `/speckit-converge` |
 | Feature specs | `specs/001-access-control/spec.md`, `specs/002-retrieval-core/spec.md`, `specs/003-connect-counter/spec.md`, `specs/004-paid-subscription/spec.md`, `specs/005-delivery-pipeline/spec.md` |
 | Git branch | Spec dirs are documentation ids |
@@ -33,6 +33,6 @@ after a later implement pass or a spec/plan/tasks rewrite.
   (cancel at period end); terms, privacy, refund and contact pages on the
   business site; sales tax / where to sell; Stripe billing emails and failed
   payment settings; a content-rights review of `kb`; a Cloud Billing budget,
-  an uptime check and alert email; GitHub branch protection requiring CI (005 T017); project identifiers moved to Actions secrets (005 T015; the logs of runs 15-17 that showed them are deleted).
+  an uptime check and alert email; GitHub branch protection requiring CI (005 T017); project identifiers moved to Actions secrets (005 T015; the logs of runs 15-18 that showed them are deleted).
 - **Known limits:** revocation is per instance and `/mcp` checks the JWT only
   (access ends within one access-token lifetime); the webhook only logs.
