@@ -56,7 +56,7 @@ Code the pipeline deploys runs as the runtime account, with every bound secret, 
 
 No amendment is needed under Governance: the constitution text does not change and stays v1.0.0.
 
-**Post-design re-check**: Still PASS. T014 (e436ea0), T016 and T022–T023 (6fa3143, run 17), the closed T024 (owner decision: no approval click), T021 (SHA pins), T015 (identifiers as secrets) T018 (dependency updates, lockfile only) and the open tasks (T017, T019, T020) change delivery settings only.
+**Post-design re-check**: Still PASS. T014 (e436ea0), T016 and T022–T023 (6fa3143, run 17), the closed T024 (owner decision: no approval click), T021 (SHA pins), T015 (identifiers as secrets), T017 (branch rulesets), T018 (dependency updates, lockfile only) and the optional open tasks (T019, T020) change delivery settings only.
 
 ## Project Structure
 

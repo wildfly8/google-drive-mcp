@@ -43,7 +43,7 @@ Placeholders: `<project-id>`, `<project-number>`, `<region>` (default `us-centra
 
    If the four identifiers also exist as variables, delete those variables: a variable is printed once in the mask step's header. Then delete the logs of any run that read them from variables: Actions → the run → ⋯ → Delete all logs (T015). From Cloud Shell, `gh secret set NAME -R wildfly8/google-drive-mcp -b VALUE` and `gh variable delete NAME -R wildfly8/google-drive-mcp` do the same as the Settings page.
 
-4. **Optional, recommended**: a branch ruleset on `main` that requires the `test` and `image` checks (T017).
+4. **Branch rulesets on `main`** (T017; done 2026-10-01). Settings → Rules → Rulesets, or in Cloud Shell with `gh api -X POST repos/wildfly8/google-drive-mcp/rulesets --input <file>`: one ruleset with `deletion` and `non_fast_forward` and no bypass, and one with `required_status_checks` for `test` and `image` (integration 15368, GitHub Actions) that repository admins bypass, so direct pushes to `main` keep working.
 
 Check: the next push to `main` runs the `deploy` job right after `test` and `image`, and its "Mask project identifiers" step shows only `***`.
 
