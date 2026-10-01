@@ -309,7 +309,7 @@ _SENT = (
 )
 _PRIVATE_HEADERS = {
     "Cache-Control": "no-store",
-    "Referrer-Policy": "no-referrer",
+    "Referrer-Policy": "same-origin",
     "X-Frame-Options": "DENY",
     "Content-Security-Policy": "frame-ancestors 'none'",
 }

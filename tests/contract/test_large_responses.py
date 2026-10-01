@@ -191,3 +191,34 @@ async def test_batch_with_tools_list_is_stamped(settings):
     assert stamped[0]["result"]["tools"][0]["securitySchemes"] == oauth_security_schemes()
     assert stamped[1] == {"jsonrpc": "2.0", "id": 2, "result": {}}
     assert "列 →".encode() in body
+
+
+def test_quote_heavy_text_is_cut_to_fit_the_response_cap(runtime, fake_drive: FakeDrive, authz):
+    # Typical quoted CSV: under the 20 MB content cap, but each quote costs 4 bytes
+    # once escaped twice, so the whole file would make a ~33 MiB response.
+    row = '"2024-01-05","ACME, Inc.","Widget ""Pro""","12.50"\n'
+    text = row * (19_900_000 // len(row))
+    assert len(text.encode("utf-8")) < 20_000_000
+    fake_drive.add(
+        FakeFile(
+            id="orders", name="orders.csv", mime_type="text/csv", parents=["root"], content=text
+        )
+    )
+    with TestClient(streamable_app(runtime, json_response=True)) as client:
+        response = client.post(
+            "/mcp",
+            headers={**HEADERS_JSON, "authorization": authz},
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "drive_read", "arguments": {"file_id": "orders"}},
+            },
+        )
+    assert response.status_code == 200
+    assert len(response.content) < CLOUD_RUN_RESPONSE_CAP
+    result = json.loads(json.loads(response.content)["result"]["content"][0]["text"])
+    assert result["status"] == "PARTIAL"
+    assert result["partial_reason"] == "max_bytes"
+    assert text.startswith(result["content"])
+    assert len(result["content"]) > len(text) // 3  # cut to fit, not emptied

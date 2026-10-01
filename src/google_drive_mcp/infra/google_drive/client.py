@@ -24,9 +24,10 @@ from google_drive_mcp.infra.google_drive.query import (
 
 _FIELDS = "id,name,mimeType,parents,modifiedTime,createdTime,webViewLink,size,trashed"
 _PARENTS_PER_QUERY = 40
-# Well under Cloud Run's 60 s request timeout, so a stalled Drive download ends
-# as a tool error instead of a bare 504 (googleapiclient's default is 60 s).
-HTTP_TIMEOUT_SECONDS = 20
+# Under Cloud Run's 60 s request timeout, so a stalled Drive download ends as a
+# tool error instead of a bare 504 (googleapiclient's default is 60 s), yet long
+# enough for Drive to build a large Doc or Sheet export before its first byte.
+HTTP_TIMEOUT_SECONDS = 30
 
 
 def _build_http() -> httplib2.Http:

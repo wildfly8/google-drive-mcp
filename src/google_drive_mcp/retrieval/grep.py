@@ -30,6 +30,7 @@ from google_drive_mcp.infra.exact_search.regex import (
 from google_drive_mcp.infra.google_drive.export import (
     SHEET_MIME,
     SLIDE_MIME,
+    DownloadStalled,
     default_representation,
     fetch_text,
     is_workspace,
@@ -296,6 +297,7 @@ def drive_grep(
     last_unsupported: ErrorCategory | None = None
     truncated_bytes = False
     deferred: list[str] = []
+    stalled: set[str] = set()
     last_scanned_id: str | None = None
     resume = False
     stopped_for_time = False
@@ -413,6 +415,13 @@ def drive_grep(
                         raise
                     download_rate_limited = True
                     break
+                if isinstance(exc, DownloadStalled) and not single_target:
+                    # One file stopped arriving; the others may be fine. List it as
+                    # deferred (the host can grep it alone) and keep scanning.
+                    deferred.append(file.id)
+                    stalled.add(file.id)
+                    index += 1
+                    continue
                 raise
             files_scanned += 1
             scanned_before = last_scanned_id
@@ -565,6 +574,13 @@ def drive_grep(
         return _coverage(
             status=OperationStatus.PARTIAL,
             partial_reason=PartialReason.max_matches.value,
+            **common,
+        )
+    if deferred and not truncated_bytes and set(deferred) <= stalled:
+        # Only files whose download stalled were set aside: a time problem.
+        return _coverage(
+            status=OperationStatus.PARTIAL,
+            partial_reason=PartialReason.max_execution_time.value,
             **common,
         )
     if truncated_bytes or deferred:
