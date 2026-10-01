@@ -99,9 +99,9 @@ def representation_for(mime: str, content_format: str | None, name: str = "") ->
         if content_format != default:
             raise DomainError.of(ErrorCategory.INVALID_ARGUMENT)
         return content_format
-    if is_text_blob(mime, name) and (
-        content_format == mime or content_format.startswith("text/")
-    ):
+    # Text files are returned as stored, never converted, so only their own type
+    # (or plain text) describes the bytes truthfully.
+    if is_text_blob(mime, name) and content_format in {mime, default, "text/plain"}:
         return content_format
     raise DomainError.of(ErrorCategory.INVALID_ARGUMENT)
 

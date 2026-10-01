@@ -105,3 +105,19 @@ def test_read_export_429_is_rate_limited_envelope(runtime, fake_drive, authz):
     )
     assert result["status"] == "ERROR"
     assert result["category"] == "RATE_LIMITED"
+
+
+def test_text_file_formats_must_describe_the_stored_bytes():
+    from google_drive_mcp.domain.errors import DomainError
+    from google_drive_mcp.infra.google_drive.export import representation_for
+
+    assert representation_for("text/markdown", None, "notes.md")
+    assert representation_for("text/markdown", "text/markdown", "notes.md") == "text/markdown"
+    assert representation_for("text/markdown", "text/plain", "notes.md") == "text/plain"
+    for other in ("text/html", "text/csv"):
+        try:
+            representation_for("text/markdown", other, "notes.md")
+        except DomainError as exc:
+            assert exc.error.category.value == "INVALID_ARGUMENT"
+        else:
+            raise AssertionError(f"{other} should be INVALID_ARGUMENT for a Markdown file")

@@ -22,3 +22,22 @@ def test_walk_429_is_partial_not_mapped_rate_limited_envelope(runtime, fake_driv
     assert result["status"] == "PARTIAL"
     assert result["partial_reason"] == "RATE_LIMITED"
     assert "category" not in result
+
+
+def _http_error(status: int, reason: str):
+    import json
+
+    from googleapiclient.errors import HttpError
+    from httplib2 import Response
+
+    body = {"error": {"code": status, "errors": [{"reason": reason}], "message": reason}}
+    return HttpError(Response({"status": str(status)}), json.dumps(body).encode())
+
+
+def test_drive_403_rate_limits_are_rate_limits_not_missing_files():
+    from google_drive_mcp.infra.google_drive.client import _status
+
+    assert _status(_http_error(403, "userRateLimitExceeded")) == 429
+    assert _status(_http_error(403, "rateLimitExceeded")) == 429
+    assert _status(_http_error(403, "insufficientFilePermissions")) == 403
+    assert _status(_http_error(404, "notFound")) == 404

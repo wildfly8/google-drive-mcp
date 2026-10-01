@@ -23,7 +23,7 @@ def host_family_from_client_id(client_id: str) -> str:
     if raw.startswith("https://") or raw.startswith("http://"):
         host = (urlparse(raw).hostname or "").lower()
     blob = f"{host} {raw}"
-    if "claude.ai" in blob or "anthropic.com" in blob:
+    if "claude.ai" in blob or "claude.com" in blob or "anthropic.com" in blob:
         return HOST_CLAUDE
     if "openai.com" in blob or "chatgpt.com" in blob:
         return HOST_CHATGPT

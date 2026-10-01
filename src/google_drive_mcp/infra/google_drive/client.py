@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import threading
 
 import google_auth_httplib2
@@ -33,14 +34,31 @@ def _reraise_google(exc: BaseException) -> None:
     raise exc
 
 
+_RATE_LIMIT_REASONS = frozenset({"rateLimitExceeded", "userRateLimitExceeded"})
+
+
+def _rate_limited(exc: HttpError) -> bool:
+    """Drive sends some per-user rate limits as 403 with a rate-limit reason."""
+    try:
+        body = json.loads(exc.content or b"{}")
+    except (TypeError, ValueError):
+        return False
+    error = body.get("error") if isinstance(body, dict) else None
+    errors = error.get("errors") if isinstance(error, dict) else None
+    return any(
+        isinstance(item, dict) and item.get("reason") in _RATE_LIMIT_REASONS
+        for item in errors or []
+    )
+
+
 def _status(exc: HttpError) -> int:
     status = getattr(exc, "status_code", None)
-    if isinstance(status, int) and status:
-        return status
-    resp = getattr(exc, "resp", None)
-    if resp is not None:
-        return int(getattr(resp, "status", 500) or 500)
-    return 500
+    if not (isinstance(status, int) and status):
+        resp = getattr(exc, "resp", None)
+        status = int(getattr(resp, "status", 500) or 500) if resp is not None else 500
+    if status == 403 and _rate_limited(exc):
+        return 429
+    return status
 
 
 def _meta(resource: dict) -> dict:

@@ -14,6 +14,7 @@ from google_drive_mcp.domain.connect_telemetry import (
     ConnectStats,
     FamilyCounts,
 )
+from google_drive_mcp.infra.telemetry.gcp_console import DEFAULT_SERVICE
 
 _MAX_ENTRIES = 10000
 _PAGE = 1000
@@ -71,8 +72,10 @@ def fetch_cloud_logging_stats(
         return None, "auth"
     if not token:
         return None, "auth"
+    service = os.environ.get("K_SERVICE") or os.environ.get("CLOUD_RUN_SERVICE") or DEFAULT_SERVICE
     filt = (
         'resource.type="cloud_run_revision" AND '
+        f'resource.labels.service_name="{service}" AND '
         f'(jsonPayload.event="{EVENT_OAUTH_CONNECT}" OR '
         f'jsonPayload.event="{EVENT_DRIVE_FIRST_USE}") AND '
         f'timestamp>="{_lookback_start()}"'

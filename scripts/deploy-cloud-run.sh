@@ -141,7 +141,8 @@ DEPLOY_ARGS=(
 )
 # Prefer an already-deployed origin so OAuth issuer == the URL hosts paste.
 EXISTING_URL="$(gcloud run services describe "$SERVICE" --project="$PROJECT" --region="$REGION" --format='value(status.url)' 2>/dev/null || true)"
-DEFAULT_PUBLIC_URL="${EXISTING_URL:-https://${SERVICE}-kxjtmypvfa-uc.a.run.app}"
+# On a first deploy there is no URL yet; it is aligned right after deploy.
+DEFAULT_PUBLIC_URL="${EXISTING_URL:-}"
 CANONICAL_PUBLIC="${MCP_PUBLIC_URL:-${DEFAULT_PUBLIC_URL}}"
 CANONICAL_PUBLIC="${CANONICAL_PUBLIC%/}"
 DEPLOY_ENV="MCP_PUBLIC_URL=${CANONICAL_PUBLIC}"
@@ -189,8 +190,8 @@ if [[ "$CANONICAL_PUBLIC" != "$URL" ]]; then
 fi
 
 # kb-only guard. A pinned, tagged or rolled-back revision keeps its own code
-# and env, so check the newest revision carries the kb allow-list before it
-# takes traffic, send all traffic to it, drop traffic tags, and delete every
+# and env, so check the newest revision carries the kb allow-list (it already
+# serves; the server refuses to start without one), send all traffic to it, drop traffic tags, and delete every
 # other revision. Roll back by redeploying an older commit instead.
 revision_folder() {
   gcloud run revisions describe "$1" --project="$PROJECT" --region="$REGION" --format=json \
@@ -233,6 +234,7 @@ if (( ${#NOT_DELETED[@]} )); then
 fi
 echo "LIVE_MCP_URL=${URL}/mcp"
 echo "Ensuring connect-counter log metrics and Monitoring dashboard..."
-bash "$(cd "$(dirname "$0")" && pwd)/ensure-connect-telemetry-gcp.sh"
+GOOGLE_CLOUD_PROJECT="$PROJECT" GCP_PROJECT="$PROJECT" \
+  bash "$(cd "$(dirname "$0")" && pwd)/ensure-connect-telemetry-gcp.sh"
 echo "Deploy complete. Hosts use MCP OAuth 2.1 against this origin."
 echo "Set LIVE_MCP_URL and MCP_AUTH_TOKEN (consent password from Secret Manager, not chat) for live E2E."

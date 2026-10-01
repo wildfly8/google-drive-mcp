@@ -96,6 +96,22 @@ class Settings(BaseModel):
             )
         return folder
 
+    def require_signing_material(self) -> None:
+        """Raise ValueError unless the JWT signing material is long and secret.
+
+        Tokens, consent tickets and entitlement cookies are signed with a key
+        derived from MCP_OAUTH_SIGNING_KEY, or else from MCP_AUTH_TOKEN. With
+        both empty the key would be a constant anyone can compute from the
+        public code, so the server must not start.
+        """
+        explicit = self.mcp_oauth_signing_key.get_secret_value().strip()
+        password = self.mcp_auth_token.get_secret_value().strip()
+        if len(explicit or password) < 32:
+            raise ValueError(
+                "MCP_OAUTH_SIGNING_KEY (or, if unset, MCP_AUTH_TOKEN) must be a random "
+                "secret of at least 32 characters; tokens could be forged otherwise."
+            )
+
     def __repr__(self) -> str:
         return (
             f"Settings(mcp_principal_id={self.mcp_principal_id!r}, "

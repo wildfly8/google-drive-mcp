@@ -13,6 +13,10 @@ def test_host_family_from_client_id():
     assert host_family_from_client_id(
         "https://claude.ai/oauth/mcp-oauth-client-metadata"
     ) == "claude"
+    assert (
+        host_family_from_client_id("https://claude.com/oauth/mcp-oauth-client-metadata")
+        == "claude"
+    )
     assert host_family_from_client_id("https://chatgpt.com/apps") == "chatgpt"
     assert host_family_from_client_id("https://platform.openai.com/apps") == "chatgpt"
     assert host_family_from_client_id("random-dcr-uuid") == "other"

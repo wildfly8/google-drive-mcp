@@ -94,6 +94,8 @@ def build_runtime(settings: Settings | None = None, drive: Any | None = None) ->
         settings = Settings.from_env()
         # Only kb is readable: never serve from an environment without it.
         settings.require_allowed_folder()
+        # Never sign tokens and cookies with a guessable key.
+        settings.require_signing_material()
     billing = None
     if settings.stripe_secret_key.get_secret_value().strip():
         billing = StripeHttpGateway(settings)
@@ -168,12 +170,9 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
         entitled = True
         if settings.mcp_subscription_required:
             entitled = bool(scid and runtime.billing.is_subscription_active(scid))
-        return setup_get(
-            request,
-            settings,
-            stats_snapshot(runtime.telemetry),
-            entitled=entitled,
-        )
+        # The paid setup page never shows usage counts, so skip the log scan.
+        stats = None if settings.mcp_subscription_required else stats_snapshot(runtime.telemetry)
+        return setup_get(request, settings, stats, entitled=entitled)
 
     @server.custom_route("/subscribe", methods=["GET"])
     async def subscribe_page(request):
@@ -214,7 +213,11 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
 
     @server.custom_route("/stats", methods=["GET"])
     async def connect_stats(request):
-        return stats_get(request, runtime.telemetry)
+        # Public page: with the paywall on, leave out console links (they name the
+        # GCP project).
+        return stats_get(
+            request, runtime.telemetry, links=not settings.mcp_subscription_required
+        )
 
     tool_meta = {"securitySchemes": oauth_security_schemes()}
 

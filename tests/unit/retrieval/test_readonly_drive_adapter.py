@@ -13,7 +13,8 @@ FORBIDDEN_SNIPPETS = (
 
 
 def test_google_drive_adapter_has_no_write_methods():
-    root = Path("src/google_drive_mcp/infra/google_drive")
-    blob = "\n".join(p.read_text() for p in root.glob("*.py"))
+    # All of src/, not only the adapter package: a writer elsewhere is still a writer.
+    root = Path("src/google_drive_mcp")
+    blob = "\n".join(p.read_text() for p in root.rglob("*.py"))
     for snippet in FORBIDDEN_SNIPPETS:
         assert snippet not in blob

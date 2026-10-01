@@ -632,3 +632,125 @@ def test_manage_opens_the_stripe_portal_for_this_browser_only(fake_drive: FakeDr
         # The subscribe page tells people where to cancel.
         client.cookies.clear()
         assert "Manage or cancel" in client.get("/subscribe").text
+
+
+def test_paid_connect_counts_once_and_a_lapsed_exchange_counts_nothing(fake_drive: FakeDrive):
+    import base64
+    import hashlib
+    import secrets
+
+    settings = _paid_settings()
+    billing = FakeBilling()
+    billing.active.add("cus_live1")
+    runtime = Runtime(settings=settings, drive=fake_drive, billing=billing)
+    token = mint_entitlement(settings, customer_id="cus_live1")
+
+    def connect(client) -> int:
+        verifier = secrets.token_urlsafe(64)
+        challenge = (
+            base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
+            .rstrip(b"=")
+            .decode("ascii")
+        )
+        client.cookies.clear()
+        registered = client.post(
+            "/register",
+            json={
+                "redirect_uris": ["http://127.0.0.1/callback"],
+                "client_name": "Claude",
+                "grant_types": ["authorization_code", "refresh_token"],
+                "token_endpoint_auth_method": "none",
+                "scope": "drive.read",
+            },
+        )
+        client_id = registered.json()["client_id"]
+        authorize = client.get(
+            "/authorize",
+            params={
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": "http://127.0.0.1/callback",
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+                "scope": "drive.read",
+                "resource": "http://127.0.0.1/mcp",
+            },
+            cookies={COOKIE_NAME: token},
+            follow_redirects=False,
+        )
+        ticket = parse_qs(urlparse(authorize.headers["location"]).query)["ticket"][0]
+        allowed = client.post(
+            "/consent",
+            data={"ticket": ticket},
+            cookies={COOKIE_NAME: token},
+            follow_redirects=False,
+        )
+        code = parse_qs(urlparse(allowed.headers["location"]).query)["code"][0]
+        client.cookies.clear()
+        exchanged = client.post(
+            "/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": "http://127.0.0.1/callback",
+                "client_id": client_id,
+                "code_verifier": verifier,
+                "resource": "http://127.0.0.1/mcp",
+            },
+        )
+        return exchanged.status_code
+
+    with _client(runtime) as client:
+        assert client.get("/stats").json()["oauth_connects"] == 0
+        assert connect(client) == 200
+        assert client.get("/stats").json()["oauth_connects"] == 1
+        # The subscription lapses between the Allow click and the code exchange.
+        original = billing.is_subscription_active
+        calls = {"n": 0}
+
+        def lapses_at_exchange(customer_id: str) -> bool:
+            calls["n"] += 1
+            return calls["n"] <= 2 and original(customer_id)  # authorize + Allow only
+
+        billing.is_subscription_active = lapses_at_exchange  # type: ignore[method-assign]
+        assert connect(client) == 400
+        assert client.get("/stats").json()["oauth_connects"] == 1
+
+
+def test_paid_stats_leave_out_console_links_and_setup_skips_the_log_scan(
+    fake_drive: FakeDrive, monkeypatch
+):
+    from google_drive_mcp.infra.mcp_auth import stats as stats_module
+    from google_drive_mcp.mcp import server as server_module
+
+    monkeypatch.setattr(stats_module, "cloud_logging_project", lambda: "example-project")
+    runtime = Runtime(settings=_paid_settings(), drive=fake_drive, billing=FakeBilling())
+    with _client(runtime) as client:
+        body = client.get("/stats").json()
+        assert "gcp" not in body
+        assert "example-project" not in json.dumps(body)
+
+        def no_scan(*_args, **_kwargs):
+            raise AssertionError("/setup must not scan logs when the paywall is on")
+
+        monkeypatch.setattr(server_module, "stats_snapshot", no_scan)
+        assert client.get("/setup").status_code == 200
+
+
+def test_public_stats_reuse_one_log_scan_per_minute(monkeypatch):
+    from google_drive_mcp.infra.mcp_auth import stats as stats_module
+    from google_drive_mcp.infra.telemetry.recorder import ConnectRecorder
+
+    scans = {"n": 0}
+
+    def fake_scan(*, project: str):
+        scans["n"] += 1
+        return None, "no_project"
+
+    monkeypatch.setattr(stats_module, "use_cloud_logging_stats", lambda: True)
+    monkeypatch.setattr(stats_module, "fetch_cloud_logging_stats", fake_scan)
+    monkeypatch.setattr(stats_module, "_log_scan", {"at": 0.0, "result": None})
+    recorder = ConnectRecorder()
+    for _ in range(5):
+        assert stats_module.stats_snapshot(recorder, links=False)["log_store"] == "no_project"
+    assert scans["n"] == 1

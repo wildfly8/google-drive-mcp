@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import threading
+import time
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -25,17 +27,36 @@ def _with_gcp_links(body: dict) -> dict:
     return body
 
 
-def stats_snapshot(recorder: ConnectRecorder) -> dict:
+# /stats is public: reuse one Cloud Logging scan for a minute so anonymous
+# requests cannot spend the project's Logging read quota.
+_LOG_SCAN_TTL = 60.0
+_log_scan: dict = {"at": 0.0, "result": None}
+_log_scan_lock = threading.Lock()
+
+
+def _logged_stats():
+    with _log_scan_lock:
+        cached = _log_scan["result"]
+        if cached is not None and time.monotonic() - _log_scan["at"] < _LOG_SCAN_TTL:
+            return cached
+        result = fetch_cloud_logging_stats(project=cloud_logging_project())
+        _log_scan.update(at=time.monotonic(), result=result)
+        return result
+
+
+def stats_snapshot(recorder: ConnectRecorder, *, links: bool = True) -> dict:
+    """Non-PII totals. links=False leaves out console links, which name the project."""
+    add_links = _with_gcp_links if links else (lambda body: body)
     if use_cloud_logging_stats():
-        logged, reason = fetch_cloud_logging_stats(project=cloud_logging_project())
+        logged, reason = _logged_stats()
         if logged is not None:
-            return _with_gcp_links(logged.to_dict())
+            return add_links(logged.to_dict())
         body = recorder.snapshot().to_dict()
         if reason:
             body["log_store"] = reason
-        return _with_gcp_links(body)
-    return _with_gcp_links(recorder.snapshot().to_dict())
+        return add_links(body)
+    return add_links(recorder.snapshot().to_dict())
 
 
-def stats_get(_request: Request, recorder: ConnectRecorder) -> JSONResponse:
-    return JSONResponse(stats_snapshot(recorder))
+def stats_get(_request: Request, recorder: ConnectRecorder, *, links: bool = True) -> JSONResponse:
+    return JSONResponse(stats_snapshot(recorder, links=links))

@@ -321,7 +321,7 @@ def test_startup_drive_check_refuses_the_real_root_id(fake_drive: FakeDrive):
 def test_server_refuses_to_start_when_drive_check_fails(monkeypatch):
     from google_drive_mcp.mcp import server
 
-    monkeypatch.setenv("MCP_AUTH_TOKEN", "test-token")
+    monkeypatch.setenv("MCP_AUTH_TOKEN", "test-token-long-enough-to-sign-jwts-0001")
     monkeypatch.setenv("DRIVE_ALLOWED_FOLDER_ID", "1kbFolderIdUsedOnlyInTests000000")
 
     def refuse(_settings):
@@ -389,3 +389,16 @@ def test_grep_outside_file_is_authorization_error(fake_drive: FakeDrive, authz):
     )
     assert result["category"] == "AUTHORIZATION_ERROR"
     assert fake_drive.content_count == 0
+
+
+@pytest.mark.parametrize("secret", ["", "short-password", " " * 40])
+def test_server_refuses_to_start_with_a_guessable_signing_key(monkeypatch, secret: str):
+    from google_drive_mcp.mcp import server
+
+    monkeypatch.setenv("DRIVE_ALLOWED_FOLDER_ID", "1kbFolderIdUsedOnlyInTests000000")
+    monkeypatch.setenv("MCP_AUTH_TOKEN", secret)
+    monkeypatch.delenv("MCP_OAUTH_SIGNING_KEY", raising=False)
+    monkeypatch.setattr(server, "check_allowed_folder_in_drive", lambda _settings: None)
+    with pytest.raises(SystemExit) as stopped:
+        server.main()
+    assert "at least 32 characters" in str(stopped.value)
