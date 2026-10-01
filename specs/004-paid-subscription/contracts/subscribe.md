@@ -22,7 +22,7 @@ Starts hosted Checkout (`mode=subscription`). Redirects to Stripe. 503 if Stripe
 
 ## `GET /subscribe/complete?session_id=`
 
-A `session_id` that is not shaped like a Checkout Session id (`cs_live_…` or `cs_test_…`) → 400 without calling the processor; rate limited per client address. Retrieves the Checkout Session. Only `status=complete` with `payment_status` `paid` (or `no_payment_required`) counts. Set-Cookie entitlement for the customer who paid in that session, never another customer (the email typed at Checkout is not verified). HTML: return to the AI chat app. Optional one-time `entitlement` code displayed.
+A `session_id` that is not shaped like a Checkout Session id (`cs_live_…` or `cs_test_…`) → 400 without calling the processor; rate limited per client address. Retrieves the Checkout Session. Only `status=complete` with `payment_status` `paid` (or `no_payment_required`) counts. Set-Cookie entitlement for the customer who paid in that session, never another customer (the email typed at Checkout is not verified). HTML: return to the AI chat app. The entitlement is only set as an HttpOnly cookie; it is never shown on the page.
 
 ## `POST /webhooks/stripe`
 

@@ -7,6 +7,7 @@
 - `typ`: `entitlement`
 - Signed with the same HMAC material as MCP JWTs
 - Never logged
+- Only ever the HttpOnly cookie: never shown on a page, never accepted from a URL (FR-015)
 
 ## Token claim `scid`
 

@@ -1,4 +1,4 @@
-"""Signed entitlement cookie / query token. Holds Stripe customer id only."""
+"""Signed entitlement cookie. Holds Stripe customer id only; never accepted from a URL."""
 
 from __future__ import annotations
 

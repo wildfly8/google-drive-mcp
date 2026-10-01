@@ -527,10 +527,10 @@ class _AuthorizationHeaderMiddleware:
         set_authorization(headers.get("authorization"))
         reset_request_drive()
         scid = None
-        from_cookie = False
         if self.settings is not None:
-            from urllib.parse import parse_qs, quote
+            from urllib.parse import quote
 
+            # The entitlement is only ever the HttpOnly cookie, never a URL value.
             cookies = headers.get("cookie") or ""
             raw = None
             for part in cookies.split(";"):
@@ -541,11 +541,6 @@ class _AuthorizationHeaderMiddleware:
                     raw = value
                     break
             scid = verify_entitlement(raw, self.settings)
-            from_cookie = scid is not None
-            if scid is None:
-                query = (scope.get("query_string") or b"").decode()
-                token = (parse_qs(query).get("entitlement") or [None])[0]
-                scid = verify_entitlement(token, self.settings)
             path = scope.get("path") or ""
             method = scope.get("method") or "GET"
             if (
@@ -580,7 +575,6 @@ class _AuthorizationHeaderMiddleware:
         async def send_renewed(message):
             if (
                 message["type"] == "http.response.start"
-                and from_cookie
                 and scid
                 and self.settings is not None
                 and self.settings.mcp_subscription_required

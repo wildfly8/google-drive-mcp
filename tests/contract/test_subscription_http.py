@@ -260,6 +260,62 @@ def test_checkout_complete_sets_cookie(fake_drive: FakeDrive):
         assert COOKIE_NAME in done.cookies
         assert "Payment received" in done.text
         assert 'href="/setup"' in done.text
+        # The entitlement lives only in the HttpOnly cookie, never on the page.
+        assert done.cookies[COOKIE_NAME] not in done.text
+        assert "Fallback entitlement" not in done.text
+
+
+def test_entitlement_in_the_url_is_ignored(fake_drive: FakeDrive):
+    settings = _paid_settings()
+    billing = FakeBilling()
+    billing.active.add("cus_live1")
+    runtime = Runtime(settings=settings, drive=fake_drive, billing=billing)
+    token = mint_entitlement(settings, customer_id="cus_live1")
+    with _client(runtime) as client:
+        registered = client.post(
+            "/register",
+            json={
+                "redirect_uris": ["http://127.0.0.1/callback"],
+                "client_name": "paywall-test",
+                "grant_types": ["authorization_code", "refresh_token"],
+                "token_endpoint_auth_method": "none",
+                "scope": "drive.read",
+            },
+        )
+        authorize = client.get(
+            "/authorize",
+            params={
+                "response_type": "code",
+                "client_id": registered.json()["client_id"],
+                "redirect_uri": "http://127.0.0.1/callback",
+                "code_challenge": "abc",
+                "code_challenge_method": "S256",
+                "scope": "drive.read",
+                "resource": "http://127.0.0.1/mcp",
+                "entitlement": token,
+            },
+            follow_redirects=False,
+        )
+        assert authorize.headers["location"] == "/subscribe"
+        assert COOKIE_NAME not in authorize.cookies
+        setup = client.get("/setup", params={"entitlement": token})
+        assert "/mcp" not in setup.text
+        assert COOKIE_NAME not in setup.cookies
+        subscribe = client.get(
+            "/subscribe", params={"entitlement": token}, follow_redirects=False
+        )
+        assert subscribe.status_code == 200
+        assert COOKIE_NAME not in subscribe.cookies
+        # A valid Allow ticket still needs the cookie; the URL value does not count.
+        ticket = _authorize_ticket(client, token)
+        client.cookies.clear()
+        refused = client.post(
+            "/consent",
+            params={"entitlement": token},
+            data={"ticket": ticket},
+            follow_redirects=False,
+        )
+        assert refused.status_code == 400
 
 
 def _email_runtime(fake_drive: FakeDrive):

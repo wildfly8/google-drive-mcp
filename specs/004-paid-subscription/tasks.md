@@ -42,4 +42,5 @@
 - [x] T021 Continue a subscription in another browser through a one-time sign-in link emailed by Google Identity Platform: same reply for every email, link sent only to active subscribers after the reply, button landing page, email must match, Identity Platform user deleted, rate limits; `IDENTITY_TOOLKIT_API_KEY` secret bound by deploy
 - [x] T022 `scripts/deploy-cloud-run.sh` refuses to deploy without the Stripe key and price instead of deploying a free server (FR-009)
 - [x] T023 Security review fixes: rate limiter memory bounded (LRU, idle keys pruned); `/subscribe/complete` checks the session id shape and is rate limited; subscriber lookup by email ignores case (Stripe Search fallback, stored email must match); non-ASCII emails rejected
+- [x] T024 Remove the `?entitlement=` URL fallback (middleware and `/setup` / `/subscribe`) and the token shown on `/subscribe/complete`; the cookie is the only source (FR-015)
 

@@ -19,7 +19,6 @@ from google_drive_mcp.infra.billing.email_link import EmailLinkPort
 from google_drive_mcp.infra.billing.entitlement import (
     COOKIE_NAME,
     RESUME_COOKIE,
-    mint_entitlement,
     safe_resume,
     set_entitlement_cookie,
     verify_entitlement,
@@ -72,8 +71,6 @@ _COMPLETE = """\
   <h1>{heading}</h1>
   <p>{message}</p>
   <p><a id="return-app" href="{next_href}">Return to your AI chat app</a></p>
-  <p>Fallback entitlement (do not share):</p>
-  <p><code>{code}</code></p>
   {script}
 </body>
 </html>
@@ -197,7 +194,6 @@ async def subscribe_complete_get(
             status_code=402,
         )
     customer = found
-    token = mint_entitlement(settings, customer_id=customer)
     heading = "Payment received"
     message = (
         "Return to your AI chat app. While this subscription stays active, "
@@ -208,7 +204,6 @@ async def subscribe_complete_get(
             heading=html.escape(heading),
             message=html.escape(message),
             next_href=html.escape(_resume_target(request), quote=True),
-            code=html.escape(token),
             script="",
         )
     )
@@ -468,8 +463,5 @@ async def stripe_webhook_post(request: Request, settings: Settings) -> Response:
 
 
 def entitlement_from_request(request: Request, settings: Settings) -> str | None:
-    raw = request.cookies.get(COOKIE_NAME)
-    scid = verify_entitlement(raw, settings)
-    if scid:
-        return scid
-    return verify_entitlement(request.query_params.get("entitlement"), settings)
+    """Subscriber from the HttpOnly cookie only. A URL value is never accepted."""
+    return verify_entitlement(request.cookies.get(COOKIE_NAME), settings)
