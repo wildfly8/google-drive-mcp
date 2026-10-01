@@ -87,3 +87,12 @@ def test_deploy_waits_for_tests_and_a_working_image():
     assert "environment: production" in deploy
     assert "github.ref == 'refs/heads/main'" in deploy
     assert "ONE_TIME_SETUP: \"0\"" in deploy
+
+
+def test_ci_credentials_are_never_committed_or_uploaded():
+    # google-github-actions/auth writes gha-creds-*.json into the workspace.
+    assert "gha-creds-*.json" in (ROOT / ".gitignore").read_text(encoding="utf-8")
+    gcloudignore = (ROOT / ".gcloudignore").read_text(encoding="utf-8")
+    assert "gha-creds-*.json" in gcloudignore
+    assert "#!include:.gitignore" in gcloudignore
+    assert "gha-creds-*.json" in (ROOT / ".dockerignore").read_text(encoding="utf-8")

@@ -138,3 +138,15 @@ def test_operator_mode_still_runs_the_one_time_setup(repo: Path, tmp_path: Path)
     assert "not a Drive folder id" in proc.stderr
     assert "services enable" in calls
     assert "add-iam-policy-binding" in calls
+
+
+def test_ci_credentials_file_does_not_block_the_deploy(repo: Path, tmp_path: Path):
+    # The auth action leaves gha-creds-*.json in the checkout; it is git-ignored.
+    shutil.copy(Path(__file__).resolve().parents[2] / ".gitignore", repo / ".gitignore")
+    git = ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.invalid"]
+    subprocess.run([*git, "add", ".gitignore"], check=True)
+    subprocess.run([*git, "commit", "-q", "-m", "ignore"], check=True)
+    (repo / "gha-creds-0123456789abcdef.json").write_text("{}\n")
+    proc, calls = _run_with_working_gcloud(repo, tmp_path, ONE_TIME_SETUP="0")
+    assert "Uncommitted changes" not in proc.stderr
+    assert "not a Drive folder id" in proc.stderr  # reached the deploy steps
