@@ -1462,3 +1462,220 @@ def test_last_workspace_file_over_the_byte_cap_finishes_the_slice():
     assert result["status"] == "COMPLETE"
     assert "partial_reason" not in result
     assert {m["file_id"] for m in result["matches"]} == {"a", "doc"}
+
+
+# (a|aa)+$ is exponential in the regex package too on a long run of a's that
+# ends in b: each such line takes about a second, so 8 of them run far past a
+# 0.5 s budget (stdlib re ran them to the end, and longer runs for hours).
+_SLOW_REGEX = "(a|aa)+$"
+
+
+def _bait(lines: int) -> str:
+    return "\n".join(["a" * 30 + "b"] * lines)
+
+
+def _prose() -> str:
+    """About 300 KB of text the slow regex is cheap on."""
+    return "\n".join(["plain prose line without the bait"] * 9000)
+
+
+def _short_budget():
+    from google_drive_mcp.domain.budgets import Budget
+
+    return Budget(max_files=200, max_execution_time=0.5)
+
+
+def test_slow_regex_stops_with_max_execution_time_and_resumes_at_its_file():
+    import time
+
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    drive = _folder(_md("first", "hit aaaa"), _md("slow", _bait(8) + "\n" + _prose()))
+    started = time.monotonic()
+    result = drive_grep(
+        drive, pattern=_SLOW_REGEX, folder_id="top", regex=True, budget=_short_budget()
+    )
+    assert time.monotonic() - started < 5
+    assert result["status"] == "PARTIAL"
+    assert result["partial_reason"] == "max_execution_time"
+    assert [m["file_id"] for m in result["matches"]] == ["first"]
+    # Nothing in "slow" finished, so the cursor continues at it (after "first").
+    assert result["next_cursor"] == "first"
+    assert result["files_scanned"] == 2
+    again = drive_grep(
+        drive,
+        pattern=_SLOW_REGEX,
+        folder_id="top",
+        regex=True,
+        cursor="first",
+        budget=_short_budget(),
+    )
+    # Stopping at the same place again tells the host to simplify the regex.
+    assert again["status"] == "PARTIAL"
+    assert again["partial_reason"] == "max_execution_time"
+    assert again["matches"] == []
+    assert again["next_cursor"] == "first"
+
+
+def test_slow_regex_keeps_finished_lines_and_resumes_inside_the_file():
+    import time
+
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    drive = _folder(_md("slow", "aaaa\nzz aa\n" + _bait(8) + "\n" + _prose()))
+    started = time.monotonic()
+    result = drive_grep(
+        drive, pattern=_SLOW_REGEX, file_ids=["slow"], regex=True, budget=_short_budget()
+    )
+    assert time.monotonic() - started < 5
+    assert result["status"] == "PARTIAL"
+    assert result["partial_reason"] == "max_execution_time"
+    assert [m["location"]["line"] for m in result["matches"]] == [1, 2]
+    assert result["next_cursor"] == "slow:2"
+    again = drive_grep(
+        drive,
+        pattern=_SLOW_REGEX,
+        file_ids=["slow"],
+        regex=True,
+        cursor="slow:2",
+        budget=_short_budget(),
+    )
+    assert again["status"] == "PARTIAL"
+    assert again["matches"] == []
+    assert again["next_cursor"] == "slow:2"
+
+
+def test_slow_regex_in_text_without_lines_resumes_after_its_matches():
+    import time
+
+    from fakes.fake_drive import FakeFile
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    sheet = FakeFile(
+        id="sheet",
+        name="sheet.csv",
+        mime_type="text/csv",
+        content="x1,x2,x3\n" + _bait(4) + "\n" + _prose(),
+    )
+    drive = _folder(sheet)
+    started = time.monotonic()
+    result = drive_grep(
+        drive,
+        pattern=r"x\d|" + _SLOW_REGEX,
+        file_ids=["sheet"],
+        regex=True,
+        budget=_short_budget(),
+    )
+    assert time.monotonic() - started < 5
+    assert result["status"] == "PARTIAL"
+    assert result["partial_reason"] == "max_execution_time"
+    assert [m["matched_text"] for m in result["matches"]] == ["x1", "x2", "x3"]
+    assert result["next_cursor"] == "sheet:3"
+
+
+def test_slow_regex_through_the_tool_stops_within_the_call_budget(
+    runtime, fake_drive, authz, monkeypatch
+):
+    import functools
+    import time
+
+    from google_drive_mcp.domain.budgets import Budget
+    from google_drive_mcp.retrieval import grep
+
+    monkeypatch.setattr(grep, "Budget", functools.partial(Budget, max_execution_time=0.5))
+    fake_drive.update_content("nested-doc", _bait(8) + "\n" + _prose())
+    started = time.monotonic()
+    result = handle_tool(
+        runtime,
+        "drive_grep",
+        {"pattern": _SLOW_REGEX, "regex": True, "file_ids": ["nested-doc"]},
+        authz,
+    )
+    assert time.monotonic() - started < 5
+    assert result["status"] == "PARTIAL"
+    assert result["partial_reason"] == "max_execution_time"
+    assert result["matches"] == []
+    # A fresh call's first file: no place to continue from, so repeat the call.
+    assert "next_cursor" not in result
+
+
+def test_regex_on_a_first_file_downloaded_past_the_deadline_still_runs():
+    from google_drive_mcp.domain.budgets import Budget
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    slow = _SlowDrive(_folder(_md("only", "hit aaaa")), lambda fid: 0.3)
+    result = drive_grep(
+        slow,
+        pattern="hit|" + _SLOW_REGEX,
+        file_ids=["only"],
+        regex=True,
+        budget=Budget(max_files=200, max_execution_time=0.2),
+    )
+    # The deadline passed during the download; the regex still gets its floor.
+    assert result["status"] == "COMPLETE"
+    assert len(result["matches"]) == 1
+
+
+def test_regex_matches_and_continuations_equal_the_literal_search():
+    from fakes.fake_drive import FakeDrive
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    drive = FakeDrive()
+    drive.add(_lines_file("aaa", 5))
+    drive.add(_lines_file("bbb", 3))
+
+    def chain(**kwargs) -> list:
+        seen, cursor = [], None
+        while True:
+            result = drive_grep(
+                drive, file_ids=["aaa", "bbb"], max_matches=2, cursor=cursor, **kwargs
+            )
+            seen += [
+                (m["file_id"], m["matched_text"].lower(), m["location"])
+                for m in result["matches"]
+            ]
+            cursor = result.get("next_cursor")
+            if not cursor:
+                return seen
+
+    literal = chain(pattern="hit", regex=False)
+    assert len(literal) == 8
+    assert chain(pattern="HIT", regex=True, case_sensitive=False) == literal
+    assert chain(pattern=r"h\w+(?= \d)", regex=True) == literal
+
+
+def test_pattern_longer_than_512_characters_is_invalid_argument(runtime, authz):
+    for regex in (False, True):
+        too_long = handle_tool(
+            runtime,
+            "drive_grep",
+            {"pattern": "q" * 513, "file_ids": ["nested-doc"], "regex": regex},
+            authz,
+        )
+        assert too_long["status"] == "ERROR"
+        assert too_long["category"] == "INVALID_ARGUMENT"
+        longest = handle_tool(
+            runtime,
+            "drive_grep",
+            {"pattern": "q" * 512, "file_ids": ["nested-doc"], "regex": regex},
+            authz,
+        )
+        assert longest["status"] == "EMPTY"
+
+
+async def test_grep_schema_caps_the_pattern_at_512_characters(runtime):
+    from google_drive_mcp.mcp.server import create_server
+    from google_drive_mcp.retrieval.grep import GREP_PATTERN_MAX_CHARS
+
+    by_name = {t.name: t for t in await create_server(runtime).list_tools()}
+    pattern = by_name["drive_grep"].input_schema["properties"]["pattern"]
+    assert pattern["maxLength"] == GREP_PATTERN_MAX_CHARS == 512
+
+
+def test_grep_description_states_the_pattern_cap_and_the_slow_regex_stop():
+    from google_drive_mcp.mcp.tool_schema import DRIVE_GREP_DESCRIPTION
+
+    assert "at most 512 characters" in DRIVE_GREP_DESCRIPTION
+    assert "too slow to finish stops with PARTIAL, partial_reason max_execution_time" in (
+        DRIVE_GREP_DESCRIPTION
+    )

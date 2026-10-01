@@ -1,13 +1,27 @@
-"""Exact-search adapter: stdlib re, literal vs regex, optional IGNORECASE."""
+"""Exact-search adapter: stdlib re for literals, the regex package for regex=true.
+
+A literal cannot backtrack, so it keeps stdlib re. A regular expression runs on
+the regex package, whose matching takes a timeout, so a pattern such as
+(a|aa)+$ cannot hold a worker past the call's time budget.
+"""
 
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass
+from re import _parser as re_parser
+
+import regex as regex_engine
 
 from google_drive_mcp.domain.errors import DomainError, ErrorCategory
 
 WINDOW_CHARS = 200
+# The regex package writes out the minimum of every repeat when it compiles
+# (about 270 bytes each), so (?:a{65535}){65535} would need terabytes.
+MAX_UNROLLED_UNITS = 10_000
+
+_REPEATS = (re_parser.MAX_REPEAT, re_parser.MIN_REPEAT, re_parser.POSSESSIVE_REPEAT)
 
 
 @dataclass(frozen=True)
@@ -17,58 +31,128 @@ class RawMatch:
     context: str | None
 
 
-def compile_pattern(pattern: str, *, regex: bool, case_sensitive: bool) -> re.Pattern[str]:
+class SearchTimeout(TimeoutError):
+    """The regex ran out of time; ``found`` holds the matches finished before that."""
+
+    def __init__(self, found: list[RawMatch]) -> None:
+        super().__init__("regex search timed out")
+        self.found = found
+
+
+def compile_pattern(
+    pattern: str, *, regex: bool, case_sensitive: bool
+) -> re.Pattern[str] | regex_engine.Pattern:
     flags = 0 if case_sensitive else re.IGNORECASE
-    source = pattern if regex else re.escape(pattern)
+    if not regex:
+        return re.compile(re.escape(pattern), flags)
     try:
-        return re.compile(source, flags)
-    except re.error as exc:
+        # Accept exactly the syntax stdlib re accepts, as before the regex package.
+        parsed = re_parser.parse(pattern, flags)
+        if _unrolled_units(parsed) > MAX_UNROLLED_UNITS:
+            raise DomainError.of(ErrorCategory.INVALID_ARGUMENT)
+        return regex_engine.compile(
+            pattern, regex_engine.IGNORECASE if flags else 0, cache_pattern=False
+        )
+    except (re.error, regex_engine.error, OverflowError) as exc:
         raise DomainError.of(ErrorCategory.INVALID_ARGUMENT) from exc
+
+
+def _unrolled_units(node) -> int:
+    """Pattern items once the minimum of every repeat is written out."""
+    total = 0
+    for op, av in node:
+        if op in _REPEATS:
+            low, _high, body = av
+            total += max(low, 1) * _unrolled_units(body)
+        else:
+            parts = _subpatterns(av)
+            total += sum(_unrolled_units(part) for part in parts) if parts else 1
+    return total
+
+
+def _subpatterns(av) -> list:
+    if isinstance(av, re_parser.SubPattern):
+        return [av]
+    if isinstance(av, tuple | list):
+        return [part for item in av for part in _subpatterns(item)]
+    return []
 
 
 def search_text(
     text: str,
-    compiled: re.Pattern[str],
+    compiled: re.Pattern[str] | regex_engine.Pattern,
     *,
     line_oriented: bool,
     context_lines: int,
     remaining: int,
     skip: int = 0,
+    timeout: float | None = None,
 ) -> list[RawMatch]:
     """Up to ``remaining`` matches after the first ``skip``.
 
     Skipped matches are only counted, never built, so a deep continuation
     cursor costs time proportional to the matches passed over, not memory.
+
+    ``timeout`` bounds the whole search in seconds for a regex package
+    pattern; when it runs out, SearchTimeout carries the matches finished so
+    far (in line-oriented text, only whole lines).
     """
+    search, finditer = _timed(compiled, timeout)
+    found: list[RawMatch] = []
     try:
         if line_oriented:
-            return _line_matches(text, compiled, context_lines, remaining, skip)
-        return _window_matches(text, compiled, remaining, skip)
-    except re.error as exc:
+            _line_matches(text, search, finditer, context_lines, remaining, skip, found)
+        else:
+            _window_matches(text, finditer, remaining, skip, found)
+    except TimeoutError as exc:
+        raise SearchTimeout(found) from exc
+    except (re.error, regex_engine.error) as exc:
         raise DomainError.of(ErrorCategory.SEARCH_ERROR) from exc
     except RecursionError as exc:
         raise DomainError.of(ErrorCategory.SEARCH_ERROR) from exc
+    return found
+
+
+def _timed(compiled, timeout: float | None):
+    """search and finditer for ``compiled`` that share one deadline."""
+    if timeout is None or not isinstance(compiled, regex_engine.Pattern):
+        return compiled.search, compiled.finditer
+    deadline = time.monotonic() + timeout
+
+    def left() -> float:
+        seconds = deadline - time.monotonic()
+        # The regex package reads a negative timeout as none at all.
+        if seconds <= 0:
+            raise TimeoutError
+        return seconds
+
+    def search(text: str):
+        return compiled.search(text, timeout=left())
+
+    def finditer(text: str):
+        return compiled.finditer(text, timeout=left())
+
+    return search, finditer
 
 
 def _line_matches(
-    text: str, compiled: re.Pattern[str], context_lines: int, remaining: int, skip: int = 0
-) -> list[RawMatch]:
+    text: str, search, finditer, context_lines: int, remaining: int, skip: int, found: list
+) -> None:
     """One match per matching line; further hits on that line only raise occurrences.
 
     The context always holds the whole line, so a second hit on it would spend
     another max_matches slot on text the caller already has.
     """
     lines = text.splitlines()
-    found: list[RawMatch] = []
     skipped = 0
     for index, line in enumerate(lines):
         if skipped < skip:
-            if compiled.search(line) is not None:
+            if search(line) is not None:
                 skipped += 1
             continue
-        first: re.Match[str] | None = None
+        first = None
         occurrences = 0
-        for match in compiled.finditer(line):
+        for match in finditer(line):
             if first is None:
                 first = match
             occurrences += 1
@@ -88,16 +172,12 @@ def _line_matches(
             )
         )
         if len(found) >= remaining:
-            return found
-    return found
+            return
 
 
-def _window_matches(
-    text: str, compiled: re.Pattern[str], remaining: int, skip: int = 0
-) -> list[RawMatch]:
-    found: list[RawMatch] = []
+def _window_matches(text: str, finditer, remaining: int, skip: int, found: list) -> None:
     skipped = 0
-    for match in compiled.finditer(text):
+    for match in finditer(text):
         if skipped < skip:
             skipped += 1
             continue
@@ -111,5 +191,4 @@ def _window_matches(
             )
         )
         if len(found) >= remaining:
-            return found
-    return found
+            return

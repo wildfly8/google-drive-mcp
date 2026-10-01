@@ -22,7 +22,11 @@ from google_drive_mcp.domain.errors import DomainError, ErrorCategory
 from google_drive_mcp.domain.matches import SearchMatch
 from google_drive_mcp.domain.operation import OperationStatus, PartialReason
 from google_drive_mcp.domain.retrieval_scope import RetrievalScope
-from google_drive_mcp.infra.exact_search.regex import compile_pattern, search_text
+from google_drive_mcp.infra.exact_search.regex import (
+    SearchTimeout,
+    compile_pattern,
+    search_text,
+)
 from google_drive_mcp.infra.google_drive.export import (
     SHEET_MIME,
     SLIDE_MIME,
@@ -33,6 +37,12 @@ from google_drive_mcp.infra.google_drive.export import (
 )
 from google_drive_mcp.infra.google_drive.list import walk_files
 from google_drive_mcp.retrieval.ports import ExportResult
+
+# Longest pattern accepted, literal or regex (the MCP schema says the same).
+GREP_PATTERN_MAX_CHARS = 512
+# A regex gets this long on a file even when the call's time is nearly gone
+# (the first file of a call is searched past the deadline).
+REGEX_MIN_TIMEOUT = 0.5
 
 
 def _now() -> str:
@@ -404,6 +414,7 @@ def drive_grep(
                     break
                 raise
             files_scanned += 1
+            scanned_before = last_scanned_id
             last_scanned_id = file.id
             searchable += 1
             # Charge a blob's Drive size: prefetch plans with the same number,
@@ -422,6 +433,7 @@ def drive_grep(
             if file.mime_type in (SHEET_MIME, SLIDE_MIME) or exported.representation == "text/csv":
                 line_oriented = False
             skip_here = skip if index == 0 else 0
+            timed_out = False
             try:
                 # One extra match past the room tells whether this file has more.
                 raw = search_text(
@@ -431,7 +443,12 @@ def drive_grep(
                     context_lines=context_lines,
                     remaining=match_room + 1,
                     skip=skip_here,
+                    timeout=max(budget.time_left(), REGEX_MIN_TIMEOUT) if regex else None,
                 )
+            except SearchTimeout as exc:
+                # A slow regex stops like the time cap; keep what it finished.
+                raw = exc.found
+                timed_out = True
             except DomainError:
                 raise
             except Exception as exc:  # runtime engine failure after valid compile
@@ -455,6 +472,17 @@ def drive_grep(
                     )
                 )
             budget.note_matches(len(raw))
+            if timed_out:
+                stopped_for_time = True
+                done = skip_here + len(raw)
+                if done:
+                    # Continue inside this file after the matches returned so far.
+                    match_cursor = f"{file.id}:{done}"
+                else:
+                    # Continue at this file: after the one handled before it.
+                    resume = True
+                    last_scanned_id = scanned_before
+                break
             if more_in_file:
                 hit_match_cap = True
                 match_cursor = f"{file.id}:{skip_here + len(raw)}"
@@ -606,7 +634,7 @@ def validate_grep_args(arguments: dict) -> None:
     )
 
     pattern = arguments.get("pattern")
-    if not isinstance(pattern, str) or not pattern:
+    if not isinstance(pattern, str) or not pattern or len(pattern) > GREP_PATTERN_MAX_CHARS:
         raise DomainError.of(ErrorCategory.INVALID_ARGUMENT)
 
     max_matches = arguments.get("max_matches")

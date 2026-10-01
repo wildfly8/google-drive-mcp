@@ -437,9 +437,11 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
             str,
             Field(
                 min_length=1,
+                max_length=512,
                 description=(
                     "Exact phrase to find in exported file bytes (literal unless regex=true). "
-                    "Use a short distinctive term from the user question, not the whole question."
+                    "Use a short distinctive term from the user question, not the whole question. "
+                    "At most 512 characters."
                 ),
             ),
         ],

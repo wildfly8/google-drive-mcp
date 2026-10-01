@@ -10,7 +10,7 @@
 
 Expose four read-only MCP tools — `drive_ls`, `drive_find`, `drive_read`, `drive_grep` — so an agent can iterate `discover → read → exact search` against live Google Drive. No RAG index, no persistent document copy. Candidates are not evidence; `DocumentContent` and `SearchMatch` with provenance play the evidence role (no separate Evidence class). Grep is deterministic over request-scoped bytes. Truncation and walk 429 are `PARTIAL`.
 
-Technical approach: domain operations (discover/inspect/search) behind ports; Google Drive list/export/download and stdlib `re` are adapters (Article XII). Access Control rewrites an omitted `folder_id` to the required `DRIVE_ALLOWED_FOLDER_ID` (`kb`) before tools run (narrow-only) and refuses `RetrievalScope.default_whole_grant`, so every tool runs on a named folder or named files. No listing runs without a folder, and My Drive `root` is never listed. `find`/`grep` on a folder walk descendants breadth-first with `files.list`; named `file_ids` are checked with the shared `is_within_scope`. Wire `source_url` is `drive:{file_id}` (not `webViewLink`). Mixed-folder grep skips unsupported files (`PARTIAL`); single-id unsupported is a classified error.
+Technical approach: domain operations (discover/inspect/search) behind ports; Google Drive list/export/download, stdlib `re` (literal search) and the `regex` package (`regex=true`, matching with a timeout) are adapters (Article XII). Access Control rewrites an omitted `folder_id` to the required `DRIVE_ALLOWED_FOLDER_ID` (`kb`) before tools run (narrow-only) and refuses `RetrievalScope.default_whole_grant`, so every tool runs on a named folder or named files. No listing runs without a folder, and My Drive `root` is never listed. `find`/`grep` on a folder walk descendants breadth-first with `files.list`; named `file_ids` are checked with the shared `is_within_scope`. Wire `source_url` is `drive:{file_id}` (not `webViewLink`). Mixed-folder grep skips unsupported files (`PARTIAL`); single-id unsupported is a classified error.
 
 Google 404/403-as-404 (and single-file 429 with no prefix) go through Access Control’s `map_google_error()`. Walk 429 is intercepted in list/grep as `PARTIAL` (`partial_reason: RATE_LIMITED`), not `ErrorEnvelope` `RATE_LIMITED`. AUTH folder∩file_ids on real `drive_grep` is replayed after the tool exists (Access Control already tested the same args on the stub).
 
@@ -18,7 +18,7 @@ Google 404/403-as-404 (and single-file 429 with no prefix) go through Access Con
 
 **Language/Version**: Python 3.12 (same package as Access Control)
 
-**Primary Dependencies**: `mcp` 2.x; Google Drive v3 via `google-api-python-client` (adapter); stdlib `re` for exact search; `pydantic` for tool I/O
+**Primary Dependencies**: `mcp` 2.x; Google Drive v3 via `google-api-python-client` (adapter); stdlib `re` for literal search and the `regex` package for `regex=true` (its matching takes a timeout); `pydantic` for tool I/O
 
 **Storage**: None persistent. Exports live in memory or `tempfile.TemporaryDirectory` deleted at end of the tool call.
 
@@ -54,7 +54,7 @@ Grep context: line-oriented text (Docs, Markdown, plain text) returns `context_l
 
 `drive_find` sends `name contains`, MIME, `modifiedTime`, and `trashed = false` in `files.list` (`pageSize` 1000). With a filter, the query also keeps subfolders (`mimeType = folder or (...)`) so the walk can descend; a subfolder is returned only if it matches. `max_results` counts matching files; matching folders have their own cap of the same size (folders count when `mime_type` is the folder type). Children of a listed folder are not `files.get`'d to walk parents. Every folder listing (ls, find, grep) drops a child whose returned `parents` do not include the listed folder, so a stale Drive search-index entry cannot surface a file outside it. `drive_ls` lists the whole folder (trashed children excluded) and pages it by `max_results`; `page_token` is the decimal offset from `next_page_token`. The Drive port has no whole-grant listing. Its `list_subfolders` (folders, trashed included, under the given parents; the client puts up to 40 parents in one query) serves Access Control's allow-list tree, not retrieval.
 
-`drive_grep` on a folder sorts known-smaller files first. The 20 MB per-file cap stays, including for one named `file_id`. A known size that does not fit the remaining operation bytes is returned in `deferred_file_ids` and not downloaded. A call scans up to 200 files, downloading small files ahead on worker threads while matches are still taken in size order (FR-038a). After a `max_matches` stop the cursor is the file id, or `file_id:N` inside a file with more matches (FR-039a); `file_ids` calls take the same cursor. Results always include `files_scanned` and `bytes_scanned`. In line-oriented text a match is one line: repeat hits on that line raise `location.occurrences` instead of spending another `max_matches` slot (FR-039). `next_cursor` is set when the listing finished and more remains, or on a continuation whose listing was cut (the incoming cursor, unchanged) (FR-038a, FR-039a). A cut listing scans nothing. A byte-cap stop returns `deferred_file_ids`, not a cursor. After a finished listing the first file of a call is not time-bounded, so a time stop always makes progress. The same value is an input property named `next_cursor` (`cursor` is an alias). There is no persistent folder cache, ripgrep store, or BM25 index. This deployment’s omitted ls/find/grep uses `kb` via `DRIVE_ALLOWED_FOLDER_ID`.
+`drive_grep` on a folder sorts known-smaller files first. The 20 MB per-file cap stays, including for one named `file_id`. A known size that does not fit the remaining operation bytes is returned in `deferred_file_ids` and not downloaded. A call scans up to 200 files, downloading small files ahead on worker threads while matches are still taken in size order (FR-038a). After a `max_matches` stop the cursor is the file id, or `file_id:N` inside a file with more matches (FR-039a); `file_ids` calls take the same cursor. Results always include `files_scanned` and `bytes_scanned`. In line-oriented text a match is one line: repeat hits on that line raise `location.occurrences` instead of spending another `max_matches` slot (FR-039). `next_cursor` is set when the listing finished and more remains, or on a continuation whose listing was cut (the incoming cursor, unchanged) (FR-038a, FR-039a). A cut listing scans nothing. A byte-cap stop returns `deferred_file_ids`, not a cursor. After a finished listing the first file of a call is not time-bounded, so a time stop between files always makes progress. The same value is an input property named `next_cursor` (`cursor` is an alias). A `regex=true` search runs on the `regex` package with the call's remaining time (at least 0.5 s per file) as its timeout; running out stops the scan as `PARTIAL` `max_execution_time` with the matches finished and a cursor in that file. Patterns are capped at 512 characters, and a regex is accepted only in stdlib `re` syntax with counted repeats that unroll to at most 10,000 items, since the `regex` package writes out minimum repeats when it compiles (FR-033a). There is no persistent folder cache, ripgrep store, or BM25 index. This deployment’s omitted ls/find/grep uses `kb` via `DRIVE_ALLOWED_FOLDER_ID`.
 
 ### `content_format` (plan-level, spec FR-022)
 
@@ -70,7 +70,7 @@ Omitted → default MIME from the research export map (Docs/Slides `text/plain`,
 | the server is read-only | PASS — four tools only; no write code paths |
 | document content is untrusted | PASS — content cannot change tool control flow |
 | retrieval can iterate | PASS — tools are primitives; agent owns the loop |
-| exact search is deterministic | PASS — stdlib `re` over retrieved bytes in-request |
+| exact search is deterministic | PASS — stdlib `re` (literal) or the `regex` package (regex, timed) over retrieved bytes in-request; a regex time stop is a visible `PARTIAL` |
 | evidence carries provenance | PASS — `file_id` required on content-derived results |
 | partiality is visible | PASS — `COMPLETE`/`PARTIAL`/`EMPTY`/`ERROR` |
 | compute is ephemeral | PASS — discard exports after the operation |
@@ -124,7 +124,7 @@ src/google_drive_mcp/
 │   │   ├── query.py         # files.list q text and page size
 │   │   └── export.py        # files.export / get_media
 │   └── exact_search/
-│       └── regex.py         # stdlib re, swappable port
+│       └── regex.py         # stdlib re for literals; regex package with a timeout for regex=true
 ├── mcp/
 │   ├── server.py            # composition root (Access Control); input schemas; mounts tools.py
 │   ├── tool_schema.py       # initialize instructions, tool descriptions
