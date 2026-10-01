@@ -28,6 +28,30 @@
 
 ## Decision: `/stats` is public JSON and includes console links
 
-**Rationale**: Counts are non-PII. Console URLs (Logs Explorer, Metrics Explorer, Dashboards) help the owner without putting credentials in the payload.
+**Rationale**: Counts are non-PII. Console URLs (Logs Explorer, Metrics Explorer, Dashboards) help the owner without putting credentials in the payload. The links name the GCP project, and the console still requires the owner's Google sign-in.
 
 **Alternatives considered**: Hide behind consent password (friction; password is not for this).
+
+## Decision: `MCP_STATS_FROM_LOGS` picks the `/stats` source
+
+**Rationale**: Local runs and tests have no log store; Cloud Run does. `1`/`true`/`yes` reads Cloud Logging, `0`/`false`/`no` uses process counts, and unset (or any other value) reads logs only when `K_SERVICE` is set. Deploy sets it to `true`. Any log failure returns process counts with source `process` and a short `log_store` reason (`auth`, `no_project`, `http_<status>`, `timeout`, `error`). The scan reads the newest 10,000 entries at most (pages of up to 1,000) and sets `truncated` when it reaches that cap.
+
+**Alternatives considered**: Always query logs (fails locally and in tests). Silent fallback (owner cannot tell process counts from durable totals).
+
+## Decision: With the paywall on, count only paid Connects (2026-09-27; Allow page 2026-10-01)
+
+**Rationale**: 004 FR-008. The token endpoint re-checks the subscription before it emits `oauth_connect`, so a code refused for an inactive subscription is a failed token exchange and does not count. Since 2026-10-01 a paid Connect also needs the subscriber's Allow click on `/consent`; `MCP_OAUTH_AUTO_APPROVE` only applies without the paywall. The click alone emits nothing; only the code exchange counts.
+
+**Alternatives considered**: Count Allow clicks (a click without a code exchange is not a finished Connect). Count `/subscribe` checkouts (payment is not a Connect, and Stripe data stays out of telemetry).
+
+## Decision: `/setup` shows counts only without the paywall (2026-09-28)
+
+**Rationale**: The paid setup page only helps a subscriber connect. Usage totals and console links are for the owner. With the paywall on, `/setup` shows neither, paid or not. `/stats` stays public in both modes.
+
+**Alternatives considered**: Show counts to paid subscribers (done until 2026-09-28, then removed together with the consent-password line on the paid page).
+
+## Decision: No GCP project id in the repo (2026-10-01)
+
+**Rationale**: The repo is public. `scripts/ensure-connect-telemetry-gcp.sh` takes the project from `GOOGLE_CLOUD_PROJECT`, `GCP_PROJECT` or the gcloud config and stops if none is set. Tests use a placeholder project. The running server learns its project from the environment that deploy sets or from the Cloud Run metadata server.
+
+**Alternatives considered**: Keep a default project id in the script (published a deployment identifier).

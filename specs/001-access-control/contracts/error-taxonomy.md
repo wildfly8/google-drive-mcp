@@ -36,23 +36,26 @@ Flat agent-visible categories. Access Control owns the first three; Retrieval Co
 }
 ```
 
-Shared implementation: `ErrorEnvelope` in `src/google_drive_mcp/domain/errors.py`. Google HTTP mapping: `map_google_error()` in `src/google_drive_mcp/domain/google_errors.py` (used by the chain **and** by retrieval adapters for 404/403-as-404 and single-file 429). Walk 429 MUST be handled by the list/grep layer as completeness (`PARTIAL`), not by this mapper.
+Shared implementation: `ErrorEnvelope` in `src/google_drive_mcp/domain/errors.py`. Each category has one fixed agent-safe message (`SAFE_MESSAGES`); the chain never adds detail, so every `AUTHORIZATION_ERROR` reads the same whatever the reason. Google HTTP mapping: `map_google_error()` in `src/google_drive_mcp/domain/google_errors.py` (used by the chain **and** by retrieval adapters for 404/403-as-404 and single-file 429). Walk 429 MUST be handled by the list/grep layer as completeness (`PARTIAL`), not by this mapper. The chain’s allow-list tree listing is not a walk: a 429 there is `RATE_LIMITED`.
 
 ## Mapping rules (Access Control)
 
 | Condition | category |
 | --- | --- |
 | Missing/invalid MCP OAuth access token, including `MCP_AUTH_TOKEN` sent as Bearer (in-process) | `AUTHENTICATION_ERROR` |
-| Missing/invalid Bearer on HTTP `tools/call` (including static consent password) | JSON-RPC `isError` + `AUTHENTICATION_ERROR` + `_meta["mcp/www_authenticate"]` (HTTP 401 + `WWW-Authenticate` also acceptable). `initialize` / `tools/list` may be unauthenticated. |
+| Missing/invalid Bearer on HTTP `tools/call` of a `drive_*` tool (including static consent password) | HTTP 401, JSON body `{"error":"invalid_token",...}`, and `WWW-Authenticate: Bearer error="invalid_token", ..., resource_metadata="{issuer}/.well-known/oauth-protected-resource"`. The request never reaches a tool. `initialize` / `tools/list` may be unauthenticated. A call that still reaches `handle_tool` without a valid token gets JSON-RPC `isError` + `AUTHENTICATION_ERROR` + `_meta["mcp/www_authenticate"]` |
 | No `DRIVE_ALLOWED_FOLDER_ID`, or a call that names no folder or file after the omitted-folder rewrite | `AUTHORIZATION_ERROR` |
 | Named `folder_id` / `file_id` / `file_ids` entry not proven to be `DRIVE_ALLOWED_FOLDER_ID` or a descendant: outside it, missing, or not granted by Google (one reply for all three) | `AUTHORIZATION_ERROR` |
 | Caller-named `file_id` outside this call’s `folder_id` after Google **grants** metadata (see [authorization-chain.md](./authorization-chain.md)) | `AUTHORIZATION_ERROR` |
-| Google 404 / permission-as-404 on an id already proven inside `DRIVE_ALLOWED_FOLDER_ID` (race during the chain), including post-`ALLOW` races | `FILE_NOT_FOUND` |
+| Google 404 / permission-as-404 while the chain lists the allow-list folder’s own tree (folder removed or unshared after startup) | `FILE_NOT_FOUND` |
+| Google 404 / permission-as-404 after `ALLOW` on an id the chain proved inside `DRIVE_ALLOWED_FOLDER_ID` | `FILE_NOT_FOUND` (same mapper) |
+| Google 429 during the chain’s tree listing or metadata gets | `RATE_LIMITED` (no `PARTIAL`; nothing is returned) |
+| Other Google failure during the chain | `DRIVE_API_ERROR` |
 
 MUST NOT return `status: EMPTY` or `COMPLETE` for these failures.
 MUST NOT include access tokens, refresh tokens, or unauthorized file metadata in `message`.
 
-`FILE_NOT_FOUND` is dual-owned by design: Access Control raises it only when an id already proven inside the allow-list folder then misses during the chain. A named id never proven inside that folder is `AUTHORIZATION_ERROR`, so no reply reveals whether an id outside it exists. After `ALLOW`, Retrieval Core raises the same category for a genuine miss or a later Google 404, **via the same mapper**. `map_google_error` also maps single-file HTTP 429 (no prefix) to `RATE_LIMITED`. It MUST NOT be used for list/find/grep walk 429.
+`FILE_NOT_FOUND` is dual-owned by design: Access Control raises it only when listing the allow-list folder’s own tree misses during the chain. A named id never proven inside that folder is `AUTHORIZATION_ERROR`, so no reply reveals whether an id outside it exists. After `ALLOW`, Retrieval Core raises the same category for a genuine miss or a later Google 404, **via the same mapper**. `map_google_error` also maps single-file HTTP 429 (no prefix) to `RATE_LIMITED`. It MUST NOT be used for list/find/grep walk 429.
 
 ## Mapping rules (Retrieval Core)
 

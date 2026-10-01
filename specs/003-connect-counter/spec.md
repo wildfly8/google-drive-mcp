@@ -6,7 +6,7 @@
 
 **Created**: 2026-09-14
 
-**Status**: Implemented
+**Status**: Implemented (every deployment runs the paywall, so each counted Connect is a paid Connect; `/setup` shows counts only when the paywall is off)
 
 **Input**: User description: "Add a non-PII connect counter for successful OAuth Connect completions and first Drive tool use per connect. Do not identify public people." Follow-up: show the same counters on the cloud operations dashboard, not only `/stats`.
 
@@ -24,11 +24,15 @@ The deployment owner wants to know how many times a host (Claude, ChatGPT, or ot
 
 **Independent Test**: Complete OAuth (auth-code + PKCE) once, then read the counter. It increases by one. Refresh the access token; the Connect counter does not increase. A second new Connect increases it again.
 
+With the paywall on (004), a Connect also needs an active subscription and the subscriber's **Allow** click on this origin. Only the code exchange that follows the click can count, and only if the subscription is still active then (004 FR-008).
+
 **Acceptance Scenarios**:
 
 1. **Given** a host completes authorization-code + PKCE and receives an access token, **When** the owner reads the counter, **Then** `oauth_connects` is one higher than before that Connect.
 2. **Given** the same Connect later refreshes its token, **When** the owner reads the counter, **Then** `oauth_connects` is unchanged.
 3. **Given** `/authorize` is hit by a metadata probe that never exchanges a code, **When** the owner reads the counter, **Then** `oauth_connects` is unchanged.
+4. **Given** the paywall is on and a browser without an active subscription hits `/authorize`, **When** it is sent to `/subscribe`, **Then** `oauth_connects` is unchanged.
+5. **Given** the paywall is on and a subscriber clicked Allow, **When** the subscription is inactive by the time the host exchanges the code, **Then** the token endpoint refuses the code (`invalid_grant`) and `oauth_connects` is unchanged.
 
 ---
 
@@ -42,7 +46,7 @@ A Connect that never calls `drive_*` is only a linked connector. The owner also 
 
 **Acceptance Scenarios**:
 
-1. **Given** a Connect that has not yet called a Drive tool, **When** an authenticated `drive_*` call is accepted past MCP authentication, **Then** `drive_first_uses` increases by one.
+1. **Given** a Connect that has not yet called a Drive tool, **When** an authenticated `drive_*` call is accepted past MCP authentication, **Then** `drive_first_uses` increases by one. This holds even if that call then fails the server's own argument checks or Access Control (for example `AUTHORIZATION_ERROR` for a folder outside `kb`). A call the MCP layer rejects against the tool's input schema (wrong type, or an id that does not match the pattern) never reaches the tool and does not count.
 2. **Given** that same Connect, **When** further `drive_*` calls occur, **Then** `drive_first_uses` is unchanged.
 3. **Given** an unauthenticated or invalid Bearer `drive_*` attempt, **When** the call fails authentication, **Then** neither counter increases.
 
@@ -54,11 +58,11 @@ The owner can read totals (and a coarse host family such as Claude vs ChatGPT vs
 
 **Why this priority**: The constraint that made a people-directory impossible; the counter must stay non-PII.
 
-**Independent Test**: Inspect the public stats representation and the telemetry events. No email, IP, user-agent, Bearer, or host client id appears.
+**Independent Test**: Inspect the public stats representation and the telemetry events. No email, IP, user-agent, Bearer, host client id, or payment customer id appears.
 
 **Acceptance Scenarios**:
 
-1. **Given** stats are requested, **When** the JSON (or setup summary) is returned, **Then** it contains only counts, host-family rollups, lookback, a source label, and optional console links.
+1. **Given** stats are requested, **When** the JSON (or setup summary) is returned, **Then** it contains only counts, host-family rollups, lookback, a source label, a fixed note, an optional `truncated` flag, an optional `log_store` failure reason, and optional console links.
 2. **Given** telemetry is emitted, **When** an event is inspected, **Then** it may include an opaque connect id and host family, and MUST NOT include email, IP, user-agent, or credentials.
 
 ---
@@ -82,23 +86,26 @@ The owner wants charts in the cloud operations console (not only `GET /stats`): 
 ### Edge Cases
 
 - Tokens minted before this feature have no connect id: Drive calls MUST NOT invent a Connect or inflate `drive_first_uses`.
-- Two Cloud Run instances handling the same Connect: first-use MUST still count as one Connect once events are aggregated by opaque connect id (`/stats`).
-- Stats lookup failure (log store unreachable): still return in-process counts and say they are not the durable source.
+- Two Cloud Run instances handling the same Connect, or one instance after a restart: each may log `drive_first_use` for the same Connect, because first-use dedupe is per process. First-use MUST still count as one Connect once events are aggregated by opaque connect id (`/stats`).
+- Stats lookup failure (log store unreachable, no project, no permission, timeout): still return in-process counts with source `process` and a `log_store` reason, so the owner can see they are not the durable source.
+- More than 10,000 matching log entries in the lookback: `/stats` counts the newest 10,000 and sets `truncated`.
 - ReConnect by the same person: two Connects. The product counts Connects, not people.
-- Operations-console charts count event lines, not unique connect ids. Duplicate first-use lines from two instances can make a chart slightly higher than `/stats`. `/stats` remains the unique-id total.
+- Operations-console charts count event lines, not unique connect ids. Duplicate first-use lines from two instances or a restart can make a chart slightly higher than `/stats`. `/stats` remains the unique-id total.
+- Host family comes from the client id the host presents. It is not verified, so a client can claim a family. Counts by family are a coarse guide, not proof.
+- Paywall on: `/setup` shows no counts and no console links, for paid and unpaid browsers alike. The owner reads `/stats` or the operations dashboard.
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
 - **FR-001**: MUST increment `oauth_connects` exactly once per successful authorization-code token issuance (Connect). Token refresh MUST NOT increment it.
-- **FR-002**: MUST increment `drive_first_uses` at most once per Connect, on the first `drive_*` call that passes MCP authentication. `initialize` and `tools/list` MUST NOT increment it.
+- **FR-002**: MUST increment `drive_first_uses` at most once per Connect, on the first `drive_*` call that passes MCP authentication and reaches the tool, whether or not the call then succeeds. A call rejected earlier against the tool's input schema does not count. `initialize` and `tools/list` MUST NOT increment it. A token without a connect id MUST NOT increment it.
 - **FR-003**: MUST attribute counts to a coarse `host_family` of `claude`, `chatgpt`, or `other` derived from the OAuth client identifier’s host, without storing or returning that raw client identifier on stats or telemetry events.
 - **FR-004**: MUST identify a Connect only by an opaque, server-generated connect id that is not derived from IP, email, or account. That id MAY travel in the access/refresh token so first-use can be correlated. It is not a person id.
-- **FR-005**: MUST expose current totals on `GET /stats` as JSON without authentication (counts are non-PII). `GET /setup` MAY show the same totals in prose.
+- **FR-005**: MUST expose current totals on `GET /stats` as JSON without authentication (counts are non-PII), with or without the paywall. When the paywall is off, `GET /setup` MAY show the same totals in prose with links to `/stats` and the console. When the paywall is on, `GET /setup` MUST NOT show the totals or console links, paid or not.
 - **FR-006**: Durable totals MUST survive instance restart by aggregating operational telemetry already retained in the platform log store (unique connect ids). In-process counts are a fallback, not the owner’s source of truth on Cloud Run.
-- **FR-007**: Telemetry, stats, operations series, and dashboard labels MUST NOT record or return email, name, account id, IP address, user-agent, MCP or Google credentials, authorization codes, raw OAuth client ids, or connect ids as metric labels.
-- **FR-008**: Failed `/authorize` probes and failed token exchanges MUST NOT increment `oauth_connects`.
+- **FR-007**: Telemetry, stats, operations series, and dashboard labels MUST NOT record or return email, name, account id, IP address, user-agent, MCP or Google credentials, authorization codes, raw OAuth client ids, payment customer or subscription ids, or connect ids as metric labels.
+- **FR-008**: Failed `/authorize` probes, `/authorize` redirects to `/subscribe`, Allow clicks never followed by a code exchange, and failed token exchanges (including a code refused because the subscription is no longer active) MUST NOT increment `oauth_connects`.
 - **FR-009**: Deploy MUST publish the same two counters as operations time-series (Connects and first Drive uses), groupable by `host_family` only.
 - **FR-010**: The owner MUST be able to open a named operations dashboard for this connector that shows those two charts, without using `GET /stats`.
 - **FR-011**: `GET /stats` MUST include console links to the log view, metrics explorer, and dashboards list when a cloud project is configured. Links MUST NOT include credentials.
@@ -107,14 +114,14 @@ The owner wants charts in the cloud operations console (not only `GET /stats`): 
 
 - **Connect**: One successful authorization-code token issuance. Opaque `connect_id`. Not a person.
 - **Host family**: `claude` | `chatgpt` | `other`.
-- **ConnectStats**: `oauth_connects`, `drive_first_uses`, per-family rollups, lookback window, source (`cloud_logging` | `process`), optional console links.
+- **ConnectStats**: `oauth_connects`, `drive_first_uses`, per-family rollups, lookback window, source (`cloud_logging` | `process`), a fixed note, an optional `truncated` flag, an optional `log_store` failure reason, optional console links.
 - **Operations series**: Time-series of the same two events for the operations console (entry counts, host family only).
 
 ## Success Criteria *(mandatory)*
 
 ### Measurable Outcomes
 
-- **SC-001**: After one real Connect and one authenticated Drive tool call, the owner can read `oauth_connects >= 1` and `drive_first_uses >= 1` from this origin within one minute without opening a log console.
+- **SC-001**: After one real Connect (a paid Connect when the paywall is on) and one authenticated Drive tool call, the owner can read `oauth_connects >= 1` and `drive_first_uses >= 1` from this origin within one minute without opening a log console.
 - **SC-002**: A reviewer scanning stats JSON, telemetry events, and operations-chart labels finds zero email addresses, IP addresses, user-agents, or Bearer tokens.
 - **SC-003**: Refreshing a token 10 times does not increase `oauth_connects`.
 - **SC-004**: The owner can tell Claude Connects apart from ChatGPT/other Connects at family granularity, not as individual people.
@@ -125,5 +132,6 @@ The owner wants charts in the cloud operations console (not only `GET /stats`): 
 - “Users connected successfully” means completed OAuth Connects, not unique humans (this origin never receives a Claude/ChatGPT account).
 - Platform log retention (default Cloud Logging) is the durability window; v1 lookback is 30 days.
 - Existing MCP OAuth 2.1 and mixed-auth `initialize` / `tools/list` behavior is unchanged.
+- Every deployment runs the paywall (004 FR-009). A counted Connect is then a paid Connect (004 FR-008). Without the paywall (local runs, tests), a Connect is any completed auth-code exchange.
 - Public `/stats` is acceptable because it contains only counts.
 - The operations dashboard is for the deployment owner in the cloud console; it is not a public page.

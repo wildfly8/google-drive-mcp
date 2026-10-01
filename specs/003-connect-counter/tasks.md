@@ -16,3 +16,8 @@
 - [x] T012 Tests for metric filters (no PII labels) and `gcp` link shape
 - [x] T013 Apply log metrics with `--config-from-file` LogMetric JSON (no `--label-extractors`; label `host_family` only)
 - [x] T014 Dashboard update includes current Monitoring `etag` so re-deploy is idempotent
+- [x] T015 With the paywall on, `/setup` shows no counts, `/stats` link, or console links, paid or not; `/stats` stays public with no billing fields, in `src/google_drive_mcp/infra/mcp_auth/setup.py` and `tests/contract/test_subscription_http.py` (FR-005, FR-007)
+- [x] T016 With the paywall on, re-check the subscription in `exchange_authorization_code` before emitting `oauth_connect`; a refused code (`invalid_grant`) and an Allow click with no code exchange count nothing, in `src/google_drive_mcp/infra/mcp_auth/provider.py` (FR-008, 004 FR-008)
+- [x] T017 `MCP_STATS_FROM_LOGS` switch (unset: logs only on Cloud Run), `log_store` fallback reason, and the 10,000-entry `truncated` cap; deploy sets `MCP_STATS_FROM_LOGS=true` and `GOOGLE_CLOUD_PROJECT` and grants `roles/logging.viewer`, in `src/google_drive_mcp/infra/telemetry/cloud_logging_stats.py`, `src/google_drive_mcp/infra/mcp_auth/stats.py`, and `scripts/deploy-cloud-run.sh` (FR-006)
+- [x] T018 `scripts/ensure-connect-telemetry-gcp.sh` takes the project from `GOOGLE_CLOUD_PROJECT`, `GCP_PROJECT` or the gcloud config and stops without one; no project id in the repo; telemetry tests use a placeholder project
+- [ ] T019 Contract test for paid Connect counting: Allow plus code exchange counts once; a code exchanged after the subscription lapses counts nothing; an unpaid `/authorize` counts nothing (FR-008, 004 FR-008)

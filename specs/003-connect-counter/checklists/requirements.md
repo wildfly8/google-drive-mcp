@@ -33,3 +33,4 @@
 
 - “Platform log store” / “this origin” / “operations console” are product surfaces. Plan.md names Cloud Logging log-based metrics and Cloud Monitoring.
 - Informed defaults: 30-day lookback; Connects not people; public `/stats`; owner-only dashboard.
+- 2026-10-01 re-check against the code: with the paywall on, a counted Connect is a paid Connect (Allow click, then a code exchange while the subscription is active); `/setup` shows counts only when the paywall is off; `/stats` stays public. Items above still pass.

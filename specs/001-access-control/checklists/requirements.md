@@ -36,3 +36,4 @@
 - Error category names (`AUTHENTICATION_ERROR`, `AUTHORIZATION_ERROR`) are agent-visible domain taxonomy, not transport APIs.
 - Analyze remediations (2026-09-08): AUTH metadata vs content I/O; `evaluate_chain` test vehicle; `map_google_error` vs walk 429; AC polish pytest scoped to auth files.
 - OAuth 2.1 alignment (2026-09-13): spec/plan/tasks/data-model updated to the shipped combined AS+RS implementation; application code unchanged.
+- Code alignment (2026-10-01): added AC-FR-013 (paid Allow page), AC-FR-025 (same Drive calls for outside, missing, and ungranted ids), the startup Drive check in AC-FR-024, SC-008, SC-009, two clarifications under Session 2026-09-29, and Session 2026-10-01. AC-FR-012, SC-007, and the edge cases now say that only `drive_*` tool calls need the access token (`initialize` and `tools/list` do not). Consent-page headers, ticket lifetime, and the tree-listing algorithm stay plan-level. Application code unchanged.
