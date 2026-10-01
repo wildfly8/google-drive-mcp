@@ -64,11 +64,15 @@ class Runtime:
         drive: Any | None = None,
         telemetry: ConnectRecorder | None = None,
         billing: BillingGateway | None = None,
+        email_link: Any | None = None,
     ) -> None:
         self.settings = settings
         self.drive = drive
         self.telemetry = telemetry or ConnectRecorder()
         self.billing = billing or InactiveBilling()
+        from google_drive_mcp.infra.billing.email_link import InactiveEmailLink
+
+        self.email_link = email_link or InactiveEmailLink()
 
     def bind_request_drive(self) -> Any:
         """Mint request-scoped credentials and bind the Drive port used for I/O."""

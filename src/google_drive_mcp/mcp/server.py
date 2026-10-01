@@ -24,15 +24,15 @@ from google_drive_mcp.infra.billing.entitlement import (
 from google_drive_mcp.infra.billing.routes import (
     entitlement_from_request,
     stripe_webhook_post,
-    passkey_finish_post,
-    passkey_options_post,
-    passkey_register_post,
     subscribe_checkout_post,
     subscribe_complete_get,
+    subscribe_email_post,
+    subscribe_email_verify_get,
+    subscribe_email_verify_post,
     subscribe_get,
-    subscribe_restore_post,
 )
 from google_drive_mcp.infra.billing.stripe_api import StripeHttpGateway
+from google_drive_mcp.infra.billing.email_link import IdentityPlatformEmailLink
 from google_drive_mcp.infra.config import Settings
 from google_drive_mcp.infra.mcp_auth.chatgpt_compat import (
     chatgpt_compat_routes,
@@ -96,7 +96,10 @@ def build_runtime(settings: Settings | None = None, drive: Any | None = None) ->
     billing = None
     if settings.stripe_secret_key.get_secret_value().strip():
         billing = StripeHttpGateway(settings)
-    return Runtime(settings=settings, drive=drive, billing=billing)
+    email_link = None
+    if settings.identity_toolkit_api_key.get_secret_value().strip():
+        email_link = IdentityPlatformEmailLink(settings)
+    return Runtime(settings=settings, drive=drive, billing=billing, email_link=email_link)
 
 
 def _authorization_from_ctx(ctx: Any) -> str | None:
@@ -156,7 +159,7 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
     async def consent(request):
         if request.method == "POST":
             return await consent_post(request, provider, settings)
-        return consent_get(request, settings)
+        return await consent_get(request, settings, provider)
 
     @server.custom_route("/setup", methods=["GET"])
     async def claude_setup(request):
@@ -176,23 +179,21 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
         from google_drive_mcp.infra.billing.gateway import InactiveBilling as _Inactive
 
         configured = not isinstance(runtime.billing, _Inactive)
-        return subscribe_get(request, settings, runtime.billing, configured=configured)
+        return subscribe_get(
+            request, settings, runtime.billing, runtime.email_link, configured=configured
+        )
 
-    @server.custom_route("/subscribe/restore", methods=["POST"])
-    async def subscribe_restore(request):
-        return await subscribe_restore_post(request, settings, runtime.billing)
+    @server.custom_route("/subscribe/email", methods=["POST"])
+    async def subscribe_email(request):
+        return await subscribe_email_post(request, settings, runtime.billing, runtime.email_link)
 
-    @server.custom_route("/subscribe/passkey/options", methods=["POST"])
-    async def passkey_options(request):
-        return await passkey_options_post(request, settings, runtime.billing)
-
-    @server.custom_route("/subscribe/passkey/register", methods=["POST"])
-    async def passkey_register(request):
-        return await passkey_register_post(request, settings, runtime.billing)
-
-    @server.custom_route("/subscribe/passkey/finish", methods=["POST"])
-    async def passkey_finish(request):
-        return await passkey_finish_post(request, settings, runtime.billing)
+    @server.custom_route("/subscribe/email/verify", methods=["GET", "POST"])
+    async def subscribe_email_verify(request):
+        if request.method == "POST":
+            return await subscribe_email_verify_post(
+                request, settings, runtime.billing, runtime.email_link
+            )
+        return subscribe_email_verify_get(request, settings)
 
     @server.custom_route("/subscribe/checkout", methods=["POST"])
     async def subscribe_checkout(request):

@@ -15,7 +15,6 @@ from fakes.fake_drive import FakeDrive
 from google_drive_mcp.infra.billing.entitlement import (
     COOKIE_NAME,
     ENTITLEMENT_TTL,
-    RESUME_COOKIE,
     mint_entitlement,
 )
 from google_drive_mcp.infra.mcp_auth.provider import DriveMcpOAuthProvider
@@ -75,10 +74,10 @@ def test_unpaid_authorize_redirects_to_subscribe(fake_drive: FakeDrive):
         page = client.get("/subscribe")
         assert page.status_code == 200
         assert "Pay $20 / month" in page.text
-        assert "The same receipt email is not charged again." in page.text
-        assert 'id="pay-form"' in page.text
-        assert "Continue subscription" not in page.text
-        assert "device-email" not in page.text
+        assert "not charged again" not in page.text
+        assert "passkey" not in page.text.lower()
+        # Email sign-in is offered only when the email-link service is configured.
+        assert "/subscribe/email" not in page.text
         assert 'href="/setup"' not in page.text
 
 
@@ -116,8 +115,96 @@ def test_entitled_cookie_allows_connect(fake_drive: FakeDrive):
         )
         assert authorize.status_code in {302, 303, 307}
         loc = authorize.headers["location"]
-        assert loc.startswith("http://127.0.0.1/callback")
-        assert parse_qs(urlparse(loc).query)["code"]
+        # A paid Connect never issues a code without the subscriber's click.
+        assert "/consent?ticket=" in loc
+        assert "code=" not in loc
+        ticket = parse_qs(urlparse(loc).query)["ticket"][0]
+        page = client.get("/consent", params={"ticket": ticket}, cookies={COOKIE_NAME: token})
+        assert page.status_code == 200
+        assert "Allow this app to use your onto-kb subscription?" in page.text
+        assert "paywall-test" in page.text
+        assert "127.0.0.1" in page.text and "a known AI chat app address" in page.text
+        assert page.headers["x-frame-options"] == "DENY"
+        assert "frame-ancestors 'none'" in page.headers["content-security-policy"]
+        assert 'type="password"' not in page.text  # no deployment password for subscribers
+        allowed = client.post(
+            "/consent",
+            data={"ticket": ticket},
+            cookies={COOKIE_NAME: token},
+            follow_redirects=False,
+        )
+        assert allowed.status_code == 303
+        code_loc = allowed.headers["location"]
+        assert code_loc.startswith("http://127.0.0.1/callback")
+        assert parse_qs(urlparse(code_loc).query)["code"]
+
+
+def _authorize_ticket(client, cookie: str, redirect: str = "http://127.0.0.1/callback") -> str:
+    registered = client.post(
+        "/register",
+        json={
+            "redirect_uris": [redirect],
+            "client_name": "Claude",
+            "grant_types": ["authorization_code", "refresh_token"],
+            "token_endpoint_auth_method": "none",
+            "scope": "drive.read",
+        },
+    )
+    authorize = client.get(
+        "/authorize",
+        params={
+            "response_type": "code",
+            "client_id": registered.json()["client_id"],
+            "redirect_uri": redirect,
+            "code_challenge": "abc",
+            "code_challenge_method": "S256",
+            "scope": "drive.read",
+            "resource": "http://127.0.0.1/mcp",
+        },
+        cookies={COOKIE_NAME: cookie},
+        follow_redirects=False,
+    )
+    return parse_qs(urlparse(authorize.headers["location"]).query)["ticket"][0]
+
+
+def test_allow_needs_the_same_paying_browser(fake_drive: FakeDrive):
+    settings = _paid_settings()
+    billing = FakeBilling()
+    billing.active.update({"cus_victim", "cus_other"})
+    runtime = Runtime(settings=settings, drive=fake_drive, billing=billing)
+    victim = mint_entitlement(settings, customer_id="cus_victim")
+    other = mint_entitlement(settings, customer_id="cus_other")
+    with _client(runtime) as client:
+        ticket = _authorize_ticket(client, victim)
+        for cookies in ({}, {COOKIE_NAME: other}):
+            client.cookies.clear()  # only the cookie under test is sent
+            refused = client.post(
+                "/consent", data={"ticket": ticket}, cookies=cookies, follow_redirects=False
+            )
+            assert refused.status_code == 400
+            assert "code=" not in refused.headers.get("location", "")
+        billing.active.discard("cus_victim")
+        client.cookies.clear()
+        lapsed = client.post(
+            "/consent",
+            data={"ticket": ticket},
+            cookies={COOKIE_NAME: victim},
+            follow_redirects=False,
+        )
+        assert lapsed.status_code == 400
+
+
+def test_allow_page_flags_an_unknown_return_address(fake_drive: FakeDrive):
+    settings = _paid_settings()
+    billing = FakeBilling()
+    billing.active.add("cus_victim")
+    runtime = Runtime(settings=settings, drive=fake_drive, billing=billing)
+    victim = mint_entitlement(settings, customer_id="cus_victim")
+    with _client(runtime) as client:
+        ticket = _authorize_ticket(client, victim, redirect="https://claude.ai.evil.example/cb")
+        page = client.get("/consent", params={"ticket": ticket}, cookies={COOKIE_NAME: victim})
+        assert "claude.ai.evil.example" in page.text
+        assert "not a known AI chat app address" in page.text
 
 
 def test_setup_mentions_fee_when_paywall_on(fake_drive: FakeDrive):
@@ -175,12 +262,41 @@ def test_checkout_complete_sets_cookie(fake_drive: FakeDrive):
         assert 'href="/setup"' in done.text
 
 
-def test_active_email_resumes_connect_without_a_new_charge(fake_drive: FakeDrive):
+def _email_runtime(fake_drive: FakeDrive):
+    from fakes.fake_billing import FakeEmailLink
+
     settings = _paid_settings()
     billing = FakeBilling()
     billing.active.add("cus_live9")
     billing.emails["payer@example.com"] = "cus_live9"
-    runtime = Runtime(settings=settings, drive=fake_drive, billing=billing)
+    email_link = FakeEmailLink()
+    runtime = Runtime(settings=settings, drive=fake_drive, billing=billing, email_link=email_link)
+    return settings, billing, email_link, runtime
+
+
+def test_email_alone_never_grants_access(fake_drive: FakeDrive):
+    settings, billing, email_link, runtime = _email_runtime(fake_drive)
+    with _client(runtime) as client:
+        page = client.get("/subscribe")
+        assert 'action="/subscribe/email"' in page.text
+        for email in ("payer@example.com", "nobody@example.com"):
+            sent = client.post("/subscribe/email", data={"email": email}, follow_redirects=False)
+            # Same reply either way, no entitlement, the email is not echoed.
+            assert sent.status_code == 200
+            assert COOKIE_NAME not in sent.cookies
+            assert email not in sent.text
+            assert "one-time sign-in link" in sent.text
+        # Only the subscriber's address got a link.
+        assert [address for address, _ in email_link.sent] == ["payer@example.com"]
+        assert email_link.sent[0][1].endswith("/subscribe/email/verify")
+        # The removed shortcuts are gone.
+        restore = client.post("/subscribe/restore", data={"email": "payer@example.com"})
+        assert restore.status_code in {404, 405}
+        assert client.post("/subscribe/passkey/options").status_code in {404, 405}
+
+
+def test_email_link_continues_the_subscription_in_this_browser(fake_drive: FakeDrive):
+    settings, billing, email_link, runtime = _email_runtime(fake_drive)
     with _client(runtime) as client:
         authorize = client.get(
             "/authorize",
@@ -195,49 +311,83 @@ def test_active_email_resumes_connect_without_a_new_charge(fake_drive: FakeDrive
             },
             follow_redirects=False,
         )
-        assert authorize.status_code == 302
         assert authorize.headers["location"].endswith("/subscribe")
-        assert RESUME_COOKIE in authorize.cookies
+        client.post("/subscribe/email", data={"email": "payer@example.com"})
+        code = next(iter(email_link.codes))
+        landing = client.get("/subscribe/email/verify", params={"oobCode": code, "mode": "signIn"})
+        # Opening the link does not sign in by itself (mail scanners open links).
+        assert landing.status_code == 200
+        assert COOKIE_NAME not in landing.cookies
+        assert "Continue in this browser" in landing.text
+        assert landing.headers["referrer-policy"] == "no-referrer"
         before = billing.checkouts
-        restored = client.post(
-            "/subscribe/restore",
-            data={"email": "payer@example.com"},
-            follow_redirects=False,
+        done = client.post(
+            "/subscribe/email/verify", data={"oobCode": code}, follow_redirects=False
         )
-        assert restored.status_code == 303
-        assert restored.headers["location"].startswith("/authorize?")
-        assert "payer@example.com" not in restored.text
-        assert COOKIE_NAME in restored.cookies
+        assert done.status_code == 303
+        assert done.headers["location"].startswith("/authorize?")
+        from google_drive_mcp.infra.billing.entitlement import verify_entitlement
+
+        assert verify_entitlement(done.cookies[COOKIE_NAME], settings) == "cus_live9"
         assert billing.checkouts == before
-        missing = client.post(
-            "/subscribe/restore",
-            data={"email": "nobody@example.com"},
+        # The link works once.
+        again = client.post(
+            "/subscribe/email/verify", data={"oobCode": code}, follow_redirects=False
+        )
+        assert again.status_code == 400
+
+
+def test_email_link_needs_the_address_it_was_sent_to(fake_drive: FakeDrive):
+    settings, billing, email_link, runtime = _email_runtime(fake_drive)
+    with _client(runtime) as client:
+        client.post("/subscribe/email", data={"email": "payer@example.com"})
+        code = next(iter(email_link.codes))
+    # A different browser (no email cookie) must type the address, and only that one works.
+    with _client(runtime) as other:
+        landing = other.get("/subscribe/email/verify", params={"oobCode": code})
+        assert 'name="email"' in landing.text
+        wrong = other.post(
+            "/subscribe/email/verify",
+            data={"oobCode": code, "email": "attacker@example.com"},
             follow_redirects=False,
         )
-        assert missing.status_code == 404
-        assert "nobody@example.com" not in missing.text
-        assert "Pay $20 / month" in missing.text
+        assert wrong.status_code == 400
+        assert COOKIE_NAME not in wrong.cookies
+        right = other.post(
+            "/subscribe/email/verify",
+            data={"oobCode": code, "email": "payer@example.com"},
+            follow_redirects=False,
+        )
+        assert right.status_code == 303
 
 
-def test_repeat_checkout_keeps_the_original_subscription(fake_drive: FakeDrive):
+def test_email_requests_are_rate_limited(fake_drive: FakeDrive):
+    from google_drive_mcp.infra.billing import routes
+
+    routes._LIMITS = routes._RateLimit()
+    settings, billing, email_link, runtime = _email_runtime(fake_drive)
+    with _client(runtime) as client:
+        for _ in range(5):
+            reply = client.post("/subscribe/email", data={"email": "payer@example.com"})
+            assert reply.status_code == 200
+    assert len(email_link.sent) == 3
+
+
+def test_repeat_checkout_grants_only_the_paying_customer(fake_drive: FakeDrive):
     settings = _paid_settings()
     billing = FakeBilling()
     billing.active.update({"cus_old", "cus_new"})
     billing.emails["payer@example.com"] = "cus_old"
     billing.sessions["cs_dup"] = "cus_new"
-    billing.session_emails["cs_dup"] = "payer@example.com"
     runtime = Runtime(settings=settings, drive=fake_drive, billing=billing)
     with _client(runtime) as client:
         done = client.get("/subscribe/complete", params={"session_id": "cs_dup"})
         assert done.status_code == 200
-        assert "Already subscribed" in done.text
-        assert "refunded" in done.text
-        assert "payer@example.com" not in done.text
-        assert billing.released == ["cus_new"]
-        assert "cus_new" not in billing.active
+        assert "Payment received" in done.text
+        assert "refunded" not in done.text
         from google_drive_mcp.infra.billing.entitlement import verify_entitlement
 
-        assert verify_entitlement(done.cookies[COOKIE_NAME], settings) == "cus_old"
+        assert verify_entitlement(done.cookies[COOKIE_NAME], settings) == "cus_new"
 
 
 def test_paid_refresh_token_lasts_while_subscription_can_stay_active():

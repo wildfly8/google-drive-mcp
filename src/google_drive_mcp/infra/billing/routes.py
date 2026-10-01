@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import hashlib
 import html
-import json
 import logging
+import threading
+import time
+from collections import deque
 from urllib.parse import unquote
 
+from starlette.background import BackgroundTask
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
+from google_drive_mcp.infra.billing.email_link import EmailLinkPort
 from google_drive_mcp.infra.billing.entitlement import (
     COOKIE_NAME,
     RESUME_COOKIE,
@@ -19,21 +24,10 @@ from google_drive_mcp.infra.billing.entitlement import (
     verify_entitlement,
 )
 from google_drive_mcp.infra.billing.gateway import BillingGateway
-from google_drive_mcp.infra.billing.passkey import (
-    CHALLENGE_COOKIE,
-    authentication_options,
-    browser_script,
-    merge_passkey,
-    mint_challenge,
-    read_challenge,
-    registration_options,
-    signature_matches,
-    verify_authentication,
-    verify_registration,
-)
 from google_drive_mcp.infra.billing.stripe_api import verify_stripe_signature
 from google_drive_mcp.infra.config import Settings
-from google_drive_mcp.infra.mcp_auth.tokens import issuer_url
+from google_drive_mcp.infra.mcp_auth.jwt import decode_jwt, encode_jwt
+from google_drive_mcp.infra.mcp_auth.tokens import _now, issuer_url, signing_key
 
 _LOG = logging.getLogger("google_drive_mcp")
 
@@ -95,8 +89,29 @@ def _resume_target(request: Request) -> str:
     return _resume_or_none(request) or "/setup"
 
 
+_PAY_FORM = (
+    '<form method="post" action="/subscribe/checkout">'
+    '<button type="submit">Pay $20 / month</button></form>'
+)
+
+_RESTORE_FORM = (
+    "<h2>Already subscribed?</h2>"
+    '<p class="note">To use your subscription in this browser, get a one-time sign-in '
+    "link at the email on your Stripe receipt. Open the link in this browser.</p>"
+    '<form method="post" action="/subscribe/email">'
+    '<input type="email" name="email" autocomplete="email" required maxlength="254" '
+    'aria-label="Receipt email"> '
+    '<button type="submit">Email me a sign-in link</button></form>'
+)
+
+
 def subscribe_get(
-    request: Request, settings: Settings, billing: BillingGateway, *, configured: bool
+    request: Request,
+    settings: Settings,
+    billing: BillingGateway,
+    email_link: EmailLinkPort,
+    *,
+    configured: bool,
 ) -> Response:
     scid = entitlement_from_request(request, settings)
     if (
@@ -125,15 +140,9 @@ def subscribe_get(
         status = (
             "USD 20 each month until you cancel in the Stripe customer portal. "
             "An AI chat app that already finished Connect keeps working "
-            "while the subscription is active. Another browser continues the same "
-            "subscription. Pay opens Stripe only when this browser does not already "
-            "have it. The same receipt email is not charged again."
+            "while the subscription is active."
         )
-        form = (
-            '<form id="pay-form" method="post" action="/subscribe/checkout">'
-            '<button type="submit">Pay $20 / month</button></form>'
-            + browser_script()
-        )
+        form = _PAY_FORM + (_RESTORE_FORM if email_link.configured() else "")
         setup = ""
     return HTMLResponse(
         _SUBSCRIBE.format(status=html.escape(status), form=form, setup=setup)
@@ -174,27 +183,20 @@ async def subscribe_complete_get(
             ),
             status_code=402,
         )
-    customer, reused = found
+    customer = found
     token = mint_entitlement(settings, customer_id=customer)
-    if reused:
-        heading = "Already subscribed"
-        message = (
-            "This browser is on the subscription you already pay for. "
-            "The new charge is refunded."
-        )
-    else:
-        heading = "Payment received"
-        message = (
-            "Return to your AI chat app. While this subscription stays active, "
-            "that app keeps calling onto-kb with no email and no further payment."
-        )
+    heading = "Payment received"
+    message = (
+        "Return to your AI chat app. While this subscription stays active, "
+        "that app keeps calling onto-kb with no further payment."
+    )
     page = HTMLResponse(
         _COMPLETE.format(
             heading=html.escape(heading),
             message=html.escape(message),
             next_href=html.escape(_resume_target(request), quote=True),
             code=html.escape(token),
-            script=browser_script(),
+            script="",
         )
     )
     set_entitlement_cookie(page, settings, customer)
@@ -202,30 +204,219 @@ async def subscribe_complete_get(
     return page
 
 
-async def subscribe_restore_post(
-    request: Request, settings: Settings, billing: BillingGateway
+EMAIL_COOKIE = "onto_kb_email"
+_TYP_EMAIL = "email_restore"
+_EMAIL_COOKIE_TTL = 3600
+_SENT = (
+    "If that email has an active onto-kb subscription, a one-time sign-in link is on "
+    "its way from Google. Open it in this browser to continue. The link works once. "
+    "Nothing arrived? Check spam, or ask again in 15 minutes."
+)
+_PRIVATE_HEADERS = {
+    "Cache-Control": "no-store",
+    "Referrer-Policy": "no-referrer",
+    "X-Frame-Options": "DENY",
+    "Content-Security-Policy": "frame-ancestors 'none'",
+}
+
+
+class _RateLimit:
+    """Sliding-window counters per key, in this instance's memory (best effort)."""
+
+    def __init__(self) -> None:
+        self._hits: dict[str, deque[float]] = {}
+        self._lock = threading.Lock()
+
+    def allow(self, key: str, limit: int, window: float) -> bool:
+        now = time.monotonic()
+        with self._lock:
+            hits = self._hits.setdefault(key, deque())
+            while hits and now - hits[0] > window:
+                hits.popleft()
+            if len(hits) >= limit:
+                return False
+            hits.append(now)
+            if len(self._hits) > 10000:
+                self._hits = {k: v for k, v in self._hits.items() if v}
+            return True
+
+
+_LIMITS = _RateLimit()
+
+
+def _client_ip(request: Request) -> str:
+    # Cloud Run's front end appends the caller's address; earlier entries can be forged.
+    forwarded = request.headers.get("x-forwarded-for") or ""
+    parts = [part.strip() for part in forwarded.split(",") if part.strip()]
+    if parts:
+        return parts[-1]
+    return request.client.host if request.client else "unknown"
+
+
+def _clean_email(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    email = value.strip()
+    if not email or len(email) > 254 or email.count("@") != 1 or any(c.isspace() for c in email):
+        return None
+    local, domain = email.split("@")
+    if not local or "." not in domain:
+        return None
+    return email
+
+
+def _email_key(email: str) -> str:
+    return hashlib.sha256(email.lower().encode("utf-8")).hexdigest()
+
+
+def _email_audience(settings: Settings) -> str:
+    return f"{issuer_url(settings).rstrip('/')}/subscribe/email"
+
+
+def _set_email_cookie(response: Response, settings: Settings, email: str) -> None:
+    iat = _now()
+    token = encode_jwt(
+        {
+            "typ": _TYP_EMAIL,
+            "iss": issuer_url(settings),
+            "aud": _email_audience(settings),
+            "email": email,
+            "iat": iat,
+            "exp": iat + _EMAIL_COOKIE_TTL,
+        },
+        signing_key(settings),
+    )
+    response.set_cookie(
+        EMAIL_COOKIE,
+        token,
+        httponly=True,
+        samesite="lax",
+        max_age=_EMAIL_COOKIE_TTL,
+        secure=issuer_url(settings).startswith("https://"),
+        path="/subscribe/email",
+    )
+
+
+def _email_from_cookie(request: Request, settings: Settings) -> str | None:
+    payload = decode_jwt(request.cookies.get(EMAIL_COOKIE) or "", signing_key(settings))
+    if not payload or payload.get("typ") != _TYP_EMAIL:
+        return None
+    if payload.get("iss") != issuer_url(settings):
+        return None
+    if payload.get("aud") != _email_audience(settings):
+        return None
+    exp = payload.get("exp")
+    if not isinstance(exp, int) or exp < _now():
+        return None
+    return _clean_email(payload.get("email"))
+
+
+def _page(status: str, form: str = "", *, code: int = 200) -> HTMLResponse:
+    return HTMLResponse(
+        _SUBSCRIBE.format(status=html.escape(status), form=form, setup=""),
+        status_code=code,
+        headers=_PRIVATE_HEADERS,
+    )
+
+
+def _send_if_subscriber(
+    billing: BillingGateway, email_link: EmailLinkPort, email: str, continue_url: str
+) -> None:
+    """Runs after the reply is sent, so timing does not reveal subscribers."""
+    try:
+        if billing.active_customer_id_for_email(email):
+            email_link.send_link(email, continue_url)
+    except Exception:  # noqa: BLE001 - never surface processor errors to the caller
+        _LOG.warning("email_restore_send_failed")
+
+
+async def subscribe_email_post(
+    request: Request,
+    settings: Settings,
+    billing: BillingGateway,
+    email_link: EmailLinkPort,
 ) -> Response:
+    if not settings.mcp_subscription_required or not email_link.configured():
+        return _page("Email sign-in is not available on this server.", _PAY_FORM, code=404)
     form = await request.form()
-    email = str(form.get("email") or "")
-    customer = billing.active_customer_id_for_email(email)
-    if not customer:
-        return HTMLResponse(
-            _SUBSCRIBE.format(
-                status=html.escape(
-                    "No active subscription was found. Pay to start one. "
-                    "The email address is not shown again."
-                ),
-                form=(
-                    '<form method="post" action="/subscribe/checkout">'
-                    '<button type="submit">Pay $20 / month</button></form>'
-                ),
-                setup="",
-            ),
-            status_code=404,
+    email = _clean_email(form.get("email"))
+    if email is None:
+        return _page("Enter the email address from your Stripe receipt.", _RESTORE_FORM, code=400)
+    page = _page(_SENT)
+    _set_email_cookie(page, settings, email)
+    allowed = _LIMITS.allow(f"ip:{_client_ip(request)}", 10, 3600) and _LIMITS.allow(
+        f"email:{_email_key(email)}", 3, 900
+    )
+    if allowed:
+        continue_url = f"{issuer_url(settings).rstrip('/')}/subscribe/email/verify"
+        page.background = BackgroundTask(
+            _send_if_subscriber, billing, email_link, email, continue_url
         )
-    page = RedirectResponse(_resume_target(request), status_code=303)
+    return page
+
+
+def _verify_form(oob_code: str, ask_email: bool) -> str:
+    email_field = (
+        '<p><input type="email" name="email" autocomplete="email" required maxlength="254" '
+        'aria-label="Receipt email"> (the address this link was sent to)</p>'
+        if ask_email
+        else ""
+    )
+    return (
+        '<form method="post" action="/subscribe/email/verify">'
+        f'<input type="hidden" name="oobCode" value="{html.escape(oob_code, quote=True)}">'
+        f"{email_field}"
+        '<button type="submit">Continue in this browser</button></form>'
+    )
+
+
+def subscribe_email_verify_get(request: Request, settings: Settings) -> Response:
+    oob_code = request.query_params.get("oobCode") or ""
+    if not oob_code or len(oob_code) > 512:
+        return _page("This sign-in link is incomplete. Ask for a new one.", _RESTORE_FORM, code=400)
+    # A button, not an automatic sign-in: mail scanners that open links must not
+    # use up the one-time code.
+    ask_email = _email_from_cookie(request, settings) is None
+    return _page(
+        "Continue to use your onto-kb subscription in this browser.",
+        _verify_form(oob_code, ask_email),
+    )
+
+
+async def subscribe_email_verify_post(
+    request: Request,
+    settings: Settings,
+    billing: BillingGateway,
+    email_link: EmailLinkPort,
+) -> Response:
+    if not settings.mcp_subscription_required or not email_link.configured():
+        return _page("Email sign-in is not available on this server.", _PAY_FORM, code=404)
+    if not _LIMITS.allow(f"verify:{_client_ip(request)}", 20, 3600):
+        return _page("Too many attempts. Try again later.", code=429)
+    form = await request.form()
+    oob_code = form.get("oobCode")
+    email = _clean_email(form.get("email")) or _email_from_cookie(request, settings)
+    if not isinstance(oob_code, str) or not oob_code or len(oob_code) > 512 or email is None:
+        return _page("This sign-in link is incomplete. Ask for a new one.", _RESTORE_FORM, code=400)
+    verified = email_link.verified_email(email, oob_code)
+    if verified is None:
+        return _page(
+            "This sign-in link is invalid, expired, already used, or for another email. "
+            "Ask for a new one.",
+            _RESTORE_FORM,
+            code=400,
+        )
+    customer = billing.active_customer_id_for_email(verified)
+    if not customer:
+        return _page(
+            "That email has no active onto-kb subscription. Pay to start one.",
+            _PAY_FORM,
+            code=404,
+        )
+    page = RedirectResponse(_resume_target(request), status_code=303, headers=_PRIVATE_HEADERS)
     set_entitlement_cookie(page, settings, customer)
     page.delete_cookie(RESUME_COOKIE, path="/")
+    page.delete_cookie(EMAIL_COOKIE, path="/subscribe/email")
     return page
 
 
@@ -237,84 +428,6 @@ async def stripe_webhook_post(request: Request, settings: Settings) -> Response:
         return JSONResponse({"ok": False}, status_code=400)
     _LOG.info("stripe_webhook")
     return JSONResponse({"ok": True})
-
-
-def _challenge_cookie(response: Response, settings: Settings, token: str) -> None:
-    response.set_cookie(
-        CHALLENGE_COOKIE,
-        token,
-        httponly=True,
-        samesite="lax",
-        max_age=300,
-        secure=issuer_url(settings).startswith("https://"),
-        path="/",
-    )
-
-
-async def passkey_options_post(
-    request: Request, settings: Settings, billing: BillingGateway
-) -> Response:
-    scid = entitlement_from_request(request, settings)
-    challenge, token = mint_challenge(settings)
-    if scid and billing.is_subscription_active(scid):
-        public_key = registration_options(settings, scid, challenge, billing.get_passkey(scid))
-    else:
-        public_key = authentication_options(settings, challenge)
-    page = JSONResponse({"publicKey": public_key})
-    _challenge_cookie(page, settings, token)
-    return page
-
-
-async def passkey_register_post(
-    request: Request, settings: Settings, billing: BillingGateway
-) -> Response:
-    scid = entitlement_from_request(request, settings)
-    if not scid or not billing.is_subscription_active(scid):
-        return JSONResponse({"ok": False}, status_code=401)
-    challenge = read_challenge(request.cookies.get(CHALLENGE_COOKIE), settings)
-    if not challenge:
-        return JSONResponse({"ok": False}, status_code=400)
-    try:
-        body = await request.json()
-        record = verify_registration(settings, challenge, scid, body)
-        billing.save_passkey(scid, merge_passkey(billing.get_passkey(scid), record))
-    except (ValueError, json.JSONDecodeError, RuntimeError):
-        return JSONResponse({"ok": False}, status_code=400)
-    page = JSONResponse({"ok": True})
-    page.delete_cookie(CHALLENGE_COOKIE, path="/")
-    return page
-
-
-async def passkey_finish_post(
-    request: Request, settings: Settings, billing: BillingGateway
-) -> Response:
-    challenge = read_challenge(request.cookies.get(CHALLENGE_COOKIE), settings)
-    if not challenge:
-        return JSONResponse({"ok": False}, status_code=400)
-    try:
-        body = await request.json()
-        customer_id, material = verify_authentication(settings, challenge, body)
-    except (ValueError, json.JSONDecodeError):
-        return JSONResponse({"ok": False}, status_code=400)
-    if not billing.is_subscription_active(customer_id):
-        return JSONResponse({"ok": False}, status_code=403)
-    updated = None
-    keys = billing.get_passkey(customer_id)
-    for record in keys:
-        updated = signature_matches(record, material)
-        if updated:
-            break
-    if updated is None:
-        return JSONResponse({"ok": False}, status_code=400)
-    try:
-        billing.save_passkey(customer_id, merge_passkey(keys, updated))
-    except RuntimeError:
-        pass
-    page = JSONResponse({"redirect": _resume_target(request)})
-    set_entitlement_cookie(page, settings, customer_id)
-    page.delete_cookie(CHALLENGE_COOKIE, path="/")
-    page.delete_cookie(RESUME_COOKIE, path="/")
-    return page
 
 
 def entitlement_from_request(request: Request, settings: Settings) -> str | None:

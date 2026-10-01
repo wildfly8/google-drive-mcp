@@ -32,6 +32,8 @@ class Settings(BaseModel):
     stripe_secret_key: SecretStr = SecretStr("")
     stripe_webhook_secret: SecretStr = SecretStr("")
     stripe_price_id: str = ""
+    # Google Identity Platform key for emailed sign-in links (subscription restore).
+    identity_toolkit_api_key: SecretStr = SecretStr("")
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -56,6 +58,9 @@ class Settings(BaseModel):
             stripe_secret_key=SecretStr(os.environ.get("STRIPE_SECRET_KEY", "")),
             stripe_webhook_secret=SecretStr(os.environ.get("STRIPE_WEBHOOK_SECRET", "")),
             stripe_price_id=os.environ.get("STRIPE_PRICE_ID", "").strip(),
+            identity_toolkit_api_key=SecretStr(
+                os.environ.get("IDENTITY_TOOLKIT_API_KEY", "").strip()
+            ),
         )
 
     @classmethod

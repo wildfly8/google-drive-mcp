@@ -24,7 +24,7 @@ Gate MCP Connect on an active **USD 20/month** Stripe Billing subscription. Host
 
 **Performance Goals**: entitlement check on `/authorize` and refresh within existing 60s request timeout
 
-**Constraints**: No PAN/bank in logs; `/stats` unchanged; `MCP_OAUTH_AUTO_APPROVE` must not skip the paywall
+**Constraints**: No PAN/bank in logs; `/stats` unchanged; `MCP_OAUTH_AUTO_APPROVE` must not skip the paywall or the subscriber's Allow click; continuing in another browser needs an emailed one-time link (Google Identity Platform)
 
 **Scale/Scope**: one $20/month price; public connector
 

@@ -1,4 +1,4 @@
-"""A second Checkout for an email that already pays is refunded."""
+"""Checkout grants access only to the customer who paid in that session."""
 
 from __future__ import annotations
 
@@ -18,80 +18,44 @@ def _settings() -> Settings:
     )
 
 
-def test_repeat_checkout_refunds_the_new_subscription_and_returns_the_original():
-    refunds: list[dict[str, str]] = []
-    canceled: list[str] = []
+def _gateway(handler) -> StripeHttpGateway:
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    return StripeHttpGateway(_settings(), client=client)
+
+
+def test_checkout_with_a_subscribers_email_never_switches_customers():
+    calls: list[tuple[str, str]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        path = request.url.path
-        if path == "/v1/checkout/sessions/cs_dup" and request.method == "GET":
+        calls.append((request.method, request.url.path))
+        if request.url.path == "/v1/checkout/sessions/cs_dup":
             return httpx.Response(
                 200,
                 json={
                     "status": "complete",
                     "payment_status": "paid",
                     "customer": "cus_new",
+                    # An unverified email that belongs to another active subscriber.
                     "customer_details": {"email": "payer@example.com"},
                 },
             )
-        if path == "/v1/customers" and request.method == "GET":
-            assert request.url.params["email"] == "payer@example.com"
-            return httpx.Response(200, json={"data": [{"id": "cus_new"}, {"id": "cus_old"}]})
-        if path == "/v1/subscriptions" and request.method == "GET":
-            customer = request.url.params["customer"]
-            if customer == "cus_old":
-                return httpx.Response(
-                    200, json={"data": [{"id": "sub_old", "status": "active"}]}
-                )
-            return httpx.Response(
-                200,
-                json={
-                    "data": [
-                        {
-                            "id": "sub_new",
-                            "status": "active",
-                            "latest_invoice": "in_new",
-                        }
-                    ]
-                },
-            )
-        if path == "/v1/invoices/in_new" and request.method == "GET":
-            return httpx.Response(200, json={"payment_intent": "pi_new"})
-        if path == "/v1/refunds" and request.method == "POST":
-            refunds.append(dict(request.url.params) or _form(request))
-            return httpx.Response(200, json={"id": "re_new"})
-        if path == "/v1/subscriptions/sub_new" and request.method == "DELETE":
-            canceled.append(path)
-            return httpx.Response(200, json={"id": "sub_new", "status": "canceled"})
-        return httpx.Response(404, json={"error": {"message": path}})
+        raise AssertionError(f"unexpected Stripe call {request.method} {request.url.path}")
 
-    gateway = StripeHttpGateway(_settings(), client=httpx.Client(transport=httpx.MockTransport(handler)))
-    found = gateway.customer_id_from_checkout_session("cs_dup")
-    assert found == ("cus_old", True)
-    assert refunds == [{"payment_intent": "pi_new"}]
-    assert canceled == ["/v1/subscriptions/sub_new"]
+    assert _gateway(handler).customer_id_from_checkout_session("cs_dup") == "cus_new"
+    # No customer search by email, no refund, no cancellation.
+    assert calls == [("GET", "/v1/checkout/sessions/cs_dup")]
 
 
-def test_first_checkout_is_not_refunded():
+def test_unpaid_or_incomplete_checkout_grants_nothing():
     def handler(request: httpx.Request) -> httpx.Response:
-        path = request.url.path
-        if path == "/v1/checkout/sessions/cs_first":
-            return httpx.Response(
-                200,
-                json={
-                    "status": "complete",
-                    "payment_status": "paid",
-                    "customer": "cus_only",
-                    "customer_details": {"email": "new@example.com"},
-                },
-            )
-        if path == "/v1/customers":
-            return httpx.Response(200, json={"data": [{"id": "cus_only"}]})
-        return httpx.Response(404, json={"error": {"message": path}})
+        sid = request.url.path.rsplit("/", 1)[-1]
+        states = {
+            "cs_open": {"status": "open", "payment_status": "unpaid", "customer": "cus_a"},
+            "cs_unpaid": {"status": "complete", "payment_status": "unpaid", "customer": "cus_b"},
+            "cs_nocus": {"status": "complete", "payment_status": "paid", "customer": None},
+        }
+        return httpx.Response(200, json=states[sid])
 
-    gateway = StripeHttpGateway(_settings(), client=httpx.Client(transport=httpx.MockTransport(handler)))
-    assert gateway.customer_id_from_checkout_session("cs_first") == ("cus_only", False)
-
-
-def _form(request: httpx.Request) -> dict[str, str]:
-    return dict(part.split("=", 1) for part in request.content.decode().split("&") if "=" in part)
+    gateway = _gateway(handler)
+    for sid in ("cs_open", "cs_unpaid", "cs_nocus"):
+        assert gateway.customer_id_from_checkout_session(sid) is None, sid

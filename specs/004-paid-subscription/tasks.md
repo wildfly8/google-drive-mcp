@@ -33,3 +33,12 @@
 ## Phase 6: Pickup
 
 - [x] T010 Update `.specify/memory/project-status.md` and `.cursor/rules/spec-kit-sdd.mdc`
+
+## Phase 7: Close paywall bypasses found in the public-repo audit (2026-10-01)
+
+- [x] T018 Remove `POST /subscribe/restore` (email alone granted a subscriber's access) and all passkey routes, code and storage
+- [x] T019 `GET /subscribe/complete` grants only the customer who paid in that Checkout Session; no email-based switch, cancel or refund
+- [x] T020 Paid `/authorize` always goes to an Allow page (client name, return host, known/unknown); `POST /consent` issues a code only for the same entitled browser while Stripe reports it active; consent pages are not frameable (FR-014)
+- [x] T021 Continue a subscription in another browser through a one-time sign-in link emailed by Google Identity Platform: same reply for every email, link sent only to active subscribers after the reply, button landing page, email must match, Identity Platform user deleted, rate limits; `IDENTITY_TOOLKIT_API_KEY` secret bound by deploy
+- [x] T022 `scripts/deploy-cloud-run.sh` refuses to deploy without the Stripe key and price instead of deploying a free server (FR-009)
+

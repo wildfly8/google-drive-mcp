@@ -102,7 +102,10 @@ class DriveMcpOAuthProvider(
             scid = current_scid()
             if not scid or not self.billing.is_subscription_active(scid):
                 return f"{issuer_url(self.settings).rstrip('/')}/subscribe"
-        if self.settings.mcp_oauth_auto_approve:
+        # A paid Connect always asks the subscriber to Allow: any site can register
+        # a client and send a subscriber's browser here, so the code must never be
+        # issued without a click on this origin's page.
+        if self.settings.mcp_oauth_auto_approve and not scid:
             code = mint_authorization_code(
                 self.settings,
                 client_id=client.client_id,
@@ -126,6 +129,7 @@ class DriveMcpOAuthProvider(
             code_challenge=params.code_challenge,
             state=params.state,
             resource=resource,
+            scid=scid,
         )
         return construct_redirect_uri(
             f"{issuer_url(self.settings).rstrip('/')}/consent",
@@ -140,7 +144,7 @@ class DriveMcpOAuthProvider(
             redirect_uri_provided_explicitly=bool(claims["redirect_uri_provided_explicitly"]),
             code_challenge=str(claims["code_challenge"]),
             resource=str(claims["resource"]),
-            scid=current_scid() if self.settings.mcp_subscription_required else None,
+            scid=str(claims["scid"]) if claims.get("scid") else None,
         )
         state = claims.get("state")
         return code, str(state) if state is not None else None

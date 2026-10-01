@@ -31,3 +31,10 @@
 ## Decision: Fake Stripe in unit/contract tests
 
 **Rationale**: CI must not need live Stripe. Production uses secret keys in Secret Manager.
+
+## Decision: Verified email links replace email-only restore and passkeys (2026-10-01)
+
+**Rationale**: A public-repo audit showed `POST /subscribe/restore` granted a subscriber's access to anyone who typed that subscriber's email, and a repeat Checkout with that email was refunded and switched to the existing subscription. Stripe Checkout does not verify the email. Both are removed: Checkout always grants the paying customer, and another browser continues a subscription only through a one-time link that Google Identity Platform emails to the receipt address (free tier, no domain, sender `noreply@<project>.firebaseapp.com`). The link lands on a page with a button, because mail scanners open links and would consume the code. Passkeys were removed too: hand-written WebAuthn verification was extra attack surface, Chrome and Edge do not share passkeys, and the email link covers the same need. The audit also found that auto-approve plus open dynamic client registration let a link clicked by a subscriber hand a code to an attacker's client, so a paid Connect now always shows an Allow page bound to the paying browser.
+
+**Alternatives considered**: A dedicated Gmail account sending codes (needs a human to create the account). Resend/Brevo/Mailjet free tiers (need a domain for deliverability). Keeping passkeys with a cross-device prompt (more surface for little gain).
+

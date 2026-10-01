@@ -21,7 +21,7 @@ See the constitution for the full invariant set (Articles I–XV).
 
 This is standard **MCP Streamable HTTP** (`POST /mcp`). The host model — not this server — parses the user question and chooses `drive_ls` / `drive_find` / `drive_read` / `drive_grep` arguments. `tools/list` advertises when to use each tool and positive/negative examples.
 
-**Auth:** [MCP OAuth 2.1](https://modelcontextprotocol.io/specification/2025-03-26/basic/authorization) on this origin (authorization code + PKCE, dynamic client registration, protected-resource metadata). Hosts send `Authorization: Bearer <access_token>` on `POST /mcp`. **USD 20 / month** via [Stripe Checkout](https://onto-kb-kxjtmypvfa-uc.a.run.app/subscribe) is required before the first Connect. After that, any AI chat app that finished Connect keeps calling tools while Stripe reports the subscription active. Another browser continues the same subscription. The same receipt email is not charged again. Public Cloud Run still auto-approves the OAuth consent step after a paid period. `MCP_AUTH_TOKEN` is still not an API key.
+**Auth:** [MCP OAuth 2.1](https://modelcontextprotocol.io/specification/2025-03-26/basic/authorization) on this origin (authorization code + PKCE, dynamic client registration, protected-resource metadata). Hosts send `Authorization: Bearer <access_token>` on `POST /mcp`. **USD 20 / month** via [Stripe Checkout](https://onto-kb-kxjtmypvfa-uc.a.run.app/subscribe) is required before the first Connect. After that, any AI chat app that finished Connect keeps calling tools while Stripe reports the subscription active. To use the subscription in another browser, ask `/subscribe` for a one-time sign-in link at the Stripe receipt email (sent by Google; an email address alone never grants access). Each Connect shows an **Allow** page with the app's return address; the code is issued only after the subscriber clicks Allow in the paying browser. `MCP_AUTH_TOKEN` is still not an API key.
 
 ### Add this connector in an AI chat app
 
@@ -44,10 +44,10 @@ Public business site for Stripe verification (free GitHub Pages): [https://wisdo
 1. In your AI chat app, add a remote MCP connector.
 2. Name: **onto-kb**. Paste the URL above. Transport, if asked: Streamable HTTP.
 3. Authentication: **Sign in** or **OAuth**. Leave extra request headers empty. Do not paste a static token.
-4. Connect. Your browser returns to the app. There is no deployment password.
+4. Connect. Check the app address on the **Allow** page and click Allow; your browser returns to the app. There is no deployment password.
 5. If the app asks you to **Always allow** read-only tools, allow them, then enable onto-kb in a chat.
 
-Knowing the connector URL is enough to finish OAuth. Drive calls still require the short-lived token that app stores after Connect. Do not put `MCP_AUTH_TOKEN` in request headers.
+Knowing the connector URL is not enough: Connect finishes only in a browser with an active subscription, after its Allow click. Drive calls require the short-lived token that app stores after Connect. Do not put `MCP_AUTH_TOKEN` in request headers.
 
 Tool results identify files with `file_id` and `source_url` as `drive:{file_id}` — not an HTTPS Drive link — so Cited Sources cannot offer a download. Document text is still returned as evidence; use `drive_read` for the body.
 

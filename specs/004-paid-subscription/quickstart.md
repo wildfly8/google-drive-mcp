@@ -13,7 +13,14 @@ MCP_SUBSCRIPTION_REQUIRED=true
 ```
 
 4. Webhook endpoint: `https://<origin>/webhooks/stripe` events: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`.
-5. Deploy. Open `/setup` with no payment cookie — fee and `/subscribe` only. After Checkout, `/setup` shows Claude, ChatGPT, and Cursor steps. An assistant that already connected keeps working while Stripe shows the subscription active. Another browser continues the same subscription. The same receipt email is not charged again.
+5. Deploy. Open `/setup` with no payment cookie — fee and `/subscribe` only. After Checkout, `/setup` shows Claude, ChatGPT, and Cursor steps. An assistant that already connected keeps working while Stripe shows the subscription active. Another browser continues the same subscription through an emailed one-time sign-in link. Each Connect asks the subscriber to click Allow.
 6. Test mode: pay, then Claude Connect. Unpaid Connect must fail.
 
 Automated: `uv run pytest tests/contract/test_subscription_http.py tests/unit/billing -q`
+
+## Email sign-in links (continue a subscription in another browser)
+
+1. In the GCP project: enable `identitytoolkit.googleapis.com` and `apikeys.googleapis.com`, initialize Identity Platform (`identityPlatform:initializeAuth`), enable Email sign-in without a password, and add the Cloud Run host to authorized domains.
+2. Create an API key restricted to `identitytoolkit.googleapis.com` and store it as the `IDENTITY_TOOLKIT_API_KEY` secret. `scripts/deploy-cloud-run.sh` binds it when present.
+3. Google sends the email from `noreply@<project>.firebaseapp.com`; the link passes through Google's handler on `<project>.firebaseapp.com` to `/subscribe/email/verify`.
+

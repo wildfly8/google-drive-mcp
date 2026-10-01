@@ -7,11 +7,9 @@ class FakeBilling:
     def __init__(self) -> None:
         self.active: set[str] = set()
         self.sessions: dict[str, str] = {}
-        self.session_emails: dict[str, str] = {}
         self.emails: dict[str, str] = {}
-        self.passkeys: dict[str, list[dict]] = {}
-        self.released: list[str] = []
         self.checkouts = 0
+        self.email_lookups = 0
 
     def is_subscription_active(self, customer_id: str) -> bool:
         return customer_id in self.active
@@ -24,27 +22,37 @@ class FakeBilling:
         self.active.add(cus)
         return success_url.replace("{CHECKOUT_SESSION_ID}", sid)
 
-    def customer_id_from_checkout_session(self, session_id: str) -> tuple[str, bool] | None:
-        customer = self.sessions.get(session_id)
-        if not customer:
-            return None
-        email = self.session_emails.get(session_id)
-        if email:
-            existing = self.active_customer_id_for_email(email)
-            if existing and existing != customer:
-                self.active.discard(customer)
-                self.released.append(customer)
-                return existing, True
-        return customer, False
+    def customer_id_from_checkout_session(self, session_id: str) -> str | None:
+        return self.sessions.get(session_id)
 
     def active_customer_id_for_email(self, email: str) -> str | None:
+        self.email_lookups += 1
         customer_id = self.emails.get(email.strip().lower())
         if customer_id and customer_id in self.active:
             return customer_id
         return None
 
-    def get_passkey(self, customer_id: str) -> list[dict]:
-        return list(self.passkeys.get(customer_id) or [])
 
-    def save_passkey(self, customer_id: str, keys: list[dict]) -> None:
-        self.passkeys[customer_id] = list(keys)
+class FakeEmailLink:
+    """Records sign-in links; a link's code verifies only for its own email."""
+
+    def __init__(self) -> None:
+        self.sent: list[tuple[str, str]] = []
+        self.codes: dict[str, str] = {}
+        self.used: set[str] = set()
+
+    def configured(self) -> bool:
+        return True
+
+    def send_link(self, email: str, continue_url: str) -> bool:
+        code = f"oob-{len(self.sent) + 1}"
+        self.sent.append((email, continue_url))
+        self.codes[code] = email.strip().lower()
+        return True
+
+    def verified_email(self, email: str, oob_code: str) -> str | None:
+        owner = self.codes.get(oob_code)
+        if owner is None or oob_code in self.used or owner != email.strip().lower():
+            return None
+        self.used.add(oob_code)
+        return owner

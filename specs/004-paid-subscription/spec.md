@@ -32,7 +32,8 @@ A person who wants onto-kb in Claude (or any MCP host) must complete a **mandato
 2. **Given** an active $20/month period, **When** the host completes authorization-code + PKCE, **Then** an access token is issued as in 001.
 3. **Given** a paid subscriber whose assistant already connected, **When** days pass and Stripe still reports the subscription active, **Then** token refresh succeeds and `drive_*` keeps working with no subscriber action.
 4. **Given** an AI chat app that already finished Connect, **When** the processor still reports that subscription active, **Then** the app keeps calling tools with no extra button and no second charge.
-5. **Given** an active subscription and a different browser, **When** that browser starts Connect or opens Pay, **Then** the same subscription continues. A passkey already in that browser does not open Checkout. A new Checkout for the same receipt email is canceled and refunded.
+5. **Given** an active subscription and a different browser, **When** the subscriber asks `/subscribe` for a sign-in link at the receipt email and opens it in that browser, **Then** the same subscription continues there with no new charge. An email address alone, without the emailed link, MUST NOT grant access, and a new Checkout always belongs to the customer who paid in it.
+7. **Given** a subscriber's browser with an active entitlement, **When** any client's `/authorize` reaches it, **Then** an Allow page shows the client and its return address and no code is issued until the subscriber clicks Allow in that browser.
 6. **Given** a probe of `/authorize` that never pays, **When** it stops, **Then** `oauth_connects` does not increase.
 
 ---
@@ -105,13 +106,13 @@ The payment processor requires a public, non-password-protected website whose vi
 
 - Processor webhook delayed: `/authorize` MUST ask the processor for current status (or a short-lived signed entitlement from a completed checkout), not trust only an in-memory flag.
 - Cloud Run instance restart: entitlement MUST still be verifiable (processor is source of truth; signed cookies/tokens may cache a customer id, not a homemade ledger of Drive files).
-- Auto-approve OAuth without payment: MUST NOT issue a code when the paywall is on.
+- Auto-approve OAuth: MUST NOT issue a code when the paywall is on, with or without payment; a paid Connect always needs the subscriber's Allow click (anyone can register a client and send a subscriber's browser to `/authorize`).
 - Live E2E / owner override: a documented test or owner bypass MAY exist for automated tests; production go-live MUST keep the paywall on.
 - Failed or abandoned checkout: no code, no Drive I/O.
 - Refunds: treated as not entitled once the processor marks the subscription inactive.
 - Currency: USD 20; no other prices in this feature.
 - One Google identity: paying does not attach the subscriber's own Drive.
-- A connected assistant keeps working after the old 30-day cookie window, for as long as the processor reports the subscription active. Refresh re-checks the processor. `/subscribe` does not add a Continue or Remember button. Another browser continues the same subscription: Pay reuses a passkey saved in that browser, and a repeat Checkout for the same receipt email is canceled and refunded.
+- A connected assistant keeps working after the old 30-day cookie window, for as long as the processor reports the subscription active. Refresh re-checks the processor. `/subscribe` does not add a Continue or Remember button. Another browser continues the same subscription through an emailed one-time sign-in link that proves ownership of the receipt email. Passkeys and email-only restore were removed: an unverified email let anyone use a subscriber's access.
 - The public business site is `https://wisdomspringtech.github.io/`. `https://wildfly8.github.io/google-drive-mcp/` is not the business site.
 
 ## Requirements *(mandatory)*
@@ -126,9 +127,10 @@ The payment processor requires a public, non-password-protected website whose vi
 - **FR-006**: When the paywall is on, `GET /setup` without a valid entitlement cookie for an active subscription MUST show only the fee and a link to checkout. It MUST NOT include the connector URL, copy control, host connection steps, the “knowing this URL is enough” note, usage counts, or Google Cloud console links. Those appear only for an active entitlement. A `GET /subscribe` (or equivalent) MUST start checkout.
 - **FR-007**: Drive tools, one deployment Google identity, and Retrieval Core contracts MUST remain as in 001–002. Payment does not expand Google grant.
 - **FR-008**: Connect telemetry (003) MUST still count only successful paid Connects (authorization-code token issuance after entitlement).
-- **FR-009**: Go-live deploy MUST run with the paywall **on**. `MCP_OAUTH_AUTO_APPROVE` MUST NOT bypass the paywall.
+- **FR-009**: Go-live deploy MUST run with the paywall **on**; the deploy script MUST refuse to deploy without the processor key and price rather than serve kb free. `MCP_OAUTH_AUTO_APPROVE` MUST NOT bypass the paywall or the subscriber's Allow click.
 - **FR-010**: Processor webhook (or equivalent signed events) MUST update or confirm entitlement; spoofed unsigned POSTs MUST be rejected.
-- **FR-011**: After a successful payment, a connected AI chat app MUST keep calling tools with no subscriber action while the processor reports that subscription active. Refresh MUST re-check the processor and MUST rotate a long-lived refresh token on success. `/subscribe` shows only the Pay button. Pay MUST continue an active subscription already saved in that browser without opening Checkout. A completed Checkout whose receipt email already has an active subscription MUST be canceled and refunded, and the browser MUST continue the original subscription. Checkout in the paying browser MUST still be able to finish Connect without pasting a card on this origin.
+- **FR-011**: After a successful payment, a connected AI chat app MUST keep calling tools with no subscriber action while the processor reports that subscription active. Refresh MUST re-check the processor and MUST rotate a long-lived refresh token on success. `/subscribe` shows the Pay button and, when configured, a form that emails a one-time sign-in link. Entitlement in another browser MUST require proof of inbox ownership (the emailed link), never an email address alone. A completed Checkout MUST grant entitlement only to the customer who paid in that session. Checkout in the paying browser MUST still be able to finish Connect without pasting a card on this origin.
+- **FR-014**: With the paywall on, every Connect MUST show the subscriber an Allow page naming the client's return address, and MUST issue a code only after the Allow click from the same entitled browser while the processor reports the subscription active. Consent pages MUST NOT be frameable.
 - **FR-012**: The owner MUST be able to open the processor dashboard to see payouts. That dashboard is not this MCP. This origin MUST NOT print payout bank details.
 - **FR-013**: A free public HTTPS page MUST show the business name **WisdomSpringTech**, state that the product is a hosted read-only MCP subscription (onto-kb) at USD 20 per month for any AI chat app that supports a remote MCP connector, and state that connector setup is available only after payment. The page MUST contain one link, to checkout, and MUST be viewable without a password. It MUST NOT show the connector setup URL, owner bank, or card details.
 

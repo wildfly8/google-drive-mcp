@@ -17,8 +17,10 @@ This origin is both the OAuth 2.1 **authorization server** and the MCP **resourc
    Authorization-server metadata advertises `client_id_metadata_document_supported`
    and `token_endpoint_auth_methods_supported` including `none` (public-client PKCE).
 3. Hosts send the resource owner through authorization-code + PKCE S256 (`GET /authorize`).
-   This public Cloud Run deployment sets `MCP_OAUTH_AUTO_APPROVE=true`, so `/authorize`
-   mints a code without `/consent`. `MCP_AUTH_TOKEN` remains the JWT signing input (unless
+   This public Cloud Run deployment runs the 004 paywall: `/authorize` sends an entitled
+   browser to a `/consent` Allow page (no password) and mints a code only after the
+   subscriber clicks Allow in that same browser. `MCP_OAUTH_AUTO_APPROVE=true` skips
+   `/consent` only when the paywall is off. `MCP_AUTH_TOKEN` remains the JWT signing input (unless
    `MCP_OAUTH_SIGNING_KEY` is set) and MUST NOT be accepted as a `/mcp` Bearer.
    Private deploys MAY leave auto-approve off and use `/consent`.
    `GET /setup` is the Claude connector instruction page (Always allow and
@@ -55,7 +57,7 @@ Hosts that implement MCP OAuth 2.1 (ChatGPT custom connectors, Claude connectors
 | `MCP_AUTH_TOKEN` | Resource-owner consent password (HMAC-compared only on `POST /consent`). Also used to derive the JWT HMAC key unless `MCP_OAUTH_SIGNING_KEY` is set |
 | `MCP_PUBLIC_URL` | HTTPS issuer origin for this service (no path, no `/mcp`). Required in production |
 | `MCP_OAUTH_SIGNING_KEY` | Optional dedicated JWT HMAC material. If unset, key = `SHA-256("mcp-oauth-jwt-v1:" + MCP_AUTH_TOKEN)` |
-| `MCP_OAUTH_AUTO_APPROVE` | If true, `/authorize` skips `/consent`. This public connector enables it so Claude users are not asked for `MCP_AUTH_TOKEN`. Tools still require a minted access token (AC-FR-010). |
+| `MCP_OAUTH_AUTO_APPROVE` | Paywall off: if true, `/authorize` skips the `/consent` password page. Paywall on: ignored; every Connect shows the subscriber an Allow page (no password), because any site can register a client and send a subscriber's browser to `/authorize`. Tools still require a minted access token (AC-FR-010). |
 | `MCP_PRINCIPAL_ID` | Non-secret log label for the deployment identity |
 | `GOOGLE_CLIENT_ID` | Google Drive OAuth client (deployment identity), not MCP OAuth |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |

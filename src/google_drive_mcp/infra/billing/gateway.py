@@ -10,15 +10,13 @@ class BillingGateway(Protocol):
 
     def create_checkout_url(self, *, success_url: str, cancel_url: str) -> str: ...
 
-    def customer_id_from_checkout_session(self, session_id: str) -> tuple[str, bool] | None:
-        """Paid customer id, and whether a duplicate checkout was released."""
+    def customer_id_from_checkout_session(self, session_id: str) -> str | None:
+        """The customer who paid in this Checkout Session. Never another customer."""
         ...
 
-    def active_customer_id_for_email(self, email: str) -> str | None: ...
-
-    def get_passkey(self, customer_id: str) -> list[dict]: ...
-
-    def save_passkey(self, customer_id: str, keys: list[dict]) -> None: ...
+    def active_customer_id_for_email(self, email: str) -> str | None:
+        """Active subscriber for an email. Only call after the inbox owner proved it."""
+        ...
 
 
 class InactiveBilling:
@@ -30,14 +28,8 @@ class InactiveBilling:
     def create_checkout_url(self, *, success_url: str, cancel_url: str) -> str:
         raise RuntimeError("payments_not_configured")
 
-    def customer_id_from_checkout_session(self, session_id: str) -> tuple[str, bool] | None:
+    def customer_id_from_checkout_session(self, session_id: str) -> str | None:
         return None
 
     def active_customer_id_for_email(self, email: str) -> str | None:
         return None
-
-    def get_passkey(self, customer_id: str) -> list[dict]:
-        return []
-
-    def save_passkey(self, customer_id: str, keys: list[dict]) -> None:
-        raise RuntimeError("payments_not_configured")

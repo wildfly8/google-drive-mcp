@@ -158,6 +158,7 @@ def mint_consent_ticket(
     code_challenge: str,
     state: str | None,
     resource: str,
+    scid: str | None = None,
 ) -> str:
     extra: dict[str, Any] = {
         "resource": resource,
@@ -167,6 +168,9 @@ def mint_consent_ticket(
     }
     if state is not None:
         extra["state"] = state
+    if scid:
+        # Paid Connect: the Allow click must come from this same subscriber.
+        extra["scid"] = scid
     claims = _base_claims(
         settings,
         typ=TYP_TICKET,

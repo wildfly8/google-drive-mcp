@@ -90,6 +90,12 @@ if secret_exists STRIPE_PRICE_ID; then
   SECRET_BIND="${SECRET_BIND},STRIPE_PRICE_ID=STRIPE_PRICE_ID:latest"
   GRANT_SECRETS+=(STRIPE_PRICE_ID)
 fi
+# Google Identity Platform key for emailed sign-in links that continue a
+# subscription in another browser. Without it, /subscribe offers no email option.
+if secret_exists IDENTITY_TOOLKIT_API_KEY; then
+  SECRET_BIND="${SECRET_BIND},IDENTITY_TOOLKIT_API_KEY=IDENTITY_TOOLKIT_API_KEY:latest"
+  GRANT_SECRETS+=(IDENTITY_TOOLKIT_API_KEY)
+fi
 
 echo "Granting runtime SA Secret Manager access..."
 for name in "${GRANT_SECRETS[@]}"; do
@@ -145,10 +151,13 @@ DEPLOY_ENV="${DEPLOY_ENV},DRIVE_ALLOWED_FOLDER_ID=${KB_FOLDER_ID}"
 DEPLOY_ENV="${DEPLOY_ENV},MCP_OAUTH_AUTO_APPROVE=true"
 DEPLOY_ENV="${DEPLOY_ENV},GOOGLE_CLOUD_PROJECT=${PROJECT}"
 DEPLOY_ENV="${DEPLOY_ENV},MCP_STATS_FROM_LOGS=true"
+# The paywall is mandatory. Without the Stripe key and price the server would
+# serve kb to anyone, so refuse to deploy instead of failing open.
 if secret_exists STRIPE_SECRET_KEY && secret_exists STRIPE_PRICE_ID; then
   DEPLOY_ENV="${DEPLOY_ENV},MCP_SUBSCRIPTION_REQUIRED=true"
 else
-  echo "Stripe price is not in Secret Manager yet. Deploying /subscribe without blocking Connect." >&2
+  echo "STRIPE_SECRET_KEY and STRIPE_PRICE_ID must be in Secret Manager. Refusing to deploy without the paywall." >&2
+  exit 1
 fi
 DEPLOY_ARGS+=(--set-env-vars="${DEPLOY_ENV}")
 

@@ -129,19 +129,23 @@ def setup_get(
             "While Stripe shows this subscription as active, that app keeps "
             "calling onto-kb with no further steps from you.</p>"
         )
-    if settings.mcp_oauth_auto_approve:
+    if settings.mcp_subscription_required:
+        auth_step = (
+            "On this origin’s page, check the app address and click <strong>Allow</strong>. "
+            "Your browser returns to the AI chat app. There is no deployment password."
+        )
+        auth_note = (
+            "There is no deployment password. After Connect, the AI chat app stores a "
+            "short-lived token and sends it on each tool call. Only click Allow for a "
+            "Connect you started yourself."
+        )
+    elif settings.mcp_oauth_auto_approve:
         auth_step = "Your browser returns to the AI chat app. There is no deployment password."
-        if settings.mcp_subscription_required:
-            auth_note = (
-                "There is no deployment password. After Connect, the AI chat app stores a "
-                "short-lived token and sends it on each tool call."
-            )
-        else:
-            auth_note = (
-                "Knowing this URL is enough to finish OAuth. Drive calls still require the "
-                "short-lived token the AI chat app stores after Connect. Do not put MCP_AUTH_TOKEN "
-                "in request headers."
-            )
+        auth_note = (
+            "Knowing this URL is enough to finish OAuth. Drive calls still require the "
+            "short-lived token the AI chat app stores after Connect. Do not put MCP_AUTH_TOKEN "
+            "in request headers."
+        )
     else:
         auth_step = (
             "On this origin’s consent page, enter the deployment password "
