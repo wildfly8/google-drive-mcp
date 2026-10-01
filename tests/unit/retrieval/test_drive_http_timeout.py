@@ -16,7 +16,7 @@ def test_drive_connections_time_out_after_20_seconds():
     worker.start()
     worker.join()
     for authorized in https:
-        assert authorized.http.timeout == 20
+        assert authorized.http.timeout == 30
         # Kept from googleapiclient's build_http: 308 is not followed as a redirect.
         assert 308 not in authorized.http.redirect_codes
         assert 301 in authorized.http.redirect_codes

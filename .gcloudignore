@@ -1,0 +1,8 @@
+# What `gcloud run deploy --source` must not upload to Cloud Build.
+# Without this file gcloud would derive the same from .gitignore; keeping it
+# explicit makes sure CI credentials (gha-creds-*.json) never leave the runner.
+.gcloudignore
+.git
+.github
+#!include:.gitignore
+gha-creds-*.json
