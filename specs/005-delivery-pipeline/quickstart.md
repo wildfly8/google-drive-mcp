@@ -41,7 +41,7 @@ Placeholders: `<project-id>`, `<project-number>`, `<region>` (default `us-centra
    GCP_REGION          <region>
    ```
 
-   If the four identifiers also exist as variables, delete those variables: a variable is printed once in the mask step's header. Then delete the logs of the runs that read them from variables (runs 15 and 16, and any later run made before you moved them): Actions → the run → ⋯ → Delete all logs (T015).
+   If the four identifiers also exist as variables, delete those variables: a variable is printed once in the mask step's header. Then delete the logs of any run that read them from variables: Actions → the run → ⋯ → Delete all logs (T015). From Cloud Shell, `gh secret set NAME -R wildfly8/google-drive-mcp -b VALUE` and `gh variable delete NAME -R wildfly8/google-drive-mcp` do the same as the Settings page.
 
 4. **Optional, recommended**: a branch ruleset on `main` that requires the `test` and `image` checks (T017).
 
