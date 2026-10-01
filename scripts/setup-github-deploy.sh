@@ -54,7 +54,7 @@ if gcloud iam workload-identity-pools providers describe "$PROVIDER" --project="
 else
   gcloud iam workload-identity-pools providers create-oidc "$PROVIDER" --project="$PROJECT" \
     --location=global --workload-identity-pool="$POOL" \
-    --display-name="GitHub OIDC (onto-kb main, production)" \
+    --display-name="onto-kb GitHub (main, prod)" \
     --issuer-uri="https://token.actions.githubusercontent.com" \
     --attribute-mapping="$MAPPING" --attribute-condition="$CONDITION"
 fi
