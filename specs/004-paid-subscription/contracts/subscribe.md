@@ -6,7 +6,7 @@ HTML. States USD 20/month. Controls: the Pay button (opens Stripe Checkout) and,
 
 ## `POST /subscribe/email`
 
-Form field `email`. Always the same 200 reply ("if that email has an active subscription, a one-time sign-in link is on its way"), with no entitlement and without echoing the email, so the endpoint does not reveal subscribers. After the reply is sent, the server looks up an active processor customer for that email and only then asks Google Identity Platform to email a one-time sign-in link (continue URL `/subscribe/email/verify`). Sets a short-lived signed cookie (path `/subscribe/email`) holding the typed email so the link can be finished in this browser without retyping it. Rate limits per client address and per email (best effort, per instance, bounded memory). Only ASCII addresses are accepted; the subscriber lookup ignores letter case. An email address alone never grants access.
+Form field `email`. Always the same 200 reply ("if that email has an active subscription, a one-time sign-in link is on its way"), with no entitlement and without echoing the email, so the endpoint does not reveal subscribers. Before replying, the server looks up an active processor customer for that email (off the event loop) and only then asks Google Identity Platform to email a one-time sign-in link (continue URL `/subscribe/email/verify`); the work is not left for after the reply, because Cloud Run throttles CPU once a reply is sent. Every reply to a well-formed address, subscriber or not and rate limited or not, takes at least 3 seconds from the start of the request, so timing does not reveal subscribers either. Sets a short-lived signed cookie (path `/subscribe/email`) holding the typed email so the link can be finished in this browser without retyping it. Rate limits per client address and per email (best effort, per instance, bounded memory). Only ASCII addresses are accepted; the subscriber lookup ignores letter case. An email address alone never grants access.
 
 ## `GET /subscribe/email/verify?oobCode=`
 
@@ -18,7 +18,7 @@ Fields `oobCode` and `email` (or the email cookie). Google confirms the code was
 
 ## `POST /subscribe/checkout`
 
-Starts hosted Checkout (`mode=subscription`) with a random `client_reference_id` and sets the same value in a 24-hour HttpOnly cookie `onto_kb_checkout` (Path=/subscribe), which ties the session to this browser. Redirects to Stripe. 503 if Stripe is not configured.
+Starts hosted Checkout (`mode=subscription`) with a random `client_reference_id` and sets the same value in a 24-hour HttpOnly cookie `onto_kb_checkout` (Path=/subscribe), which ties the session to this browser. Redirects to Stripe. When the browser holds an entitlement cookie (a lapsed subscriber), Checkout is started for that same Stripe customer (`customer`), so a returning subscriber does not become a second customer; if Stripe no longer has that customer (`resource_missing`), Checkout starts without it. Rate limited per client address (10 per hour) → 429. 503 if Stripe is not configured or Checkout cannot start; the failure is logged with the exception type only.
 
 ## `GET /subscribe/complete?session_id=`
 
@@ -36,6 +36,10 @@ Deletes the entitlement and resume cookies in this browser and redirects to `/su
 
 `/subscribe/checkout`, `/subscribe/email`, `/subscribe/email/verify`, `/subscribe/manage` and `/subscribe/signout` answer 403 when the browser reports another site: `Sec-Fetch-Site` other than `same-origin` or `none`, or else an `Origin` that is `null` or not this origin. Requests with neither header (non-browser clients) are not refused by this rule.
 
+## Security headers (every response)
+
+Any `text/html` response gets `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'; base-uri 'none'; object-src 'none'`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and `Cache-Control: no-store`, each only when the page does not set that header itself (consent and email-link pages keep their own `frame-ancestors 'none'`). The policy has no `default-src`, `script-src` or `form-action`: `/setup` has an inline script and Checkout and the portal are form redirects to Stripe. Any response that sets a cookie (the renewed entitlement too) gets `Cache-Control: no-store` unless its own says `no-store` or `private`; a public one (OAuth metadata) is replaced. Cookie-free JSON keeps its own caching.
+
 ## `POST /webhooks/stripe`
 
 Stripe-Signature required. Invalid signature → 400. Valid → 200. Body not logged.
@@ -48,7 +52,7 @@ When the entitlement verifies and Stripe reports the subscription active: connec
 
 ## `GET /stats` (003)
 
-With the paywall on, the public JSON has the non-PII totals but no `gcp` console links (they name the cloud project).
+With the paywall on, the public JSON has the non-PII totals but no `gcp` console links (they name the cloud project). The snapshot and its one-minute cached Cloud Logging scan run off the event loop; while a scan runs, other requests get the previous result instead of waiting (only the first scan after start is waited for).
 
 ## `GET /authorize` (existing)
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import html
 import logging
@@ -12,7 +13,6 @@ import time
 from collections import OrderedDict, deque
 from urllib.parse import unquote, urlparse
 
-from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -199,17 +199,22 @@ async def subscribe_checkout_post(
 ) -> Response:
     if _cross_site(request, settings):
         return _page("Start checkout from this site's subscribe page.", _PAY_FORM, code=403)
+    if not _LIMITS.allow(f"checkout:{_client_ip(request)}", 10, 3600):
+        return _page("Too many requests. Try again later.", code=429)
     origin = issuer_url(settings).rstrip("/")
     success = f"{origin}/subscribe/complete?session_id={{CHECKOUT_SESSION_ID}}"
     cancel = f"{origin}/subscribe"
     reference = secrets.token_urlsafe(24)
+    # A lapsed subscriber pays again as the same Stripe customer, not a second one.
+    customer = entitlement_from_request(request, settings)
     try:
         url = await run_in_threadpool(
             lambda: billing.create_checkout_url(
-                success_url=success, cancel_url=cancel, reference=reference
+                success_url=success, cancel_url=cancel, reference=reference, customer=customer
             )
         )
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 - the subscriber sees a retry page
+        _LOG.warning("checkout_start_failed error=%s", type(exc).__name__)
         return HTMLResponse(
             _SUBSCRIBE.format(
                 status=html.escape("Checkout could not start. Try again later."),
@@ -434,12 +439,16 @@ def _page(status: str, form: str = "", *, code: int = 200) -> HTMLResponse:
 def _send_if_subscriber(
     billing: BillingGateway, email_link: EmailLinkPort, email: str, continue_url: str
 ) -> None:
-    """Runs after the reply is sent, so timing does not reveal subscribers."""
     try:
         if billing.active_customer_id_for_email(email):
             email_link.send_link(email, continue_url)
     except Exception:  # noqa: BLE001 - never surface processor errors to the caller
         _LOG.warning("email_restore_send_failed")
+
+
+# Every reply to an address takes at least this long, so timing does not reveal
+# subscribers. The send runs before the reply: Cloud Run throttles CPU after it.
+_EMAIL_REPLY_FLOOR = 3.0
 
 
 async def subscribe_email_post(
@@ -448,6 +457,7 @@ async def subscribe_email_post(
     billing: BillingGateway,
     email_link: EmailLinkPort,
 ) -> Response:
+    started = time.monotonic()
     if not settings.mcp_subscription_required or not email_link.configured():
         return _page("Email sign-in is not available on this server.", _PAY_FORM, code=404)
     if _cross_site(request, settings):
@@ -463,9 +473,8 @@ async def subscribe_email_post(
     )
     if allowed:
         continue_url = f"{issuer_url(settings).rstrip('/')}/subscribe/email/verify"
-        page.background = BackgroundTask(
-            _send_if_subscriber, billing, email_link, email, continue_url
-        )
+        await run_in_threadpool(_send_if_subscriber, billing, email_link, email, continue_url)
+    await asyncio.sleep(max(0.0, _EMAIL_REPLY_FLOOR - (time.monotonic() - started)))
     return page
 
 

@@ -52,6 +52,7 @@ from google_drive_mcp.infra.mcp_auth.setup import setup_get
 from google_drive_mcp.infra.mcp_auth.stats import stats_get, stats_snapshot
 from google_drive_mcp.infra.mcp_auth.provider import DriveMcpOAuthProvider
 from google_drive_mcp.infra.mcp_auth.tokens import MCP_OAUTH_SCOPE, issuer_url, resource_url
+from google_drive_mcp.mcp.headers import SecurityHeadersMiddleware
 from google_drive_mcp.mcp.limits import RequestLimits
 from google_drive_mcp.mcp.middleware import (
     Runtime,
@@ -237,7 +238,7 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
     async def connect_stats(request):
         # Public page: with the paywall on, leave out console links (they name the
         # GCP project).
-        return stats_get(
+        return await stats_get(
             request, runtime.telemetry, links=not settings.mcp_subscription_required
         )
 
@@ -657,6 +658,7 @@ def streamable_app(runtime: Runtime | None = None, *, json_response: bool = True
     install_chatgpt_mcp_http(app, runtime.settings)
     app.add_exception_handler(BillingUnavailable, _billing_unavailable)
     app.add_middleware(_AuthorizationHeaderMiddleware, settings=runtime.settings)
+    app.add_middleware(SecurityHeadersMiddleware)  # outside the cookie renewal: sees it too
     app.add_middleware(RequestLimits)  # added last, so it runs first (body caps, rate limits)
     return app
 

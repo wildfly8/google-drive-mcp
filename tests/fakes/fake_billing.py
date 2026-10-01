@@ -11,6 +11,7 @@ class FakeBilling:
         self.unavailable = False  # Stripe cannot be asked
         self.emails: dict[str, str] = {}
         self.checkouts = 0
+        self.checkout_customers: list[str | None] = []  # customer passed to each Checkout
         self.email_lookups = 0
         self.portals: list[str] = []
         self.portal_ready = True
@@ -23,10 +24,13 @@ class FakeBilling:
     def is_subscription_active(self, customer_id: str) -> bool:
         return self.subscription_state(customer_id) is True
 
-    def create_checkout_url(self, *, success_url: str, cancel_url: str, reference: str) -> str:
+    def create_checkout_url(
+        self, *, success_url: str, cancel_url: str, reference: str, customer: str | None = None
+    ) -> str:
         self.checkouts += 1
+        self.checkout_customers.append(customer)
         sid = f"cs_test_fake{self.checkouts:012d}"
-        cus = f"cus_test_{self.checkouts}"
+        cus = customer or f"cus_test_{self.checkouts}"
         self.sessions[sid] = (cus, reference)
         self.active.add(cus)
         return success_url.replace("{CHECKOUT_SESSION_ID}", sid)

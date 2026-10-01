@@ -6,6 +6,7 @@ import os
 import threading
 import time
 
+from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -35,13 +36,20 @@ _log_scan_lock = threading.Lock()
 
 
 def _logged_stats():
-    with _log_scan_lock:
+    stale = _log_scan["result"]
+    # While another request scans, serve the last result instead of holding a
+    # worker thread in the queue. Only the very first scan is waited for.
+    if not _log_scan_lock.acquire(blocking=stale is None):
+        return stale
+    try:
         cached = _log_scan["result"]
         if cached is not None and time.monotonic() - _log_scan["at"] < _LOG_SCAN_TTL:
             return cached
         result = fetch_cloud_logging_stats(project=cloud_logging_project())
         _log_scan.update(at=time.monotonic(), result=result)
         return result
+    finally:
+        _log_scan_lock.release()
 
 
 def stats_snapshot(recorder: ConnectRecorder, *, links: bool = True) -> dict:
@@ -58,5 +66,8 @@ def stats_snapshot(recorder: ConnectRecorder, *, links: bool = True) -> dict:
     return add_links(recorder.snapshot().to_dict())
 
 
-def stats_get(_request: Request, recorder: ConnectRecorder, *, links: bool = True) -> JSONResponse:
-    return JSONResponse(stats_snapshot(recorder, links=links))
+async def stats_get(
+    _request: Request, recorder: ConnectRecorder, *, links: bool = True
+) -> JSONResponse:
+    # The log scan is blocking HTTP: keep it off the event loop.
+    return JSONResponse(await run_in_threadpool(stats_snapshot, recorder, links=links))

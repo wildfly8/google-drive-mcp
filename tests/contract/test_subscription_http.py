@@ -8,6 +8,7 @@ import json
 import time
 from urllib.parse import parse_qs, urlparse
 
+import pytest
 from starlette.testclient import TestClient
 
 from fakes.fake_billing import FakeBilling
@@ -23,6 +24,15 @@ from google_drive_mcp.infra.billing.stripe_api import verify_stripe_signature
 from google_drive_mcp.infra.config import Settings
 from google_drive_mcp.mcp.middleware import Runtime
 from google_drive_mcp.mcp.server import streamable_app
+
+
+@pytest.fixture(autouse=True)
+def _fresh_limits_and_no_email_floor(monkeypatch):
+    """Fresh rate limits per test; email replies skip the 3 s floor unless a test sets it."""
+    from google_drive_mcp.infra.billing import routes
+
+    monkeypatch.setattr(routes, "_LIMITS", routes._RateLimit())
+    monkeypatch.setattr(routes, "_EMAIL_REPLY_FLOOR", 0.0)
 
 
 def _paid_settings(**kwargs) -> Settings:
@@ -578,8 +588,10 @@ def test_lapsed_subscriber_who_pays_again_gets_the_new_subscription(fake_drive: 
         started = client.post("/subscribe/checkout", follow_redirects=False)
         done = client.get(started.headers["location"].replace("http://127.0.0.1", ""))
         assert done.status_code == 200
-        # The new subscription's cookie wins over the renewal of the lapsed one.
-        assert _jar_customer(client, settings) == "cus_test_1"
+        # Checkout reuses the lapsed Stripe customer, whose subscription is active again.
+        assert billing.checkout_customers == ["cus_old"]
+        assert _jar_customer(client, settings) == "cus_old"
+        assert billing.is_subscription_active("cus_old")
         assert "/authorize?" in done.text  # back to the Connect that was started
         resumed = client.get(
             "/authorize?" + str(authorize.request.url.query, "ascii"), follow_redirects=False
@@ -920,3 +932,237 @@ def test_two_refreshes_with_one_token_never_both_succeed(fake_drive: FakeDrive):
 
     codes = anyio.run(run)
     assert sorted(codes) == [200, 400, 400, 400]
+
+
+_PAGE_CSP = "frame-ancestors 'none'; base-uri 'none'; object-src 'none'"
+
+
+def _assert_page_headers(reply, csp: str = _PAGE_CSP) -> None:
+    assert reply.headers["x-frame-options"] == "DENY"
+    assert reply.headers.get_list("content-security-policy") == [csp]
+    assert reply.headers["x-content-type-options"] == "nosniff"
+    assert reply.headers["referrer-policy"] == "no-referrer"
+    assert reply.headers["cache-control"] == "no-store"
+
+
+def test_html_pages_carry_security_headers(fake_drive: FakeDrive):
+    settings, billing, email_link, runtime = _email_runtime(fake_drive)
+    with _client(runtime) as client:
+        for path, params, status in (
+            ("/setup", {}, 200),
+            ("/subscribe", {}, 200),
+            ("/subscribe/complete", {"session_id": "cs_bad"}, 400),
+        ):
+            reply = client.get(path, params=params, follow_redirects=False)
+            assert reply.status_code == status, path
+            _assert_page_headers(reply)
+        # Scripts and forms are not restricted: /setup has an inline script and
+        # Checkout and the portal are form redirects to Stripe.
+        csp = client.get("/setup").headers["content-security-policy"]
+        assert "default-src" not in csp and "script-src" not in csp and "form-action" not in csp
+        # Consent and email-link pages keep the headers they set themselves.
+        consent = client.get("/consent", params={"ticket": "expired"})
+        assert consent.status_code == 400
+        _assert_page_headers(consent, csp="frame-ancestors 'none'")
+        landing = client.get("/subscribe/email/verify", params={"oobCode": "oob-1"})
+        _assert_page_headers(landing, csp="frame-ancestors 'none'")
+        # JSON is not a page.
+        stats = client.get("/stats")
+        assert "x-frame-options" not in stats.headers
+        assert "content-security-policy" not in stats.headers
+
+
+def test_responses_that_set_the_entitlement_cookie_are_not_cached(fake_drive: FakeDrive):
+    settings = _paid_settings()
+    billing = FakeBilling()
+    billing.active.add("cus_live1")
+    runtime = Runtime(settings=settings, drive=fake_drive, billing=billing)
+    token = mint_entitlement(settings, customer_id="cus_live1")
+    with _client(runtime) as client:
+        for method, path in (
+            ("GET", "/stats"),  # JSON, cookie renewed by the middleware
+            ("GET", "/subscribe"),  # 303 for an active subscriber
+            ("GET", "/.well-known/oauth-authorization-server"),  # public, max-age otherwise
+            ("POST", "/subscribe/signout"),  # deletes it
+        ):
+            client.cookies.clear()
+            reply = client.request(
+                method, path, cookies={COOKIE_NAME: token}, follow_redirects=False
+            )
+            assert COOKIE_NAME in reply.headers.get("set-cookie", ""), path
+            assert reply.headers.get_list("cache-control") == ["no-store"], path
+        # Cookie-free replies keep their own caching.
+        client.cookies.clear()
+        assert "cache-control" not in client.get("/stats").headers
+        metadata = client.get("/.well-known/oauth-authorization-server")
+        assert metadata.headers["cache-control"] == "public, max-age=3600"
+
+
+def test_checkout_is_rate_limited_per_address(fake_drive: FakeDrive):
+    settings = _paid_settings()
+    billing = FakeBilling()
+    runtime = Runtime(settings=settings, drive=fake_drive, billing=billing)
+    with _client(runtime) as client:
+        for _ in range(10):
+            client.cookies.clear()
+            assert client.post("/subscribe/checkout", follow_redirects=False).status_code == 303
+        client.cookies.clear()
+        refused = client.post("/subscribe/checkout", follow_redirects=False)
+        assert refused.status_code == 429
+        assert "onto_kb_checkout" not in refused.cookies
+        assert billing.checkouts == 10
+        # Another address still gets through.
+        other = client.post(
+            "/subscribe/checkout",
+            headers={"x-forwarded-for": "203.0.113.7"},
+            follow_redirects=False,
+        )
+        assert other.status_code == 303
+        assert billing.checkouts == 11
+
+
+def test_a_lapsed_cookie_checks_out_as_the_same_customer(fake_drive: FakeDrive):
+    settings = _paid_settings()
+    billing = FakeBilling()
+    runtime = Runtime(settings=settings, drive=fake_drive, billing=billing)
+    lapsed = mint_entitlement(settings, customer_id="cus_old")
+    with _client(runtime) as client:
+        assert client.post("/subscribe/checkout", follow_redirects=False).status_code == 303
+        client.cookies.clear()
+        client.cookies.set(COOKIE_NAME, lapsed, domain="testserver.local")
+        started = client.post("/subscribe/checkout", follow_redirects=False)
+        assert started.status_code == 303
+        done = client.get(started.headers["location"].replace("http://127.0.0.1", ""))
+        assert done.status_code == 200
+        # A new browser makes a new customer; a lapsed one pays as its own customer again.
+        assert billing.checkout_customers == [None, "cus_old"]
+        assert _jar_customer(client, settings) == "cus_old"
+
+
+def test_checkout_failures_log_only_the_error_type(fake_drive: FakeDrive, caplog):
+    class Broken(FakeBilling):
+        def create_checkout_url(self, **kwargs) -> str:
+            raise RuntimeError("Invalid API Key provided: sk_live_secret")
+
+    runtime = Runtime(settings=_paid_settings(), drive=fake_drive, billing=Broken())
+    with _client(runtime) as client, caplog.at_level("WARNING", logger="google_drive_mcp"):
+        reply = client.post("/subscribe/checkout", follow_redirects=False)
+    assert reply.status_code == 503
+    assert "Checkout could not start" in reply.text
+    assert "checkout_start_failed error=RuntimeError" in caplog.text
+    assert "sk_live_secret" not in caplog.text and "sk_live_secret" not in reply.text
+
+
+def test_stripe_checkout_names_the_customer_only_when_given():
+    import httpx
+    from pydantic import SecretStr
+
+    from google_drive_mcp.infra.billing.stripe_api import StripeHttpGateway
+
+    forms: list[dict[str, list[str]]] = []
+
+    def stripe(request: httpx.Request) -> httpx.Response:
+        form = parse_qs(request.content.decode("ascii"))
+        forms.append(form)
+        if form.get("customer") == ["cus_gone"]:
+            error = {"code": "resource_missing", "param": "customer"}
+            return httpx.Response(400, json={"error": error}, request=request)
+        url = "https://checkout.stripe.test/c/pay/cs_test_x"
+        return httpx.Response(200, json={"url": url}, request=request)
+
+    settings = _paid_settings(stripe_secret_key=SecretStr("sk_test_contract_only"))
+    http = httpx.Client(transport=httpx.MockTransport(stripe))
+    gateway = StripeHttpGateway(settings, client=http)
+    urls = {"success_url": "https://x.test/ok", "cancel_url": "https://x.test/no"}
+    gateway.create_checkout_url(**urls, reference="ref-1")
+    gateway.create_checkout_url(**urls, reference="ref-2", customer="cus_old")
+    assert "customer" not in forms[0]
+    assert forms[1]["customer"] == ["cus_old"]
+    assert forms[1]["client_reference_id"] == ["ref-2"]
+    # A customer Stripe no longer has (deleted, or the other mode) falls back to a new one.
+    forms.clear()
+    assert gateway.create_checkout_url(**urls, reference="ref-3", customer="cus_gone")
+    assert [form.get("customer") for form in forms] == [["cus_gone"], None]
+
+
+def test_email_replies_take_the_same_minimum_time(fake_drive: FakeDrive, monkeypatch):
+    from google_drive_mcp.infra.billing import routes
+
+    monkeypatch.setattr(routes, "_EMAIL_REPLY_FLOOR", 0.3)
+    settings, billing, email_link, runtime = _email_runtime(fake_drive)
+    replies = []
+    with _client(runtime) as client:
+        # A subscriber, a stranger, and a subscriber past the per-email limit.
+        for email in ["payer@example.com", "nobody@example.com"] + ["payer@example.com"] * 3:
+            began = time.monotonic()
+            reply = client.post("/subscribe/email", data={"email": email})
+            replies.append((time.monotonic() - began, reply.status_code, reply.text))
+    assert all(elapsed >= 0.3 for elapsed, _, _ in replies)
+    assert {(code, text) for _, code, text in replies} == {(200, replies[0][2])}
+    assert [address for address, _ in email_link.sent] == ["payer@example.com"] * 3
+
+
+def test_email_link_is_sent_before_the_reply(fake_drive: FakeDrive):
+    settings, billing, email_link, runtime = _email_runtime(fake_drive)
+    app = streamable_app(runtime, json_response=True)
+    sent_at_reply: list[int] = []
+
+    async def spy(scope, receive, send):
+        async def watch(message):
+            if message["type"] == "http.response.start" and scope["path"] == "/subscribe/email":
+                sent_at_reply.append(len(email_link.sent))
+            await send(message)
+
+        await app(scope, receive, watch)
+
+    # Cloud Run throttles CPU once the reply is out, so the send must not wait for it.
+    with TestClient(spy) as client:
+        client.post("/subscribe/email", data={"email": "payer@example.com"})
+        client.post("/subscribe/email", data={"email": "nobody@example.com"})
+    assert sent_at_reply == [1, 1]
+
+
+def test_stats_snapshot_runs_off_the_event_loop(fake_drive: FakeDrive, monkeypatch):
+    import asyncio
+
+    from google_drive_mcp.infra.mcp_auth import stats as stats_module
+
+    def snapshot(_recorder, *, links: bool = True) -> dict:
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return {"off_loop": True, "links": links}
+        return {"off_loop": False, "links": links}
+
+    monkeypatch.setattr(stats_module, "stats_snapshot", snapshot)
+    runtime = Runtime(settings=_paid_settings(), drive=fake_drive, billing=FakeBilling())
+    with _client(runtime) as client:
+        assert client.get("/stats").json() == {"off_loop": True, "links": False}
+
+
+def test_stats_serve_the_last_scan_while_another_runs(monkeypatch):
+    import threading
+
+    from google_drive_mcp.infra.mcp_auth import stats as stats_module
+    from google_drive_mcp.infra.telemetry.recorder import ConnectRecorder
+
+    def no_scan(*, project: str):
+        raise AssertionError("a second scan must not start while one runs")
+
+    monkeypatch.setattr(stats_module, "use_cloud_logging_stats", lambda: True)
+    monkeypatch.setattr(stats_module, "fetch_cloud_logging_stats", no_scan)
+    monkeypatch.setattr(stats_module, "_log_scan", {"at": 0.0, "result": (None, "timeout")})
+    lock = threading.Lock()
+    monkeypatch.setattr(stats_module, "_log_scan_lock", lock)
+    results: list[dict] = []
+    worker = threading.Thread(
+        target=lambda: results.append(stats_module.stats_snapshot(ConnectRecorder())),
+        daemon=True,
+    )
+    with lock:  # another request is scanning
+        worker.start()
+        worker.join(timeout=2)
+        answered = not worker.is_alive()
+    worker.join(timeout=2)
+    assert answered, "stats waited for the running scan"
+    assert results[0]["log_store"] == "timeout"

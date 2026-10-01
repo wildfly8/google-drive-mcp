@@ -18,8 +18,13 @@ class BillingGateway(Protocol):
         """Fail-closed form of subscription_state: only a clear yes is True."""
         ...
 
-    def create_checkout_url(self, *, success_url: str, cancel_url: str, reference: str) -> str:
-        """Hosted Checkout that carries `reference` back (client_reference_id)."""
+    def create_checkout_url(
+        self, *, success_url: str, cancel_url: str, reference: str, customer: str | None = None
+    ) -> str:
+        """Hosted Checkout that carries `reference` back (client_reference_id).
+
+        `customer` (a returning subscriber's id) pays as that customer, not a new one.
+        """
         ...
 
     def customer_id_from_checkout_session(self, session_id: str, *, reference: str) -> str | None:
@@ -47,7 +52,9 @@ class InactiveBilling:
     def is_subscription_active(self, customer_id: str) -> bool:
         return False
 
-    def create_checkout_url(self, *, success_url: str, cancel_url: str, reference: str) -> str:
+    def create_checkout_url(
+        self, *, success_url: str, cancel_url: str, reference: str, customer: str | None = None
+    ) -> str:
         raise RuntimeError("payments_not_configured")
 
     def customer_id_from_checkout_session(self, session_id: str, *, reference: str) -> str | None:

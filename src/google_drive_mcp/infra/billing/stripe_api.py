@@ -140,29 +140,45 @@ class StripeHttpGateway:
             if owns:
                 http.close()
 
-    def create_checkout_url(self, *, success_url: str, cancel_url: str, reference: str) -> str:
+    def create_checkout_url(
+        self, *, success_url: str, cancel_url: str, reference: str, customer: str | None = None
+    ) -> str:
         if not self.configured():
             raise RuntimeError("payments_not_configured")
         owns = self._client is None
         http = self._http()
-        try:
-            body = urlencode(
-                {
-                    "mode": "subscription",
-                    "success_url": success_url,
-                    "cancel_url": cancel_url,
-                    "line_items[0][price]": self._settings.stripe_price_id.strip(),
-                    "line_items[0][quantity]": "1",
-                    # Ties the session to the browser that started it.
-                    "client_reference_id": reference,
-                }
-            )
-            response = http.post(
+        form = {
+            "mode": "subscription",
+            "success_url": success_url,
+            "cancel_url": cancel_url,
+            "line_items[0][price]": self._settings.stripe_price_id.strip(),
+            "line_items[0][quantity]": "1",
+            # Ties the session to the browser that started it.
+            "client_reference_id": reference,
+        }
+        if customer:
+            # A returning subscriber pays as the same customer, not a second one.
+            form["customer"] = customer
+
+        def post() -> httpx.Response:
+            return http.post(
                 f"{_STRIPE}/v1/checkout/sessions",
-                content=body,
+                content=urlencode(form),
                 headers={"content-type": "application/x-www-form-urlencoded"},
                 auth=self._auth(),
             )
+
+        try:
+            response = post()
+            if customer and response.status_code == 400:
+                try:
+                    code = (response.json().get("error") or {}).get("code")
+                except (ValueError, AttributeError):
+                    code = None
+                if code == "resource_missing":
+                    # That customer is gone (deleted, or another Stripe mode): pay as a new one.
+                    del form["customer"]
+                    response = post()
             response.raise_for_status()
             url = response.json().get("url")
             if not isinstance(url, str) or not url:
