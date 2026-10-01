@@ -693,6 +693,9 @@ def check_allowed_folder_in_drive(settings: Settings) -> None:
 def main() -> None:
     import uvicorn
 
+    from google_drive_mcp.infra.logging import configure_logging
+
+    configure_logging()
     try:
         runtime = build_runtime()
         check_allowed_folder_in_drive(runtime.settings)
@@ -700,7 +703,8 @@ def main() -> None:
         raise SystemExit(str(exc)) from exc
     app = streamable_app(runtime)
     port = int(os.environ.get("PORT", "8080"))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    # No access log: query strings carry sign-in codes and tickets. Cloud Run logs requests.
+    uvicorn.run(app, host="0.0.0.0", port=port, access_log=False)
 
 
 if __name__ == "__main__":

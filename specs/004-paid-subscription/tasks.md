@@ -50,3 +50,7 @@
 - [x] T029 Paid `/setup` skips the log scan; paid `/stats` omits console links; the server refuses to start with signing material under 32 characters (FR-006, AC-FR-010)
 - [x] T030 Review fixes (2026-10-01): Checkout bound to the browser that started it (`client_reference_id` + `onto_kb_checkout`); cross-site POSTs to `/subscribe/*` refused; `POST /subscribe/signout`; Manage and Sign out for lapsed subscribers on `/subscribe` and `/setup`; Stripe checks off the event loop; refresh tokens reserved during the check and released on failure; 503 `temporarily_unavailable` when Stripe cannot be asked (FR-016, FR-017)
 
+## Phase 8: Logs without emails or keys (2026-10-01)
+
+- [x] T031 Keep typed emails, the Identity Toolkit API key and one-time codes out of Cloud Logging: `httpx`/`httpcore` at `WARNING` (Stripe's email lookup URL), the key sent as `x-goog-api-key` for send, verify and delete, no uvicorn access log; log `stripe_subscription_check_failed` and `stripe_checkout_failed` as JSON `WARNING`s with only the HTTP status or exception type; docstrings say how emails stay out of logs; `tests/unit/test_logging_hygiene.py` drives `/subscribe/email` and its verify step through the real Stripe and Identity Platform adapters over `httpx.MockTransport` at `DEBUG` (FR-004)
+

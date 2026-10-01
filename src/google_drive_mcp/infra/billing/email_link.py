@@ -56,7 +56,9 @@ class IdentityPlatformEmailLink:
         owns = self._client is None
         http = self._client or httpx.Client(timeout=15.0)
         try:
-            return http.post(f"{_IDENTITY}/{method}", params={"key": self._key()}, json=body)
+            # A header, not ?key=: request URLs end up in logs.
+            headers = {"x-goog-api-key": self._key()}
+            return http.post(f"{_IDENTITY}/{method}", headers=headers, json=body)
         except httpx.HTTPError:
             return None
         finally:

@@ -1,4 +1,10 @@
-"""Stripe REST via httpx. Never logs secrets, PANs, or emails."""
+"""Stripe REST via httpx.
+
+This module never logs secrets, PANs, emails or customer ids: failures log only an
+HTTP status or an exception type. An email lookup puts the address in the request
+URL, and httpx logs request URLs at INFO, so `configure_logging` keeps httpx at
+WARNING.
+"""
 
 from __future__ import annotations
 
@@ -18,6 +24,16 @@ _ENTITLED = frozenset({"active", "trialing"})
 # Stripe asks clients to retry these; a blip must not read as "not subscribed".
 _RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
 _RETRY_DELAYS = (0.25, 0.75)
+
+
+def _warn(event: str, *, http_status: int | None = None, error: str | None = None) -> None:
+    # A status or an exception type only: never a customer id, email or Stripe message.
+    extra: dict[str, object] = {"event": event}
+    if http_status is not None:
+        extra["http_status"] = http_status
+    if error is not None:
+        extra["error_category"] = error
+    _LOG.warning(event, extra=extra)
 
 
 class StripeHttpGateway:
@@ -67,20 +83,24 @@ class StripeHttpGateway:
                 {"customer": customer_id, "status": "all", "limit": 10},
             )
             if response is None:
+                _warn("stripe_subscription_check_failed", error="unreachable")
                 return None
             if response.status_code in (400, 404):
                 return False  # no such customer
             if response.status_code != 200:
+                _warn("stripe_subscription_check_failed", http_status=response.status_code)
                 return None
             payload = response.json()
             data = payload.get("data") if isinstance(payload, dict) else None
             if not isinstance(data, list):
+                _warn("stripe_subscription_check_failed", http_status=200, error="no_data_list")
                 return None
             return any(
                 isinstance(item, dict) and str(item.get("status") or "") in _ENTITLED
                 for item in data
             )
-        except (httpx.HTTPError, ValueError):
+        except (httpx.HTTPError, ValueError) as exc:
+            _warn("stripe_subscription_check_failed", error=type(exc).__name__)
             return None
         finally:
             if owns:
@@ -148,6 +168,12 @@ class StripeHttpGateway:
             if not isinstance(url, str) or not url:
                 raise RuntimeError("checkout_url_missing")
             return url
+        except httpx.HTTPStatusError as exc:
+            _warn("stripe_checkout_failed", http_status=exc.response.status_code)
+            raise
+        except Exception as exc:
+            _warn("stripe_checkout_failed", error=type(exc).__name__)
+            raise
         finally:
             if owns:
                 http.close()
@@ -190,10 +216,12 @@ class StripeHttpGateway:
                 http.close()
 
     def active_customer_id_for_email(self, email: str) -> str | None:
-        """Active subscriber for this receipt email. Does not log the address.
+        """Active subscriber for this receipt email.
 
         Stripe's list filter matches the stored email exactly, including case,
-        so the address is also found through Search, which ignores case.
+        so the address is also found through Search, which ignores case. The
+        address goes in the query string; this method never logs it, and
+        `configure_logging` keeps httpx from logging the request URL.
         """
         cleaned = email.strip()
         if "@" not in cleaned or len(cleaned) > 320 or not cleaned.isascii() or not self._key():
