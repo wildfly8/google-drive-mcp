@@ -6,7 +6,8 @@
 # - service account onto-kb-deployer, with only what scripts/deploy-cloud-run.sh
 #   needs when ONE_TIME_SETUP=0: run.admin on the onto-kb service alone, read-only
 #   Cloud Run and secret metadata in the project, Cloud Build, the source bucket,
-#   the image repository, the kb folder-id secret, and actAs on the runtime account;
+#   the image repository, the kb folder-id secret, actAs on the runtime account,
+#   and a custom role with storage.buckets.list and run.revisions.delete;
 # - Workload Identity Federation pool onto-kb-github, whose provider accepts only
 #   this repository (by numeric id, which survives renames and cannot be reused),
 #   the main branch, and jobs in the GitHub environment "production".
@@ -75,6 +76,24 @@ for role in roles/run.viewer roles/cloudbuild.builds.editor \
   gcloud projects add-iam-policy-binding "$PROJECT" --member="serviceAccount:${SA}" \
     --role="$role" --condition=None --quiet >/dev/null
 done
+# Two project-level permissions a source deploy needs that no narrow predefined role
+# gives alone: storage.buckets.list (gcloud lists the project's buckets to prove
+# its run-sources bucket belongs to this project before uploading) and
+# run.revisions.delete (the deploy removes every revision but the newest; Cloud
+# Run checks it on the revision, and Cloud Run refuses to delete a serving one).
+EXTRAS_ROLE="ontoKbDeployExtras"
+EXTRAS_PERMISSIONS="storage.buckets.list,run.revisions.delete"
+if gcloud iam roles describe "$EXTRAS_ROLE" --project="$PROJECT" >/dev/null 2>&1; then
+  gcloud iam roles update "$EXTRAS_ROLE" --project="$PROJECT" \
+    --permissions="$EXTRAS_PERMISSIONS" --quiet >/dev/null
+else
+  gcloud iam roles create "$EXTRAS_ROLE" --project="$PROJECT" \
+    --title="onto-kb deploy extras" \
+    --description="Bucket listing and revision clean-up for the onto-kb GitHub deploy" \
+    --permissions="$EXTRAS_PERMISSIONS" --stage=GA --quiet >/dev/null
+fi
+gcloud projects add-iam-policy-binding "$PROJECT" --member="serviceAccount:${SA}" \
+  --role="projects/${PROJECT}/roles/${EXTRAS_ROLE}" --condition=None --quiet >/dev/null
 # Deploy as, and build as, the runtime account (Cloud Run source deploys build with it).
 gcloud iam service-accounts add-iam-policy-binding "$RUNTIME_SA" --project="$PROJECT" \
   --member="serviceAccount:${SA}" --role=roles/iam.serviceAccountUser --quiet >/dev/null
@@ -91,14 +110,16 @@ gcloud secrets add-iam-policy-binding DRIVE_ALLOWED_FOLDER_ID --project="$PROJEC
 cat <<EOF
 
 Done. In GitHub, repository Settings:
-1. Environments -> New environment "production":
-   - Required reviewers: yourself (each deploy then waits for your approval).
-   - Deployment branches and tags: Selected branches -> main.
-2. Secrets and variables -> Actions -> Variables -> New repository variable:
-   GCP_PROJECT_ID      ${PROJECT}
-   GCP_PROJECT_NUMBER  ${NUMBER}
-   GCP_REGION          ${REGION}
-   GCP_WIF_PROVIDER    projects/${NUMBER}/locations/global/workloadIdentityPools/${POOL}/providers/${PROVIDER}
-   GCP_DEPLOY_SA       ${SA}
-The next push to main runs CI, then the deploy job waits for your approval.
+1. Environments -> "production": Deployment branches and tags -> Selected
+   branches -> main. (A required reviewer is optional; without one, a push to
+   main deploys as soon as the test and image jobs pass.)
+2. Secrets and variables -> Actions:
+   Secrets tab (GitHub hides these in every log line):
+     GCP_PROJECT_ID      ${PROJECT}
+     GCP_PROJECT_NUMBER  ${NUMBER}
+     GCP_WIF_PROVIDER    projects/${NUMBER}/locations/global/workloadIdentityPools/${POOL}/providers/${PROVIDER}
+     GCP_DEPLOY_SA       ${SA}
+   Variables tab (turns the deploy job on):
+     GCP_REGION          ${REGION}
+   If the four values above also exist as variables, delete those variables.
 EOF
