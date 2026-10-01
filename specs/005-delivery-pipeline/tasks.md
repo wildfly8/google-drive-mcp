@@ -1,0 +1,63 @@
+---
+description: "Task list for the Delivery Pipeline"
+---
+
+# Tasks: Delivery Pipeline
+
+**Spec**: [spec.md](./spec.md) | **Plan**: [plan.md](./plan.md)
+
+**Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/
+
+**Organization**: User stories from spec.md (US1–US5). T001–T005 and T007–T009 were recorded as 001 T052 and T053 first; those entries now point here. T006 and T010 onward were not in 001.
+
+## Format: `[ID] [Story] Description`
+
+- **[Story]**: US1–US5 map to spec user stories
+- Commit ids are in this repository
+
+---
+
+## Phase 1: Implemented (2026-10-01)
+
+- [x] T001 [US2] Image from `uv.lock` as non-root: builder stage with `uv` pinned by version and digest runs `uv sync --frozen --no-dev --no-install-project` into `/app/.venv`; the slim runtime copies the venv and `src` (`PYTHONPATH=/app/src`), runs as uid 10001, `CMD ["python", "-m", "google_drive_mcp"]`, in `Dockerfile` (1b9faa0; was 001 T052) (FR-003)
+- [x] T002 [US4] Bound runtime dependencies (`mcp>=2.2,<3`; `starlette` and `uvicorn` declared because they are imported), move `pytest`, `pytest-asyncio` and `ruff` to the `dev` group, re-lock (`pyjwt` 2.15.1 and `urllib3` 2.8.0 clear pip-audit), in `pyproject.toml` and `uv.lock` (1b9faa0; was 001 T052) (FR-003)
+- [x] T003 [US2] CI `test` job on push and pull request: `uv lock --check`, `uv sync --frozen`, `pytest -q --ignore=tests/e2e`, `ruff check --select F,E9 src tests`, pip-audit over the hashed `uv export --frozen --no-dev`, in `.github/workflows/ci.yml` (1b9faa0; was 001 T052) (FR-001)
+- [x] T004 [US4] Dependabot weekly for `uv`, `docker` and `github-actions` in `.github/dependabot.yml` (1b9faa0; was 001 T052) (FR-018)
+- [x] T005 [US5] Deploy preflight: refuse a dirty or untracked tree unless `ALLOW_DIRTY=1`; run `uv run --locked pytest -q --ignore=tests/e2e` unless `SKIP_TESTS=1`; both before any project gcloud call, in `scripts/deploy-cloud-run.sh`; tests in `tests/unit/test_build_config.py` and `tests/unit/test_deploy_preflight.py` (1b9faa0; was 001 T052) (FR-012, FR-022)
+- [x] T006 [US4] Dependabot ignores minor and major updates of the `python` base image (CI and `uv.lock` target 3.12) in `.github/dependabot.yml` (37a27df) (FR-018)
+- [x] T007 [US1] [US3] CI `deploy` job: push to `main` only, after the `test` job (T011 adds `image`), skipped until `GCP_WIF_PROVIDER` is set (T022 switches this to `GCP_REGION`), environment `production`, concurrency `deploy-production` without cancelling a running deploy, `id-token: write`, project id, number and deploy account masked first, Workload Identity Federation sign-in, `deploy-cloud-run.sh` with `ONE_TIME_SETUP=0` and `SKIP_TESTS=1`, smoke test of `/subscribe` and `/.well-known/oauth-protected-resource`, in `.github/workflows/ci.yml` (58e11d5; was 001 T053) (FR-004–FR-007, FR-010, FR-017)
+- [x] T008 [US3] `ONE_TIME_SETUP=0` in `scripts/deploy-cloud-run.sh` skips API enabling, IAM grants, the project lookup and the telemetry dashboard, and stops when `MCP_PRINCIPAL_ID` is missing instead of creating it; tests `test_ci_mode_never_enables_apis_or_grants_iam` and `test_operator_mode_still_runs_the_one_time_setup` in `tests/unit/test_deploy_preflight.py` (58e11d5; was 001 T053) (FR-011, FR-020)
+- [x] T009 [US3] `scripts/setup-github-deploy.sh`: deploy account `onto-kb-deployer` with only the deploy roles, pool `onto-kb-github` and provider `github` accepting only repository id 1369539999, `refs/heads/main` and environment `production`, impersonation bound to that repository's principal set, GitHub steps and variables printed; README "Automatic deploys" bullet and 001 plan "Deploy pipeline" paragraph (58e11d5; was 001 T053) (FR-008, FR-009, FR-019)
+- [x] T010 [US3] Provider display name `onto-kb GitHub (main, prod)` within Google's 32-character limit; the longer name stopped the script after the account and pool, before any grant (3ec59e8) (FR-019)
+- [x] T011 [US2] CI `image` job: `docker build --pull` of the production `Dockerfile`, check uid 10001, import the server, and require the container started without configuration to exit non-zero naming `DRIVE_ALLOWED_FOLDER_ID`; nothing pushed; `deploy` now `needs: [test, image]`; test `test_deploy_waits_for_tests_and_a_working_image` in `tests/unit/test_build_config.py` (ab35799) (FR-002, FR-004, FR-022)
+- [x] T012 [US1] Owner one-time setup (operator, 2026-10-01): `setup-github-deploy.sh` run in Cloud Shell (pool, provider ACTIVE with the condition above, deploy account and its roles in place); environment `production` with `main` only (the owner first added themself as required reviewer, then removed it: T024); the five repository variables set. The first `deploy` job on `main` (run 15) waited for review and ended after about five minutes without running a step; its re-run ran at once and stopped at the preflight (T014); run 16 stopped at the source upload (T023). Run 17 (6fa3143) completed, so the custom role from T023 was in place by then. All three read the identifiers from variables (T015).
+- [x] T013 This spec packet (`specs/005-delivery-pipeline/`) and cross-references: 001 `tasks.md` T052/T053 and `plan.md`, `README.md` feature list, `.specify/memory/project-status.md`
+- [x] T014 [US1] Sign-in credentials file versus the clean-tree preflight: `google-github-actions/auth` writes `gha-creds-*.json` into the checkout, `git status --porcelain` showed it, and `deploy-cloud-run.sh` refused the first pipeline deploy that ran (run 15, re-run; `Uncommitted changes`) before any project gcloud call. Fix: `.gitignore` lists `gha-creds-*.json` (the preflight passes); new `.gcloudignore` excludes `.gcloudignore`, `.git`, `.github`, everything git-ignored (`#!include:.gitignore`) and `gha-creds-*.json` from the `--source` upload; `.dockerignore` lists `gha-creds-*.json`. `ALLOW_DIRTY=1` is not set in the job. Tests `test_ci_credentials_are_never_committed_or_uploaded` in `tests/unit/test_build_config.py` and `test_ci_credentials_file_does_not_block_the_deploy` in `tests/unit/test_deploy_preflight.py` (e436ea0) (FR-012, FR-022). Run 16 confirmed it: its deploy passed the preflight and stopped later, at the source upload (T023).
+- [x] T022 [US3] Project identifiers as Actions secrets: the `deploy` job reads `GCP_PROJECT_ID`, `GCP_PROJECT_NUMBER`, `GCP_WIF_PROVIDER` and `GCP_DEPLOY_SA` as `secrets.X || vars.X`, still masks them first, and is switched on by the variable `GCP_REGION` (secrets cannot be used in a job's `if`); `setup-github-deploy.sh` prints the four as secrets and `GCP_REGION` as a variable, in `.github/workflows/ci.yml` and `scripts/setup-github-deploy.sh` (6fa3143) (FR-004, FR-010, FR-019). No unit test pins it. The owner still has to move the values (T015).
+- [x] T023 [US1] [US5] Project custom role `ontoKbDeployExtras` with only `storage.buckets.list` (gcloud lists the project's buckets before the `--source` upload; run 16 failed there) and `run.revisions.delete` (revision cleanup), created or updated and bound to the deploy account by `scripts/setup-github-deploy.sh` (6fa3143) (FR-009, FR-019). Run 17's upload and cleanup passed with it (T016). No unit test pins it.
+- [x] T024 [US1] Approval gate decided (owner, 2026-10-01): "auto-approve on behalf of me if both test & image steps are passed as green". The owner removed the required reviewer from `production`; the `deploy` jobs of run 15's re-run, run 16 and run 17 started within seconds, and run 17 went live that way. FR-005, the Clarifications, user stories 1 and 4, the success criteria, the plan's threat model and Article XIV reasoning, research, data model, quickstart and contracts now describe deploys without an approval click; `setup-github-deploy.sh` already prints the reviewer as optional (6fa3143). No workflow change: a reviewer added back works as before.
+- [x] T016 [US1] [US5] Confirm on a pipeline deploy that the deploy account can upload the source and delete old revisions: run 17 (6fa3143, 2026-10-01) passed the upload, the `kb` guard, the cleanup (the script exits non-zero when any deletion fails) and the smoke test (FR-009, FR-016, SC-005).
+
+## Phase 2: Open
+
+- [ ] T015 [US3] Masking (owner): GitHub prints a step's script with `${{ }}` values filled in before it runs, so the mask step's header showed the identifiers read from variables. Runs 15, 16 and 17 published the project id, project number and deploy account email this way; their logs were deleted on the owner's request (2026-10-01). Remaining: store the four identifiers as Actions secrets (T022) and delete the variables of the same names, then check that the next deploy run shows only `***` in the mask step's header (SC-006). Delete the log of any run that still shows them.
+- [ ] T017 [US2] Operator: add a branch ruleset on `main` that requires the `test` and `image` checks (and blocks force pushes), so a failing commit cannot be merged. On 2026-10-01 the GitHub API reports `main` as not protected. With deploys automatic (T024), this is the remaining gate on merges.
+- [ ] T018 [US4] Decide the open Dependabot pull requests #3 (uvicorn 0.54.0), #4 (starlette 1.7.0) and #5 (google-auth 2.58.1). Their CI ran before the `image` job existed (ab35799), so rebase each to run `test` and `image`, then merge (each merge to `main` deploys at once). #2 (`python:3.14-slim`) was closed on 2026-10-01; the ignore rule from T006 stops new ones.
+- [ ] T019 [US2] Optional: run the live suite after a deploy. As written, `tests/e2e/test_live_mcp.py` finishes OAuth with the consent password, but with the paywall on an unpaid `/authorize` goes to `/subscribe`, so it needs a subscriber's way in (for example an entitlement cookie from a test subscription) before it can run against production. Never put the consent password or a cookie in the public logs.
+- [ ] T020 [US2] Optional: start the CI image as a server in the `image` job and request `/subscribe`, as the deploy smoke test does. The server checks the `kb` folder in Drive at startup and CI has no Drive credential, so this needs a test-only way past that check that production cannot use.
+- [ ] T021 [US3] Recommended now that deploys are automatic: pin `actions/checkout`, `google-github-actions/auth` and `google-github-actions/setup-gcloud` in the `deploy` job by commit SHA (Dependabot updates SHA pins too), so a moved tag cannot run with the deploy identity without a click to stop it.
+
+## Dependencies & Execution Order
+
+- T015 needs the owner to move the identifiers to secrets, and is checked on the next deploy run.
+- T017 and T021 come next: with deploys automatic (T024), they are what stands between a bad merge or a moved action tag and production.
+- T018 is independent; each merge deploys.
+- T019 and T020 are optional and independent.
+
+## Notes
+
+- Commit 1b9faa0's message says "tasks.md T050"; the task it added is 001 T052.
+- No task here changes server behavior (PATCH, plan.md Constitution Check).
+- FR-013 to FR-016 restate deploy-script behavior built under other packets; this packet has no task of its own for them: the paywall refusal (004 T022, FR-009), the `kb` pin, guard and cleanup (002 T064, T076; read from Secret Manager since 002 T077, 11eccc9), and 1 GiB, concurrency 10 and at most 3 instances (001 T051, 002 T080). FR-021 is a procedure (quickstart.md).
+- Run numbers are the `CI` workflow's run numbers on GitHub (15: ab35799, 16: e436ea0, 17: 6fa3143).
+- T016, T022, T023 and T024 sit in Phase 1 out of id order: 6fa3143 landed after this packet was first written, run 17 closed T016, and the owner's decision closed T024.
