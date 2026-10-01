@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import uuid
 
+import anyio.to_thread
+
 from pydantic import AnyUrl
 from mcp.server.auth.provider import (
     AccessToken,
@@ -24,7 +26,11 @@ from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
 from google_drive_mcp.domain.connect_telemetry import host_family_from_client_id
 from google_drive_mcp.infra.billing.entitlement import ENTITLEMENT_TTL, current_scid
-from google_drive_mcp.infra.billing.gateway import BillingGateway, InactiveBilling
+from google_drive_mcp.infra.billing.gateway import (
+    BillingGateway,
+    BillingUnavailable,
+    InactiveBilling,
+)
 from google_drive_mcp.infra.config import Settings
 from google_drive_mcp.infra.mcp_auth.cimd import fetch_cimd_client
 from google_drive_mcp.infra.telemetry.recorder import ConnectRecorder
@@ -89,6 +95,13 @@ class DriveMcpOAuthProvider(
             raise ValueError("No client_id provided")
         self.clients[client_info.client_id] = client_info
 
+    async def _subscription_state(self, customer_id: str) -> bool | None:
+        """Ask Stripe off the event loop, so a slow or retried call stalls nothing else."""
+        return await anyio.to_thread.run_sync(self.billing.subscription_state, customer_id)
+
+    async def _active(self, customer_id: str | None) -> bool:
+        return bool(customer_id) and await self._subscription_state(str(customer_id)) is True
+
     async def authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str:
         if not client.client_id:
             raise AuthorizeError(error="unauthorized_client", error_description="missing client_id")
@@ -100,7 +113,7 @@ class DriveMcpOAuthProvider(
         scid: str | None = None
         if self.settings.mcp_subscription_required:
             scid = current_scid()
-            if not scid or not self.billing.is_subscription_active(scid):
+            if not await self._active(scid):
                 return f"{issuer_url(self.settings).rstrip('/')}/subscribe"
         # A paid Connect always asks the subscriber to Allow: any site can register
         # a client and send a subscriber's browser here, so the code must never be
@@ -186,7 +199,10 @@ class DriveMcpOAuthProvider(
         scid = claims.get("scid")
         sid = str(scid) if isinstance(scid, str) and scid else None
         if self.settings.mcp_subscription_required:
-            if not sid or not self.billing.is_subscription_active(sid):
+            state = await self._subscription_state(sid) if sid else False
+            if state is None:
+                raise BillingUnavailable("subscription check unavailable")
+            if not state:
                 raise TokenError(error="invalid_grant", error_description="subscription inactive")
         self.telemetry.record_oauth_connect(
             connect_id, host_family_from_client_id(client.client_id)
@@ -228,12 +244,28 @@ class DriveMcpOAuthProvider(
         cid = str(connect_id) if isinstance(connect_id, str) and connect_id else None
         scid = claims.get("scid")
         sid = str(scid) if isinstance(scid, str) and scid else None
-        if self.settings.mcp_subscription_required:
-            if not sid or not self.billing.is_subscription_active(sid):
-                raise TokenError(error="invalid_grant", error_description="subscription inactive")
-        # Rotate only once the refresh succeeds, so a Stripe outage does not burn
-        # a paying subscriber's refresh token.
-        self._revoked_jti.add(str(claims["jti"]))
+        jti = str(claims["jti"])
+        if jti in self._revoked_jti:
+            raise TokenError(
+                error="invalid_grant", error_description="refresh token does not exist"
+            )
+        # Reserve the token before asking Stripe, so two refreshes with it cannot
+        # both succeed; give it back if this refresh fails, so a Stripe outage or
+        # a lapse that is later fixed (card updated) does not use it up.
+        self._revoked_jti.add(jti)
+        try:
+            if self.settings.mcp_subscription_required:
+                state = await self._subscription_state(sid) if sid else False
+                if state is None:
+                    # Not invalid_grant: hosts discard tokens on that. A 503 is retried.
+                    raise BillingUnavailable("subscription check unavailable")
+                if not state:
+                    raise TokenError(
+                        error="invalid_grant", error_description="subscription inactive"
+                    )
+        except BaseException:
+            self._revoked_jti.discard(jti)
+            raise
         return self._issue_tokens(client.client_id, connect_id=cid, scid=sid)
 
     async def load_access_token(self, token: str) -> AccessToken | None:

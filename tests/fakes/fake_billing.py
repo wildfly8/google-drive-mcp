@@ -6,26 +6,36 @@ from __future__ import annotations
 class FakeBilling:
     def __init__(self) -> None:
         self.active: set[str] = set()
-        self.sessions: dict[str, str] = {}
+        # Checkout session id -> (customer, the browser reference it carries)
+        self.sessions: dict[str, tuple[str, str]] = {}
+        self.unavailable = False  # Stripe cannot be asked
         self.emails: dict[str, str] = {}
         self.checkouts = 0
         self.email_lookups = 0
         self.portals: list[str] = []
         self.portal_ready = True
 
-    def is_subscription_active(self, customer_id: str) -> bool:
+    def subscription_state(self, customer_id: str) -> bool | None:
+        if self.unavailable:
+            return None
         return customer_id in self.active
 
-    def create_checkout_url(self, *, success_url: str, cancel_url: str) -> str:
+    def is_subscription_active(self, customer_id: str) -> bool:
+        return self.subscription_state(customer_id) is True
+
+    def create_checkout_url(self, *, success_url: str, cancel_url: str, reference: str) -> str:
         self.checkouts += 1
         sid = f"cs_test_fake{self.checkouts:012d}"
         cus = f"cus_test_{self.checkouts}"
-        self.sessions[sid] = cus
+        self.sessions[sid] = (cus, reference)
         self.active.add(cus)
         return success_url.replace("{CHECKOUT_SESSION_ID}", sid)
 
-    def customer_id_from_checkout_session(self, session_id: str) -> str | None:
-        return self.sessions.get(session_id)
+    def customer_id_from_checkout_session(self, session_id: str, *, reference: str) -> str | None:
+        found = self.sessions.get(session_id)
+        if found is None or not reference or found[1] != reference:
+            return None
+        return found[0]
 
     def active_customer_id_for_email(self, email: str) -> str | None:
         self.email_lookups += 1

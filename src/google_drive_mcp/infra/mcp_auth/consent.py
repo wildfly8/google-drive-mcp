@@ -180,7 +180,7 @@ async def consent_post(
     scid = claims.get("scid")
     if scid:
         # The click must come from the browser that holds this subscription.
-        if current_scid() != scid or not provider.billing.is_subscription_active(str(scid)):
+        if current_scid() != scid or not await provider._active(str(scid)):
             return HTMLResponse(_EXPIRED, status_code=400, headers=_HEADERS)
     else:
         password = form.get("password")

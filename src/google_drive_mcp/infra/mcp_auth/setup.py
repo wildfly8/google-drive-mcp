@@ -81,9 +81,20 @@ _LOCKED = """\
   <p><strong>$20 USD / month required.</strong> Connector setup is shown in this browser after Stripe Checkout.</p>
   <p><a href="/subscribe">Pay on Stripe Checkout</a></p>
   <p>Cards are entered on Stripe, not here. This page does not show the operator’s bank details.</p>
+  {lapsed}
 </body>
 </html>
 """
+
+
+_MANAGE_FORM = (
+    '<form method="post" action="/subscribe/manage">'
+    '<button type="submit">Manage or cancel subscription</button></form>'
+)
+_SIGNOUT_FORM = (
+    '<form method="post" action="/subscribe/signout">'
+    '<button type="submit">Sign out of this browser</button></form>'
+)
 
 
 def setup_get(
@@ -92,9 +103,20 @@ def setup_get(
     stats: dict | None = None,
     *,
     entitled: bool = True,
+    lapsed: bool = False,
 ) -> HTMLResponse:
     if settings.mcp_subscription_required and not entitled:
-        return HTMLResponse(_LOCKED.format())
+        # A browser whose subscription lapsed (cancelled, or a renewal failed) can
+        # still update the card or cancel in Stripe instead of paying twice.
+        extra = (
+            "<p>This browser holds an onto-kb subscription that is not active now. "
+            "If a renewal failed, update your card instead of paying again.</p>"
+            + _MANAGE_FORM
+            + _SIGNOUT_FORM
+            if lapsed
+            else ""
+        )
+        return HTMLResponse(_LOCKED.format(lapsed=extra))
     mcp_url = resource_url(settings)
     stats = stats or {}
     stats_block = ""
@@ -128,10 +150,10 @@ def setup_get(
             "Set up your AI chat app only after payment. "
             "While Stripe shows this subscription as active, that app keeps "
             "calling onto-kb with no further steps from you.</p>"
-            '<form method="post" action="/subscribe/manage">'
-            '<button type="submit">Manage or cancel subscription</button></form>'
-            "<p>Cancelling in Stripe keeps access until the end of the period you paid for; "
+            + _MANAGE_FORM
+            + "<p>Cancelling in Stripe keeps access until the end of the period you paid for; "
             "the AI chat app then loses access within an hour.</p>"
+            + _SIGNOUT_FORM
         )
     if settings.mcp_subscription_required:
         auth_step = (

@@ -48,4 +48,5 @@
 - [x] T027 Stripe calls retry 429/5xx/connect errors briefly and fail closed on malformed replies; the refresh token rotates only after a successful refresh (FR-016)
 - [x] T028 `POST /subscribe/manage` opens the Stripe customer portal for this browser's subscriber; **Manage or cancel subscription** on the entitled `/setup`; wording on `/subscribe` and the business page (FR-002)
 - [x] T029 Paid `/setup` skips the log scan; paid `/stats` omits console links; the server refuses to start with signing material under 32 characters (FR-006, AC-FR-010)
+- [x] T030 Review fixes (2026-10-01): Checkout bound to the browser that started it (`client_reference_id` + `onto_kb_checkout`); cross-site POSTs to `/subscribe/*` refused; `POST /subscribe/signout`; Manage and Sign out for lapsed subscribers on `/subscribe` and `/setup`; Stripe checks off the event loop; refresh tokens reserved during the check and released on failure; 503 `temporarily_unavailable` when Stripe cannot be asked (FR-016, FR-017)
 

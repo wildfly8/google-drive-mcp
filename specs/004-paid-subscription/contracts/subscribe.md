@@ -2,7 +2,7 @@
 
 ## `GET /subscribe`
 
-HTML. States USD 20/month. Controls: the Pay button (opens Stripe Checkout) and, when the email-link service is configured, an "Already subscribed?" form that posts an email to `/subscribe/email`. No passkeys, no Continue or Remember button, no Setup link, no owner bank, no card fields. If the browser already has an active entitlement, redirect to the in-progress `/authorize` or to `/setup`.
+HTML. States USD 20/month. Controls: the Pay button (opens Stripe Checkout) and, when the email-link service is configured, an "Already subscribed?" form that posts an email to `/subscribe/email`. No passkeys, no Continue or Remember button, no Setup link, no owner bank, no card fields. If the browser already has an active entitlement, redirect to the in-progress `/authorize` or to `/setup`. If it holds an entitlement that is no longer active (cancelled, or a renewal failed), the page also shows **Manage or cancel subscription** and **Sign out of this browser**, so a failed card can be updated instead of paying twice.
 
 ## `POST /subscribe/email`
 
@@ -18,15 +18,23 @@ Fields `oobCode` and `email` (or the email cookie). Google confirms the code was
 
 ## `POST /subscribe/checkout`
 
-Starts hosted Checkout (`mode=subscription`). Redirects to Stripe. 503 if Stripe is not configured.
+Starts hosted Checkout (`mode=subscription`) with a random `client_reference_id` and sets the same value in a 24-hour HttpOnly cookie `onto_kb_checkout` (Path=/subscribe), which ties the session to this browser. Redirects to Stripe. 503 if Stripe is not configured.
 
 ## `GET /subscribe/complete?session_id=`
 
-A `session_id` that is not shaped like a Checkout Session id (`cs_live_…` or `cs_test_…`) → 400 without calling the processor; rate limited per client address. Retrieves the Checkout Session. Only `status=complete` with `payment_status` `paid` (or `no_payment_required`) counts. Set-Cookie entitlement for the customer who paid in that session, never another customer (the email typed at Checkout is not verified). HTML: return to the AI chat app. The entitlement is only set as an HttpOnly cookie; it is never shown on the page.
+A `session_id` that is not shaped like a Checkout Session id (`cs_live_…` or `cs_test_…`) → 400 without calling the processor; rate limited per client address. Retrieves the Checkout Session. Only `status=complete` with `payment_status` `paid` (or `no_payment_required`) counts. Set-Cookie entitlement for the customer who paid in that session, never another customer (the email typed at Checkout is not verified). HTML: return to the AI chat app. The entitlement is only set as an HttpOnly cookie; it is never shown on the page. The session's `client_reference_id` must equal this browser's `onto_kb_checkout` cookie, so a success link opened in another browser grants nothing (a browser that already holds an entitlement is sent on to `/setup`; one without gets 400). The checkout cookie is deleted on success.
 
 ## `POST /subscribe/manage`
 
 Same-site form button on the entitled `/setup` page. Opens the processor's customer portal (manage card, cancel) for the customer in this browser's entitlement cookie: 303 to the portal session URL, which returns to `/setup`. No cookie → 403 with a pointer to the receipt email and `/subscribe`. Portal not configured or processor error → 503 with the same pointer. Rate limited per client address. Paywall off → 404. The SameSite=Lax cookie is not sent on cross-site POSTs, so other sites cannot open the portal for a subscriber.
+
+## `POST /subscribe/signout`
+
+Deletes the entitlement and resume cookies in this browser and redirects to `/subscribe`. Shown on the entitled `/setup` page and to lapsed subscribers.
+
+## Same-site rule for every `/subscribe/*` POST
+
+`/subscribe/checkout`, `/subscribe/email`, `/subscribe/email/verify`, `/subscribe/manage` and `/subscribe/signout` answer 403 when the browser reports another site: `Sec-Fetch-Site` other than `same-origin` or `none`, or else an `Origin` that is `null` or not this origin. Requests with neither header (non-browser clients) are not refused by this rule.
 
 ## `POST /webhooks/stripe`
 
@@ -54,4 +62,4 @@ Paid ticket: an Allow page showing the client's self-declared name and the host 
 
 ## `POST /token` refresh
 
-If paywall on and Stripe says not active (or missing `scid`) → `invalid_grant`. Stripe 429, 5xx or connection errors are retried up to three attempts (about 1 s in all); a non-JSON or malformed reply counts as not active. The refresh token rotates only on success, so a refresh refused during a Stripe outage can be retried with the same token. Access tokens are not re-checked on `/mcp`; they expire within 1 hour.
+If paywall on and Stripe says not active (or missing `scid`) → `invalid_grant`. Stripe 429, 5xx or connection errors are retried up to three attempts (about 1 s in all, off the request loop). If Stripe still cannot be asked (or replies with something that is not a subscription list) → HTTP 503 `{"error": "temporarily_unavailable"}` with `Retry-After: 30`, not `invalid_grant`, because hosts discard tokens on `invalid_grant`. The refresh token is reserved while Stripe is asked (two refreshes with one token never both succeed) and released if the refresh fails, so it works again once Stripe answers. The authorization-code exchange answers the same 503 when Stripe cannot be asked. Access tokens are not re-checked on `/mcp`; they expire within 1 hour.

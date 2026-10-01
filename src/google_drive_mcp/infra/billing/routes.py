@@ -6,12 +6,14 @@ import hashlib
 import html
 import logging
 import re
+import secrets
 import threading
 import time
 from collections import OrderedDict, deque
-from urllib.parse import unquote
+from urllib.parse import unquote, urlparse
 
 from starlette.background import BackgroundTask
+from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
@@ -88,6 +90,40 @@ def _resume_target(request: Request) -> str:
     return _resume_or_none(request) or "/setup"
 
 
+# Holds the reference of the Checkout this browser started (client_reference_id).
+CHECKOUT_COOKIE = "onto_kb_checkout"
+_CHECKOUT_COOKIE_TTL = 24 * 3600  # Stripe Checkout Sessions expire after 24 hours
+
+
+def _cross_site(request: Request, settings: Settings) -> bool:
+    """True when a form POST did not come from this origin's own pages.
+
+    Browsers send Sec-Fetch-Site; older ones send Origin. A request with
+    neither (scripts, tests) is not a browser forging a form, so it passes.
+    """
+    site = request.headers.get("sec-fetch-site")
+    if site is not None:
+        return site not in {"same-origin", "none"}
+    origin = request.headers.get("origin")
+    if not origin:
+        return False
+    if origin == "null":
+        return True
+    mine = urlparse(issuer_url(settings))
+    theirs = urlparse(origin)
+    return (theirs.scheme, theirs.netloc) != (mine.scheme, mine.netloc)
+
+
+MANAGE_FORM = (
+    '<form method="post" action="/subscribe/manage">'
+    '<button type="submit">Manage or cancel subscription</button></form>'
+)
+SIGNOUT_FORM = (
+    '<form method="post" action="/subscribe/signout">'
+    '<button type="submit">Sign out of this browser</button></form>'
+)
+
+
 _PAY_FORM = (
     '<form method="post" action="/subscribe/checkout">'
     '<button type="submit">Pay $20 / month</button></form>'
@@ -113,12 +149,13 @@ def subscribe_get(
     configured: bool,
 ) -> Response:
     scid = entitlement_from_request(request, settings)
-    if (
+    active = bool(
         settings.mcp_subscription_required
         and configured
         and scid
         and billing.is_subscription_active(scid)
-    ):
+    )
+    if active and scid:
         page = RedirectResponse(_resume_target(request), status_code=303)
         set_entitlement_cookie(page, settings, scid)
         page.delete_cookie(RESUME_COOKIE, path="/")
@@ -144,6 +181,14 @@ def subscribe_get(
         )
         form = _PAY_FORM + (_RESTORE_FORM if email_link.configured() else "")
         setup = ""
+        if scid:
+            # A subscription this browser held is no longer active (cancelled,
+            # or a renewal failed). Updating the card there beats paying twice.
+            form = (
+                '<p class="note">This browser holds an onto-kb subscription that is not '
+                "active now. If a renewal failed, update your card in the Stripe portal "
+                "instead of paying again.</p>" + MANAGE_FORM + SIGNOUT_FORM + form
+            )
     return HTMLResponse(
         _SUBSCRIBE.format(status=html.escape(status), form=form, setup=setup)
     )
@@ -152,11 +197,18 @@ def subscribe_get(
 async def subscribe_checkout_post(
     request: Request, settings: Settings, billing: BillingGateway
 ) -> Response:
+    if _cross_site(request, settings):
+        return _page("Start checkout from this site's subscribe page.", _PAY_FORM, code=403)
     origin = issuer_url(settings).rstrip("/")
     success = f"{origin}/subscribe/complete?session_id={{CHECKOUT_SESSION_ID}}"
     cancel = f"{origin}/subscribe"
+    reference = secrets.token_urlsafe(24)
     try:
-        url = billing.create_checkout_url(success_url=success, cancel_url=cancel)
+        url = await run_in_threadpool(
+            lambda: billing.create_checkout_url(
+                success_url=success, cancel_url=cancel, reference=reference
+            )
+        )
     except Exception:
         return HTMLResponse(
             _SUBSCRIBE.format(
@@ -166,7 +218,17 @@ async def subscribe_checkout_post(
             ),
             status_code=503,
         )
-    return RedirectResponse(url, status_code=303)
+    page = RedirectResponse(url, status_code=303)
+    page.set_cookie(
+        CHECKOUT_COOKIE,
+        reference,
+        max_age=_CHECKOUT_COOKIE_TTL,
+        httponly=True,
+        samesite="lax",
+        secure=issuer_url(settings).startswith("https://"),
+        path="/subscribe",
+    )
+    return page
 
 
 async def subscribe_complete_get(
@@ -184,7 +246,25 @@ async def subscribe_complete_get(
             ),
             status_code=400,
         )
-    found = billing.customer_id_from_checkout_session(session_id)
+    reference = request.cookies.get(CHECKOUT_COOKIE) or ""
+    if not reference and entitlement_from_request(request, settings):
+        # Reloading this page after it already worked: the browser has its cookie.
+        return RedirectResponse(_resume_target(request), status_code=303)
+    if not reference:
+        return HTMLResponse(
+            _SUBSCRIBE.format(
+                status=html.escape(
+                    "Open this page in the browser where you started checkout. "
+                    "Already paid? Use the email sign-in link on the subscribe page."
+                ),
+                form=_PAY_FORM,
+                setup="",
+            ),
+            status_code=400,
+        )
+    found = await run_in_threadpool(
+        lambda: billing.customer_id_from_checkout_session(session_id, reference=reference)
+    )
     if not found:
         return HTMLResponse(
             _SUBSCRIBE.format(
@@ -210,6 +290,7 @@ async def subscribe_complete_get(
     )
     set_entitlement_cookie(page, settings, customer)
     page.delete_cookie(RESUME_COOKIE, path="/")
+    page.delete_cookie(CHECKOUT_COOKIE, path="/subscribe")
     return page
 
 
@@ -369,6 +450,8 @@ async def subscribe_email_post(
 ) -> Response:
     if not settings.mcp_subscription_required or not email_link.configured():
         return _page("Email sign-in is not available on this server.", _PAY_FORM, code=404)
+    if _cross_site(request, settings):
+        return _page("Ask for a sign-in link from this site's subscribe page.", code=403)
     form = await request.form()
     email = _clean_email(form.get("email"))
     if email is None:
@@ -422,6 +505,8 @@ async def subscribe_email_verify_post(
 ) -> Response:
     if not settings.mcp_subscription_required or not email_link.configured():
         return _page("Email sign-in is not available on this server.", _PAY_FORM, code=404)
+    if _cross_site(request, settings):
+        return _page("Finish signing in from this site's own page.", _RESTORE_FORM, code=403)
     if not _LIMITS.allow(f"verify:{_client_ip(request)}", 20, 3600):
         return _page("Too many attempts. Try again later.", code=429)
     form = await request.form()
@@ -429,7 +514,7 @@ async def subscribe_email_verify_post(
     email = _clean_email(form.get("email")) or _email_from_cookie(request, settings)
     if not isinstance(oob_code, str) or not oob_code or len(oob_code) > 512 or email is None:
         return _page("This sign-in link is incomplete. Ask for a new one.", _RESTORE_FORM, code=400)
-    verified = email_link.verified_email(email, oob_code)
+    verified = await run_in_threadpool(email_link.verified_email, email, oob_code)
     if verified is None:
         return _page(
             "This sign-in link is invalid, expired, already used, or for another email. "
@@ -439,7 +524,7 @@ async def subscribe_email_verify_post(
         )
     # Google returns the address lower-cased; look up the one the subscriber typed,
     # which the adapter also tries lower-cased and case-insensitively.
-    customer = billing.active_customer_id_for_email(email)
+    customer = await run_in_threadpool(billing.active_customer_id_for_email, email)
     if not customer:
         return _page(
             "That email has no active onto-kb subscription. Pay to start one.",
@@ -459,6 +544,8 @@ async def subscribe_manage_post(
     """Stripe customer portal (manage or cancel) for the subscriber this browser holds."""
     if not settings.mcp_subscription_required:
         return _page("Payments are not enabled on this server.", code=404)
+    if _cross_site(request, settings):
+        return _page("Open billing from this site's setup page.", code=403)
     if not _LIMITS.allow(f"manage:{_client_ip(request)}", 20, 3600):
         return _page("Too many requests. Try again later.", code=429)
     # Same-site POST only: the SameSite=Lax cookie is not sent from other sites.
@@ -472,7 +559,9 @@ async def subscribe_manage_post(
             code=403,
         )
     origin = issuer_url(settings).rstrip("/")
-    url = billing.create_portal_url(scid, return_url=f"{origin}/setup")
+    url = await run_in_threadpool(
+        lambda: billing.create_portal_url(scid, return_url=f"{origin}/setup")
+    )
     if not url:
         return _page(
             "The Stripe billing page is not available right now. Use the link in your "
@@ -480,6 +569,17 @@ async def subscribe_manage_post(
             code=503,
         )
     return RedirectResponse(url, status_code=303, headers=_PRIVATE_HEADERS)
+
+
+async def subscribe_signout_post(request: Request, settings: Settings) -> Response:
+    """Forget the subscription in this browser (shared or borrowed computers)."""
+    if _cross_site(request, settings):
+        return _page("Sign out from this site's own page.", code=403)
+    page = RedirectResponse("/subscribe", status_code=303, headers=_PRIVATE_HEADERS)
+    # Deleting sets onto_kb_scid too, so the middleware does not renew the old one.
+    page.delete_cookie(COOKIE_NAME, path="/")
+    page.delete_cookie(RESUME_COOKIE, path="/")
+    return page
 
 
 async def stripe_webhook_post(request: Request, settings: Settings) -> Response:

@@ -6,12 +6,16 @@ Drive clients are constructed per request from env secrets (tests inject FakeDri
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Annotated, Any
 
 from pydantic import AnyHttpUrl, Field
 
 from google_drive_mcp.access_control.allowed_folder import check_allowed_folder
+from starlette.concurrency import run_in_threadpool
+from starlette.responses import JSONResponse
+
 from google_drive_mcp.infra.billing.entitlement import (
     COOKIE_NAME,
     ENTITLEMENT_TTL,
@@ -31,7 +35,9 @@ from google_drive_mcp.infra.billing.routes import (
     subscribe_email_verify_post,
     subscribe_get,
     subscribe_manage_post,
+    subscribe_signout_post,
 )
+from google_drive_mcp.infra.billing.gateway import BillingUnavailable
 from google_drive_mcp.infra.billing.stripe_api import StripeHttpGateway
 from google_drive_mcp.infra.billing.email_link import IdentityPlatformEmailLink
 from google_drive_mcp.infra.config import Settings
@@ -88,6 +94,8 @@ except ImportError:  # mcp 1.x
 
     Context = Any  # type: ignore[assignment,misc]
 
+
+_LOG = logging.getLogger("google_drive_mcp")
 
 def build_runtime(settings: Settings | None = None, drive: Any | None = None) -> Runtime:
     if settings is None:
@@ -169,18 +177,27 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
         scid = entitlement_from_request(request, settings)
         entitled = True
         if settings.mcp_subscription_required:
-            entitled = bool(scid and runtime.billing.is_subscription_active(scid))
+            entitled = bool(
+                scid and await run_in_threadpool(runtime.billing.is_subscription_active, scid)
+            )
         # The paid setup page never shows usage counts, so skip the log scan.
         stats = None if settings.mcp_subscription_required else stats_snapshot(runtime.telemetry)
-        return setup_get(request, settings, stats, entitled=entitled)
+        return setup_get(
+            request, settings, stats, entitled=entitled, lapsed=bool(scid) and not entitled
+        )
 
     @server.custom_route("/subscribe", methods=["GET"])
     async def subscribe_page(request):
         from google_drive_mcp.infra.billing.gateway import InactiveBilling as _Inactive
 
         configured = not isinstance(runtime.billing, _Inactive)
-        return subscribe_get(
-            request, settings, runtime.billing, runtime.email_link, configured=configured
+        return await run_in_threadpool(
+            subscribe_get,
+            request,
+            settings,
+            runtime.billing,
+            runtime.email_link,
+            configured=configured,
         )
 
     @server.custom_route("/subscribe/email", methods=["POST"])
@@ -206,6 +223,10 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
     @server.custom_route("/subscribe/manage", methods=["POST"])
     async def subscribe_manage(request):
         return await subscribe_manage_post(request, settings, runtime.billing)
+
+    @server.custom_route("/subscribe/signout", methods=["POST"])
+    async def subscribe_signout(request):
+        return await subscribe_signout_post(request, settings)
 
     @server.custom_route("/webhooks/stripe", methods=["POST"])
     async def stripe_hook(request):
@@ -531,7 +552,7 @@ class _AuthorizationHeaderMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        headers = {k.decode(): v.decode() for k, v in scope.get("headers", [])}
+        headers = {k.decode("latin-1"): v.decode("latin-1") for k, v in scope.get("headers", [])}
         set_authorization(headers.get("authorization"))
         reset_request_drive()
         scid = None
@@ -559,7 +580,7 @@ class _AuthorizationHeaderMiddleware:
             ):
                 # Remember the in-progress Connect so it resumes after payment or
                 # the email link, whether the browser has no subscription or a lapsed one.
-                query = (scope.get("query_string") or b"").decode()
+                query = (scope.get("query_string") or b"").decode("latin-1")
                 resume = "/authorize" + (f"?{query}" if query else "")
                 if safe_resume(resume):
                     secure = issuer_url(self.settings).startswith("https://")
@@ -631,8 +652,23 @@ def streamable_app(runtime: Runtime | None = None, *, json_response: bool = True
     runtime = runtime or getattr(server, "_runtime", None) or build_runtime()
     app.router.routes = [*chatgpt_compat_routes(runtime.settings), *app.router.routes]
     install_chatgpt_mcp_http(app, runtime.settings)
+    app.add_exception_handler(BillingUnavailable, _billing_unavailable)
     app.add_middleware(_AuthorizationHeaderMiddleware, settings=runtime.settings)
     return app
+
+
+async def _billing_unavailable(_request, _exc):
+    """Stripe could not be asked. Not invalid_grant (hosts drop tokens on that):
+    a 503 with Retry-After tells the AI chat app to try the same token again."""
+    _LOG.warning("billing_unavailable")
+    return JSONResponse(
+        {
+            "error": "temporarily_unavailable",
+            "error_description": "The subscription check is unavailable. Retry shortly.",
+        },
+        status_code=503,
+        headers={"Retry-After": "30", "Cache-Control": "no-store"},
+    )
 
 
 def check_allowed_folder_in_drive(settings: Settings) -> None:

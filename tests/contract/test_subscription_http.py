@@ -253,9 +253,6 @@ def test_checkout_complete_sets_cookie(fake_drive: FakeDrive):
         loc = started.headers["location"]
         assert "session_id=" in loc
         done = client.get(loc.replace("http://127.0.0.1", ""), follow_redirects=False)
-        if not loc.startswith("/"):
-            path = loc.split("127.0.0.1")[-1]
-            done = client.get(path)
         assert done.status_code == 200
         assert COOKIE_NAME in done.cookies
         assert "Payment received" in done.text
@@ -263,6 +260,9 @@ def test_checkout_complete_sets_cookie(fake_drive: FakeDrive):
         # The entitlement lives only in the HttpOnly cookie, never on the page.
         assert done.cookies[COOKIE_NAME] not in done.text
         assert "Fallback entitlement" not in done.text
+        # Reloading the page later just continues to setup.
+        again = client.get(loc.replace("http://127.0.0.1", ""), follow_redirects=False)
+        assert again.status_code == 303
 
 
 def test_entitlement_in_the_url_is_ignored(fake_drive: FakeDrive):
@@ -434,9 +434,10 @@ def test_repeat_checkout_grants_only_the_paying_customer(fake_drive: FakeDrive):
     billing = FakeBilling()
     billing.active.update({"cus_old", "cus_new"})
     billing.emails["payer@example.com"] = "cus_old"
-    billing.sessions["cs_test_duplicate000001"] = "cus_new"
+    billing.sessions["cs_test_duplicate000001"] = ("cus_new", "browser-ref")
     runtime = Runtime(settings=settings, drive=fake_drive, billing=billing)
     with _client(runtime) as client:
+        client.cookies.set("onto_kb_checkout", "browser-ref", domain="testserver.local")
         done = client.get("/subscribe/complete", params={"session_id": "cs_test_duplicate000001"})
         assert done.status_code == 200
         assert "Payment received" in done.text
@@ -510,9 +511,9 @@ def test_malformed_checkout_session_ids_never_reach_stripe(fake_drive: FakeDrive
             super().__init__()
             self.lookups = 0
 
-        def customer_id_from_checkout_session(self, session_id: str) -> str | None:
+        def customer_id_from_checkout_session(self, session_id: str, *, reference: str):
             self.lookups += 1
-            return super().customer_id_from_checkout_session(session_id)
+            return super().customer_id_from_checkout_session(session_id, reference=reference)
 
     billing = _Spy()
     runtime = Runtime(settings=settings, drive=fake_drive, billing=billing)
@@ -711,14 +712,14 @@ def test_paid_connect_counts_once_and_a_lapsed_exchange_counts_nothing(fake_driv
         assert connect(client) == 200
         assert client.get("/stats").json()["oauth_connects"] == 1
         # The subscription lapses between the Allow click and the code exchange.
-        original = billing.is_subscription_active
+        original = billing.subscription_state
         calls = {"n": 0}
 
-        def lapses_at_exchange(customer_id: str) -> bool:
+        def lapses_at_exchange(customer_id: str) -> bool | None:
             calls["n"] += 1
             return calls["n"] <= 2 and original(customer_id)  # authorize + Allow only
 
-        billing.is_subscription_active = lapses_at_exchange  # type: ignore[method-assign]
+        billing.subscription_state = lapses_at_exchange  # type: ignore[method-assign]
         assert connect(client) == 400
         assert client.get("/stats").json()["oauth_connects"] == 1
 
@@ -760,3 +761,160 @@ def test_public_stats_reuse_one_log_scan_per_minute(monkeypatch):
     for _ in range(5):
         assert stats_module.stats_snapshot(recorder, links=False)["log_store"] == "no_project"
     assert scans["n"] == 1
+
+
+def test_someone_elses_checkout_link_never_replaces_a_subscription(fake_drive: FakeDrive):
+    settings = _paid_settings()
+    billing = FakeBilling()
+    billing.active.update({"cus_victim", "cus_attacker"})
+    # The attacker paid in their own browser; the session carries their reference.
+    billing.sessions["cs_test_attacker00001"] = ("cus_attacker", "attackers-browser")
+    runtime = Runtime(settings=settings, drive=fake_drive, billing=billing)
+    link = {"session_id": "cs_test_attacker00001"}
+    with _client(runtime) as client:
+        victim = mint_entitlement(settings, customer_id="cus_victim")
+        client.cookies.set(COOKIE_NAME, victim, domain="testserver.local")
+        opened = client.get("/subscribe/complete", params=link, follow_redirects=False)
+        assert _jar_customer(client, settings) == "cus_victim"
+        assert opened.status_code == 303  # just continues to setup
+        # A browser with no subscription gets nothing from that link either.
+        client.cookies.clear()
+        stranger = client.get("/subscribe/complete", params=link, follow_redirects=False)
+        assert stranger.status_code == 400
+        assert _jar_customer(client, settings) is None
+        # Even a guessed reference cookie does not match.
+        client.cookies.set("onto_kb_checkout", "guess", domain="testserver.local")
+        guessed = client.get("/subscribe/complete", params=link, follow_redirects=False)
+        assert guessed.status_code == 402
+        assert _jar_customer(client, settings) is None
+
+
+def test_billing_forms_refuse_cross_site_posts(fake_drive: FakeDrive):
+    settings, billing, email_link, runtime = _email_runtime(fake_drive)
+    token = mint_entitlement(settings, customer_id="cus_live9")
+    forged = [
+        {"sec-fetch-site": "cross-site"},
+        {"sec-fetch-site": "same-site"},
+        {"origin": "https://evil.example"},
+        {"origin": "null"},
+    ]
+    paths = [
+        ("/subscribe/checkout", {}),
+        ("/subscribe/email", {"email": "payer@example.com"}),
+        ("/subscribe/email/verify", {"oobCode": "oob-1", "email": "payer@example.com"}),
+        ("/subscribe/manage", {}),
+        ("/subscribe/signout", {}),
+    ]
+    with _client(runtime) as client:
+        for headers in forged:
+            for path, data in paths:
+                client.cookies.clear()
+                reply = client.post(
+                    path,
+                    data=data,
+                    headers=headers,
+                    cookies={COOKIE_NAME: token},
+                    follow_redirects=False,
+                )
+                assert reply.status_code == 403, (path, headers, reply.status_code)
+                # At most the browser's own cookie is renewed; nothing else is set.
+                from google_drive_mcp.infra.billing.entitlement import verify_entitlement
+
+                renewed = reply.cookies.get(COOKIE_NAME)
+                assert renewed is None or verify_entitlement(renewed, settings) == "cus_live9"
+        assert billing.checkouts == 0 and billing.portals == [] and email_link.sent == []
+        # This site's own pages (same-origin) still work.
+        client.cookies.clear()
+        own = client.post(
+            "/subscribe/manage",
+            headers={"sec-fetch-site": "same-origin", "origin": "http://127.0.0.1"},
+            cookies={COOKIE_NAME: token},
+            follow_redirects=False,
+        )
+        assert own.status_code == 303
+
+
+def test_sign_out_forgets_the_subscription_in_this_browser(fake_drive: FakeDrive):
+    settings = _paid_settings()
+    billing = FakeBilling()
+    billing.active.add("cus_live1")
+    runtime = Runtime(settings=settings, drive=fake_drive, billing=billing)
+    with _client(runtime) as client:
+        token = mint_entitlement(settings, customer_id="cus_live1")
+        client.cookies.set(COOKIE_NAME, token, domain="testserver.local")
+        assert 'action="/subscribe/signout"' in client.get("/setup").text
+        out = client.post("/subscribe/signout", follow_redirects=False)
+        assert out.status_code == 303 and out.headers["location"] == "/subscribe"
+        assert _jar_customer(client, settings) is None
+        assert "/mcp" not in client.get("/setup").text
+
+
+def test_a_lapsed_subscriber_can_still_reach_manage_or_cancel(fake_drive: FakeDrive):
+    settings = _paid_settings()
+    billing = FakeBilling()  # cus_pastdue1 is not active: a renewal failed
+    runtime = Runtime(settings=settings, drive=fake_drive, billing=billing)
+    lapsed = mint_entitlement(settings, customer_id="cus_pastdue1")
+    with _client(runtime) as client:
+        for path in ("/subscribe", "/setup"):
+            client.cookies.clear()
+            page = client.get(path, cookies={COOKIE_NAME: lapsed})
+            assert 'action="/subscribe/manage"' in page.text, path
+            assert "update your card" in page.text, path
+        # Without a subscription cookie there is nothing to manage.
+        client.cookies.clear()
+        assert 'action="/subscribe/manage"' not in client.get("/subscribe").text
+        assert 'action="/subscribe/manage"' not in client.get("/setup").text
+
+
+def test_two_refreshes_with_one_token_never_both_succeed(fake_drive: FakeDrive):
+    import anyio
+    import httpx
+
+    from google_drive_mcp.infra.mcp_auth.tokens import mint_refresh_token
+
+    class SlowStripe(FakeBilling):
+        def subscription_state(self, customer_id: str) -> bool | None:
+            time.sleep(0.2)  # runs in a worker thread now, so requests overlap
+            return super().subscription_state(customer_id)
+
+    settings = _paid_settings()
+    billing = SlowStripe()
+    billing.active.add("cus_live1")
+    runtime = Runtime(settings=settings, drive=fake_drive, billing=billing)
+    app = streamable_app(runtime, json_response=True)
+
+    async def run() -> list[int]:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as c:
+            registered = await c.post(
+                "/register",
+                json={
+                    "redirect_uris": ["http://127.0.0.1/callback"],
+                    "client_name": "Claude",
+                    "grant_types": ["authorization_code", "refresh_token"],
+                    "token_endpoint_auth_method": "none",
+                    "scope": "drive.read",
+                },
+            )
+            client_id = registered.json()["client_id"]
+            refresh = mint_refresh_token(
+                settings, client_id=client_id, scid="cus_live1", ttl=ENTITLEMENT_TTL
+            )
+            form = {
+                "grant_type": "refresh_token",
+                "refresh_token": refresh,
+                "client_id": client_id,
+                "resource": "http://127.0.0.1/mcp",
+            }
+            codes: list[int] = []
+
+            async def one() -> None:
+                codes.append((await c.post("/token", data=form)).status_code)
+
+            async with anyio.create_task_group() as group:
+                for _ in range(4):
+                    group.start_soon(one)
+            return codes
+
+    codes = anyio.run(run)
+    assert sorted(codes) == [200, 400, 400, 400]

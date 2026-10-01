@@ -294,6 +294,15 @@ def _refreshed(client: TestClient, issued: dict) -> dict:
     return {**issued, **refreshed.json()}
 
 
+def _assert_retry_later(response) -> None:
+    """Stripe could not be asked: no token, but not invalid_grant, which hosts treat
+    as final. A 503 with Retry-After makes the AI chat app try the same token again."""
+    assert response.status_code == 503, response.text
+    assert response.json()["error"] == "temporarily_unavailable"
+    assert response.headers.get("retry-after")
+    assert "access_token" not in response.json()
+
+
 def _assert_refused(response) -> None:
     assert response.status_code == 400, response.text
     body = response.json()
@@ -439,7 +448,7 @@ def test_stripe_outage_fails_closed(fake_drive: FakeDrive, clock: _Clock, outage
         issued = _connect(client, cookie)
         stripe.outage = outage
         lookups = stripe.lookups
-        _assert_refused(_refresh(client, issued))
+        _assert_retry_later(_refresh(client, issued))
         assert stripe.lookups == lookups + 3  # tried three times, then failed closed
         _assert_connect_goes_to_subscribe(client, cookie)
         # Once Stripe answers again, the same refresh token still works: an outage
@@ -469,4 +478,6 @@ def test_malformed_stripe_reply_fails_closed(fake_drive: FakeDrive, clock: _Cloc
     with _client(runtime) as client:
         issued = _connect(client, cookie)
         stripe.outage = "html"  # e.g. an egress proxy's 200 HTML page
-        _assert_refused(_refresh(client, issued))
+        _assert_retry_later(_refresh(client, issued))
+        stripe.outage = None
+        _refreshed(client, issued)

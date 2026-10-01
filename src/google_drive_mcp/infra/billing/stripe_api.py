@@ -54,8 +54,8 @@ class StripeHttpGateway:
             time.sleep(_RETRY_DELAYS[attempt])
         return None
 
-    def is_subscription_active(self, customer_id: str) -> bool:
-        """Fails closed: anything but a clear active or trialing answer is False."""
+    def subscription_state(self, customer_id: str) -> bool | None:
+        """True or False when Stripe answered; None when Stripe could not be asked."""
         if not customer_id or not self._key():
             return False
         owns = self._client is None
@@ -66,21 +66,29 @@ class StripeHttpGateway:
                 f"{_STRIPE}/v1/subscriptions",
                 {"customer": customer_id, "status": "all", "limit": 10},
             )
-            if response is None or response.status_code != 200:
-                return False
+            if response is None:
+                return None
+            if response.status_code in (400, 404):
+                return False  # no such customer
+            if response.status_code != 200:
+                return None
             payload = response.json()
             data = payload.get("data") if isinstance(payload, dict) else None
             if not isinstance(data, list):
-                return False
+                return None
             return any(
                 isinstance(item, dict) and str(item.get("status") or "") in _ENTITLED
                 for item in data
             )
         except (httpx.HTTPError, ValueError):
-            return False
+            return None
         finally:
             if owns:
                 http.close()
+
+    def is_subscription_active(self, customer_id: str) -> bool:
+        """Fails closed: anything but a clear active or trialing answer is False."""
+        return self.subscription_state(customer_id) is True
 
     def create_portal_url(self, customer_id: str, *, return_url: str) -> str | None:
         """Stripe-hosted customer portal session; None if the portal is not set up."""
@@ -96,7 +104,13 @@ class StripeHttpGateway:
                 auth=self._auth(),
             )
             if response.status_code != 200:
-                _LOG.warning("stripe_portal_unavailable status=%s", response.status_code)
+                try:
+                    code = (response.json().get("error") or {}).get("code")
+                except (ValueError, AttributeError):
+                    code = None
+                _LOG.warning(
+                    "stripe_portal_unavailable status=%s code=%s", response.status_code, code
+                )
                 return None
             url = response.json().get("url")
             return url if isinstance(url, str) and url.startswith("https://") else None
@@ -106,7 +120,7 @@ class StripeHttpGateway:
             if owns:
                 http.close()
 
-    def create_checkout_url(self, *, success_url: str, cancel_url: str) -> str:
+    def create_checkout_url(self, *, success_url: str, cancel_url: str, reference: str) -> str:
         if not self.configured():
             raise RuntimeError("payments_not_configured")
         owns = self._client is None
@@ -119,6 +133,8 @@ class StripeHttpGateway:
                     "cancel_url": cancel_url,
                     "line_items[0][price]": self._settings.stripe_price_id.strip(),
                     "line_items[0][quantity]": "1",
+                    # Ties the session to the browser that started it.
+                    "client_reference_id": reference,
                 }
             )
             response = http.post(
@@ -136,13 +152,15 @@ class StripeHttpGateway:
             if owns:
                 http.close()
 
-    def customer_id_from_checkout_session(self, session_id: str) -> str | None:
+    def customer_id_from_checkout_session(self, session_id: str, *, reference: str) -> str | None:
         """The customer who paid in this Checkout Session.
 
         Access always goes to the paying customer. An email typed into Checkout
-        is not verified, so it never moves access to another customer.
+        is not verified, so it never moves access to another customer. The
+        session must carry this browser's reference, so a success link sent to
+        someone else grants nothing.
         """
-        if not session_id or not self._key():
+        if not session_id or not reference or not self._key():
             return None
         owns = self._client is None
         http = self._http()
@@ -157,6 +175,9 @@ class StripeHttpGateway:
             status = str(payload.get("status") or "")
             payment = str(payload.get("payment_status") or "")
             if status != "complete" or payment not in {"paid", "no_payment_required"}:
+                return None
+            carried = payload.get("client_reference_id")
+            if not isinstance(carried, str) or not hmac.compare_digest(carried, reference):
                 return None
             customer = payload.get("customer")
             if not isinstance(customer, str) or not customer.startswith("cus_"):
