@@ -6,13 +6,22 @@ Walk 429 is not handled here.
 
 from __future__ import annotations
 
-import tempfile
+import threading
 from pathlib import Path
 
-from google_drive_mcp.domain.budgets import MAX_EXPORT_SIZE
+from google_drive_mcp.domain.budgets import GREP_PREFETCH_MAX_FILE_BYTES, MAX_EXPORT_SIZE
 from google_drive_mcp.domain.errors import DomainError, ErrorCategory
 from google_drive_mcp.domain.google_errors import GoogleApiError, map_google_error
 from google_drive_mcp.retrieval.ports import ExportResult
+
+# A download over LARGE_DOWNLOAD_BYTES, or of unknown size, holds one of
+# LARGE_DOWNLOAD_SLOTS process-wide slots, so a few 20 MB reads at once cannot
+# run the instance out of memory. drive_grep fetches ahead only smaller files,
+# so those never wait. A download that gets no slot in time is RATE_LIMITED.
+LARGE_DOWNLOAD_BYTES = GREP_PREFETCH_MAX_FILE_BYTES
+LARGE_DOWNLOAD_SLOTS = 2
+LARGE_DOWNLOAD_WAIT_SECONDS = 10.0
+_large_downloads = threading.BoundedSemaphore(LARGE_DOWNLOAD_SLOTS)
 
 DOC_MIME = "application/vnd.google-apps.document"
 SHEET_MIME = "application/vnd.google-apps.spreadsheet"
@@ -106,6 +115,23 @@ def representation_for(mime: str, content_format: str | None, name: str = "") ->
     raise DomainError.of(ErrorCategory.INVALID_ARGUMENT)
 
 
+def _download(
+    drive: object, file_id: str, mime_type: str, representation: str, request_id: str | None
+) -> str:
+    try:
+        if is_workspace(mime_type):
+            return drive.export(file_id, representation)
+        # Decode at once so the raw bytes are freed.
+        return drive.get_media(file_id).decode("utf-8", errors="replace")
+    except FileNotExportableError as exc:
+        raise DomainError.of(ErrorCategory.FILE_NOT_EXPORTABLE, request_id=request_id) from exc
+    except GoogleApiError as exc:
+        raise DomainError(map_google_error(exc, request_id=request_id)) from exc
+    except OSError as exc:
+        # A socket timeout or reset: the Drive client gives up after 20 s.
+        raise DomainError.of(ErrorCategory.DRIVE_API_ERROR, request_id=request_id) from exc
+
+
 def fetch_text(
     drive: object,
     file_id: str,
@@ -115,53 +141,42 @@ def fetch_text(
     max_bytes: int,
     request_id: str | None = None,
     name: str = "",
+    size: int | None = None,
 ) -> ExportResult:
-    cap = min(max_bytes, MAX_EXPORT_SIZE)
-    if getattr(drive, "fail_tempfile", False):
-        raise DomainError.of(ErrorCategory.TEMPORARY_STORAGE_ERROR, request_id=request_id)
-    try:
-        with tempfile.TemporaryDirectory(prefix="gdrive-mcp-") as tmp:
-            dest = Path(tmp) / "payload"
-            try:
-                if is_workspace(mime_type):
-                    text = drive.export(file_id, representation)
-                elif is_text_blob(mime_type, name):
-                    raw = drive.get_media(file_id)
-                    text = raw.decode("utf-8", errors="replace")
-                else:
-                    raise DomainError.of(
-                        ErrorCategory.UNSUPPORTED_MIME_TYPE, request_id=request_id
-                    )
-            except FileNotExportableError as exc:
-                raise DomainError.of(
-                    ErrorCategory.FILE_NOT_EXPORTABLE, request_id=request_id
-                ) from exc
-            except GoogleApiError as exc:
-                raise DomainError(map_google_error(exc, request_id=request_id)) from exc
-            dest.write_text(text, encoding="utf-8")
-            data = dest.read_bytes()
-    except DomainError:
-        raise
-    except OSError as exc:
-        raise DomainError.of(
-            ErrorCategory.TEMPORARY_STORAGE_ERROR, request_id=request_id
-        ) from exc
+    """Text of one file, at most min(max_bytes, MAX_EXPORT_SIZE) UTF-8 bytes.
 
-    truncated = False
-    if len(data) > cap:
+    size is Drive's size for the file when known. It decides whether the
+    download needs a large-download slot; a Workspace export is always large.
+    """
+    cap = min(max_bytes, MAX_EXPORT_SIZE)
+    if not is_workspace(mime_type) and not is_text_blob(mime_type, name):
+        raise DomainError.of(ErrorCategory.UNSUPPORTED_MIME_TYPE, request_id=request_id)
+    # Drive's size for a Doc, Sheet or Slides file is not the length of its export.
+    large = is_workspace(mime_type) or size is None or size > LARGE_DOWNLOAD_BYTES
+    if large and not _large_downloads.acquire(timeout=LARGE_DOWNLOAD_WAIT_SECONDS):
+        raise DomainError.of(ErrorCategory.RATE_LIMITED, request_id=request_id)
+    try:
+        # In memory only: Cloud Run's /tmp is RAM too, so a temp file would be one more copy.
+        text = _download(drive, file_id, mime_type, representation, request_id)
+        data = text.encode("utf-8")
+        if len(data) <= cap:
+            return ExportResult(
+                text=text, representation=representation, truncated=False, byte_length=len(data)
+            )
+        # Free the whole text before decoding the prefix.
+        del text
         if cap <= 0:
             raise DomainError.of(ErrorCategory.RESOURCE_LIMIT, request_id=request_id)
         text = data[:cap].decode("utf-8", errors="ignore")
-        truncated = True
-        byte_length = len(text.encode("utf-8"))
-    else:
-        text = data.decode("utf-8", errors="replace")
-        byte_length = len(data)
-    if not text and len(data) > cap:
-        raise DomainError.of(ErrorCategory.RESOURCE_LIMIT, request_id=request_id)
-    return ExportResult(
-        text=text,
-        representation=representation,
-        truncated=truncated,
-        byte_length=byte_length if not truncated else len(text.encode("utf-8")),
-    )
+        del data
+        if not text:
+            raise DomainError.of(ErrorCategory.RESOURCE_LIMIT, request_id=request_id)
+        return ExportResult(
+            text=text,
+            representation=representation,
+            truncated=True,
+            byte_length=len(text.encode("utf-8")),
+        )
+    finally:
+        if large:
+            _large_downloads.release()

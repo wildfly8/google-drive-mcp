@@ -42,6 +42,8 @@ Must run Access Control chain first. A `file_id` not proven to be inside `DRIVE_
 
 Match fields (`matched_text`, `location`) MUST NOT be required. Truncation at `max_bytes` with a usable prefix → `PARTIAL`, `partial_reason: max_bytes`; content is the prefix actually read. Missing `file_id` in output is invalid. `source_url` MUST be `drive:{file_id}` and MUST NOT be an HTTP URL.
 
+On the wire the answer stays near the UTF-8 size of `content` (no `\uXXXX` re-encoding), so a read at the 20 MB cap fits Cloud Run's 32 MiB response cap even for CJK text (FR-106).
+
 ## Errors
 
 Canonical categories: [error-taxonomy.md](./error-taxonomy.md).
@@ -53,7 +55,7 @@ Canonical categories: [error-taxonomy.md](./error-taxonomy.md).
 | `UNSUPPORTED_MIME_TYPE` | Cannot yield usable text, including a folder id |
 | `FILE_NOT_EXPORTABLE` | Workspace type that export refuses |
 | `RESOURCE_LIMIT` | Over `max_export_size` / hard cap with **no** usable prefix |
-| `RATE_LIMITED` | HTTP 429 on this file's metadata get or export, with **no** usable prefix. Access Control returns it too for a 429 while it checks the id (its metadata get or the listing of `kb`'s folder tree) |
-| `DRIVE_API_ERROR` | Other upstream failures |
+| `RATE_LIMITED` | HTTP 429 on this file's metadata get or export, with **no** usable prefix, or no large-download slot free within 10 s (a file over about 2 MB or of unknown size, FR-106). Access Control returns it too for a 429 while it checks the id (its metadata get or the listing of `kb`'s folder tree) |
+| `DRIVE_API_ERROR` | Other upstream failures, including a Drive HTTP call that stalls past 20 s |
 | `INVALID_ARGUMENT` | Bad `file_id` shape / `max_bytes` out of range / unknown or type-incompatible `content_format`, or any `content_format` on a type that cannot yield text / any argument other than `file_id`, `content_format`, `max_bytes` |
-| `TEMPORARY_STORAGE_ERROR` | Tempfile create/cleanup failure |
+| `TEMPORARY_STORAGE_ERROR` | Tempfile create/cleanup failure. Not produced today: downloads stay in memory (FR-106) |

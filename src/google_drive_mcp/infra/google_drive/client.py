@@ -6,11 +6,11 @@ import json
 import threading
 
 import google_auth_httplib2
+import httplib2
 from google.auth.exceptions import RefreshError
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from googleapiclient.http import build_http
 
 from google_drive_mcp.domain.budgets import Budget
 from google_drive_mcp.domain.google_errors import GoogleApiError
@@ -24,6 +24,17 @@ from google_drive_mcp.infra.google_drive.query import (
 
 _FIELDS = "id,name,mimeType,parents,modifiedTime,createdTime,webViewLink,size,trashed"
 _PARENTS_PER_QUERY = 40
+# Well under Cloud Run's 60 s request timeout, so a stalled Drive download ends
+# as a tool error instead of a bare 504 (googleapiclient's default is 60 s).
+HTTP_TIMEOUT_SECONDS = 20
+
+
+def _build_http() -> httplib2.Http:
+    """googleapiclient's build_http with a shorter timeout."""
+    http = httplib2.Http(timeout=HTTP_TIMEOUT_SECONDS)
+    # As build_http does: Drive uses 308 for resumable uploads, not as a redirect.
+    http.redirect_codes = http.redirect_codes - {308}
+    return http
 
 
 def _reraise_google(exc: BaseException) -> None:
@@ -95,7 +106,7 @@ class GoogleDriveClient:
         """
         http = getattr(self._local, "http", None)
         if http is None:
-            http = google_auth_httplib2.AuthorizedHttp(self._credentials, http=build_http())
+            http = google_auth_httplib2.AuthorizedHttp(self._credentials, http=_build_http())
             self._local.http = http
         return http
 

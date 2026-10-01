@@ -128,6 +128,11 @@ for role in \
     --quiet >/dev/null || true
 done
 
+# A 20 MB drive_read holds several copies of its text while it is decoded and
+# serialized (around 100 MB), and two such downloads may run at once per
+# instance, so 1 GiB leaves room for the other concurrent requests. Concurrency
+# and max instances set a cost ceiling: at most 3 x 10 requests in flight unless
+# overridden. --timeout stays 60 s; Drive HTTP calls give up after 20 s.
 DEPLOY_ARGS=(
   run deploy "$SERVICE"
   --project="$PROJECT"
@@ -135,7 +140,9 @@ DEPLOY_ARGS=(
   --source="$(cd "$(dirname "$0")/.." && pwd)"
   --allow-unauthenticated
   --set-secrets="${SECRET_BIND}"
-  --memory=512Mi
+  --memory=1Gi
+  --concurrency="${CLOUD_RUN_CONCURRENCY:-10}"
+  --max-instances="${CLOUD_RUN_MAX_INSTANCES:-3}"
   --timeout=60
   --quiet
 )

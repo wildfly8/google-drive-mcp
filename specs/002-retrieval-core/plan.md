@@ -20,7 +20,7 @@ Google 404/403-as-404 (and single-file 429 with no prefix) go through Access Con
 
 **Primary Dependencies**: `mcp` 2.x; Google Drive v3 via `google-api-python-client` (adapter); stdlib `re` for literal search and the `regex` package for `regex=true` (its matching takes a timeout); `pydantic` for tool I/O
 
-**Storage**: None persistent. Exports live in memory or `tempfile.TemporaryDirectory` deleted at end of the tool call.
+**Storage**: None persistent. Exports live in memory only and are dropped at the end of the tool call (no temp file: Cloud Run's `/tmp` is RAM, so a file would be one more copy).
 
 **Testing**: pytest; contract tests from `contracts/`; integration tests against shared `tests/fakes/fake_drive.py`; AUTH replay on real `drive_grep`; `PARTIAL` including `max_execution_time`; optional live Drive smoke
 
@@ -47,6 +47,10 @@ Google 404/403-as-404 (and single-file 429 with no prefix) go through Access Con
 | `max_execution_time` | 25 seconds |
 | `max_context_lines` | 2 (default `context_lines`; callers may set 0–10) |
 | `max_export_size` | 20_000_000 |
+| Large downloads (over 2 MB, or unknown size such as any Workspace export) | 2 at once per process; no slot within 10 s → `RATE_LIMITED` |
+| Drive HTTP timeout | 20 seconds (Cloud Run request timeout is 60 s) |
+
+Memory and response size (FR-106): a 20 MB result is about 20 MB on the wire. Only a `tools/list` answer is buffered and rewritten (to stamp `securitySchemes`, with `ensure_ascii=False`); every other answer streams through unchanged, so 19.5 MB of CJK text stays near 19.5 MB instead of about 39 MB of `\uXXXX` escapes, under Cloud Run's 32 MiB HTTP/1 response cap. One large read holds a few copies of its text at a time (download, decoded text, UTF-8 length check, JSON answer), roughly 100 MB at the cap; the two-slot bound and Cloud Run's 1 GiB instances with concurrency 10 (`scripts/deploy-cloud-run.sh`) keep an instance inside its memory.
 
 Grep context: line-oriented text (Docs, Markdown, plain text) returns `context_lines` lines on each side of the matching line. Sheets, Slides, CSV and JSON are not line-oriented: up to 200 characters on each side of the hit.
 

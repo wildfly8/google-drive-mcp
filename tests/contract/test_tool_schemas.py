@@ -57,7 +57,8 @@ async def test_tools_list_is_exactly_the_read_only_surface(runtime):
         assert tool.annotations.read_only_hint is True
         assert tool.annotations.destructive_hint is False
         assert tool.annotations.idempotent_hint is True
-        assert tool.annotations.open_world_hint is True
+        # Closed world: one private folder (kb), not the open web.
+        assert tool.annotations.open_world_hint is False
 
 
 async def test_initialize_instructions_say_host_extracts_terms(runtime):
@@ -72,6 +73,9 @@ async def test_initialize_instructions_say_host_extracts_terms(runtime):
     assert "No folder is disallowed" not in text
     assert "only folder this server may read is kb" in text
     assert "AUTHORIZATION_ERROR" in text
+    assert "Never pass tokens" in text
+    # The consent password is an operator secret; hosts never need its name.
+    assert "MCP_AUTH_TOKEN" not in text
 
 
 async def test_drive_ls_and_find_schema_bounds(runtime):

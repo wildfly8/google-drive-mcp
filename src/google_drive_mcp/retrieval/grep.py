@@ -313,6 +313,7 @@ def drive_grep(
             max_bytes=budget.max_bytes_per_file,
             request_id=request_id,
             name=file.name,
+            size=file.size,
         )
 
     prefetch = (

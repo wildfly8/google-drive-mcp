@@ -11,6 +11,9 @@ ChatGPT developer-mode plugins and Claude custom connectors:
 3. Advertise root-level ``securitySchemes``. Unauthenticated ``drive_*`` calls
    return HTTP 401 + ``WWW-Authenticate`` (Claude lazy-auth). JSON-RPC
    ``isError`` + ``_meta["mcp/www_authenticate"]`` remains the in-process fallback.
+   Only a ``tools/list`` answer is buffered and rewritten. Every other answer (a
+   20 MB ``drive_read`` included) streams through unchanged, so it stays near its
+   UTF-8 size and under Cloud Run's 32 MiB response cap.
 4. ``GET /mcp`` returns 405 immediately. Stateless Streamable HTTP has no SSE
    listen stream; a hanging GET makes Claude's connector probe time out.
 """
@@ -73,6 +76,7 @@ def www_authenticate_challenge(
     safe_description = description.replace('"', r"\"")
     return (
         f'Bearer error="{safe_error}", error_description="{safe_description}", '
+        f'scope="{MCP_OAUTH_SCOPE}", '
         f'resource_metadata="{origin_resource_metadata_url(settings)}"'
     )
 
@@ -116,10 +120,17 @@ def _rewrite_json_bytes(body: bytes) -> bytes:
         payload = json.loads(body.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
         return body
-    if not isinstance(payload, dict):
+    if isinstance(payload, dict):
+        stamp_security_schemes(payload)
+    elif isinstance(payload, list):
+        # A batch answer holds one response per request.
+        for item in payload:
+            if isinstance(item, dict):
+                stamp_security_schemes(item)
+    else:
         return body
-    stamped = stamp_security_schemes(payload)
-    return json.dumps(stamped, separators=(",", ":")).encode("utf-8")
+    # ensure_ascii=False: \uXXXX escapes would double the size of non-ASCII text.
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 
 def _authorization_header(scope: Scope) -> str | None:
@@ -129,19 +140,28 @@ def _authorization_header(scope: Scope) -> str | None:
     return None
 
 
-def _calls_protected_tool(body: bytes) -> bool:
+def _rpc_messages(body: bytes) -> list[dict[str, Any]]:
+    """The JSON-RPC messages in a request body (one, or a batch); [] when not JSON."""
     try:
         payload = json.loads(body.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
-        return False
+        return []
     messages = payload if isinstance(payload, list) else [payload]
+    return [message for message in messages if isinstance(message, dict)]
+
+
+def _calls_protected_tool(messages: list[dict[str, Any]]) -> bool:
     for message in messages:
-        if not isinstance(message, dict) or message.get("method") != "tools/call":
+        if message.get("method") != "tools/call":
             continue
         params = message.get("params")
         if isinstance(params, dict) and params.get("name") in PROTECTED_TOOLS:
             return True
     return False
+
+
+def _lists_tools(messages: list[dict[str, Any]]) -> bool:
+    return any(message.get("method") == "tools/list" for message in messages)
 
 
 async def _send_empty(send: Send, status: int, extra_headers: list[tuple[bytes, bytes]]) -> None:
@@ -219,8 +239,9 @@ class _ChatGptMcpHttp:
         body = await _read_body(receive)
         if body is None:
             return
+        messages = _rpc_messages(body)
         authed = verify_authorization_header(_authorization_header(scope), self.settings)
-        if method == "POST" and not authed and _calls_protected_tool(body):
+        if method == "POST" and not authed and _calls_protected_tool(messages):
             challenge = www_authenticate_challenge(self.settings)
             payload = (
                 b'{"error":"invalid_token",'
@@ -236,6 +257,10 @@ class _ChatGptMcpHttp:
             )
             await send({"type": "http.response.start", "status": 401, "headers": headers})
             await send({"type": "http.response.body", "body": payload})
+            return
+        if not _lists_tools(messages):
+            # Nothing to stamp: pass the answer through, never buffered or re-encoded.
+            await self.app(scope, _replay_body(body), send)
             return
 
         start: dict[str, Any] | None = None

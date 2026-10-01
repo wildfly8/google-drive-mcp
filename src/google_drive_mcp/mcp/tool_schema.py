@@ -28,8 +28,7 @@ Authentication is MCP OAuth 2.1 (authorization code + PKCE). Hosts may call
 `initialize` and `tools/list` without a Bearer so they can advertise tools.
 Every `drive_*` call requires `Authorization: Bearer <access_token>` issued by
 this origin. Never pass tokens, OAuth codes, or Google credentials as tool
-arguments. `MCP_AUTH_TOKEN` is the resource-owner consent password, not an API
-bearer.
+arguments.
 
 Loop (repeat with different terms if needed):
 1. drive_ls or drive_find → file ids (candidates, not evidence)
@@ -53,11 +52,12 @@ Hard rules:
 - No write/delete/share tools exist. Do not ask for them.
 """
 
+# Closed world: the tools only read one private folder (kb), not the open web.
 READ_ONLY_ANNOTATIONS = ToolAnnotations(
     readOnlyHint=True,
     destructiveHint=False,
     idempotentHint=True,
-    openWorldHint=True,
+    openWorldHint=False,
 )
 
 DRIVE_LS_TITLE = "List immediate folder children"

@@ -42,6 +42,7 @@ def drive_read(
         max_bytes=cap,
         request_id=request_id,
         name=meta.name,
+        size=meta.size,
     )
     budget.note_bytes(exported.byte_length)
     retrieved_at = _now()
