@@ -70,3 +70,47 @@ def test_dependabot_covers_uv_docker_and_actions_weekly():
     for ecosystem in ("uv", "docker", "github-actions"):
         assert f'package-ecosystem: "{ecosystem}"' in text
     assert text.count('interval: "weekly"') == 3
+
+
+def test_deploy_waits_for_tests_and_a_working_image():
+    text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    image = text[text.index("\n  image:") : text.index("\n  deploy:")]
+    for needle in (
+        "docker build --pull --tag onto-kb:ci .",
+        'test "$(docker run --rm onto-kb:ci id -u)" = "10001"',
+        'python -c "import google_drive_mcp.mcp.server"',
+        'grep -q "DRIVE_ALLOWED_FOLDER_ID"',
+    ):
+        assert needle in image, needle
+    deploy = text[text.index("\n  deploy:") :]
+    assert "needs: [test, image]" in deploy
+    assert "environment: production" in deploy
+    assert "github.ref == 'refs/heads/main'" in deploy
+    assert "ONE_TIME_SETUP: \"0\"" in deploy
+
+
+def test_deploy_actions_are_pinned_by_commit_sha():
+    # They run with the deploy identity and no approval click, so a moved tag must not
+    # change what runs. Dependabot updates the SHA and the release comment together.
+    text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    deploy = text[text.index("\n  deploy:") :]
+    uses = re.findall(r"^\s*(?:- )?uses:\s*(\S+)(.*)$", deploy, re.M)
+    assert {ref.split("@")[0] for ref, _ in uses} >= {
+        "actions/checkout",
+        "google-github-actions/auth",
+        "google-github-actions/setup-gcloud",
+    }
+    # A step written another way (flow style, quoted key) must not slip past the check.
+    assert len(uses) == len(re.findall(r"\buses\b", deploy))
+    for ref, comment in uses:
+        assert re.fullmatch(r"[\w.-]+/[\w.-]+@[0-9a-f]{40}", ref), ref
+        assert re.fullmatch(r"\s+# v\d+\.\d+\.\d+", comment), ref
+
+
+def test_ci_credentials_are_never_committed_or_uploaded():
+    # google-github-actions/auth writes gha-creds-*.json into the workspace.
+    assert "gha-creds-*.json" in (ROOT / ".gitignore").read_text(encoding="utf-8")
+    gcloudignore = (ROOT / ".gcloudignore").read_text(encoding="utf-8")
+    assert "gha-creds-*.json" in gcloudignore
+    assert "#!include:.gitignore" in gcloudignore
+    assert "gha-creds-*.json" in (ROOT / ".dockerignore").read_text(encoding="utf-8")

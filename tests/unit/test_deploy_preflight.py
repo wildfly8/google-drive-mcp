@@ -98,3 +98,55 @@ def test_allow_dirty_and_skip_tests(repo: Path, tmp_path: Path):
     assert "Uncommitted changes" not in proc.stderr
     assert uv_calls == ""
     assert gcloud_calls != ""
+
+
+def _run_with_working_gcloud(repo: Path, tmp_path: Path, **env: str):
+    """gcloud answers every call with success and no output; the script then stops at
+    the kb folder-id check (an empty secret), after every setup step it would run."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    gcloud_log = tmp_path / "gcloud.log"
+    _fake(bin_dir / "gcloud", gcloud_log, 0)
+    git_dir = os.path.dirname(shutil.which("git") or "/usr/bin/git")
+    proc = subprocess.run(
+        ["bash", str(repo / "scripts" / "deploy-cloud-run.sh")],
+        cwd=repo,
+        env={
+            "PATH": os.pathsep.join([str(bin_dir), git_dir, "/usr/bin", "/bin"]),
+            "HOME": str(tmp_path),
+            "GCP_PROJECT": "test-project",
+            "SKIP_TESTS": "1",
+            **env,
+        },
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    return proc, _read(gcloud_log)
+
+
+def test_ci_mode_never_enables_apis_or_grants_iam(repo: Path, tmp_path: Path):
+    proc, calls = _run_with_working_gcloud(repo, tmp_path, ONE_TIME_SETUP="0")
+    assert "not a Drive folder id" in proc.stderr  # got past every setup step
+    assert "secrets versions access latest --secret=DRIVE_ALLOWED_FOLDER_ID" in calls
+    for forbidden in ("services enable", "add-iam-policy-binding", "projects describe"):
+        assert forbidden not in calls, forbidden
+
+
+def test_operator_mode_still_runs_the_one_time_setup(repo: Path, tmp_path: Path):
+    proc, calls = _run_with_working_gcloud(repo, tmp_path)
+    assert "not a Drive folder id" in proc.stderr
+    assert "services enable" in calls
+    assert "add-iam-policy-binding" in calls
+
+
+def test_ci_credentials_file_does_not_block_the_deploy(repo: Path, tmp_path: Path):
+    # The auth action leaves gha-creds-*.json in the checkout; it is git-ignored.
+    shutil.copy(Path(__file__).resolve().parents[2] / ".gitignore", repo / ".gitignore")
+    git = ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.invalid"]
+    subprocess.run([*git, "add", ".gitignore"], check=True)
+    subprocess.run([*git, "commit", "-q", "-m", "ignore"], check=True)
+    (repo / "gha-creds-0123456789abcdef.json").write_text("{}\n")
+    proc, calls = _run_with_working_gcloud(repo, tmp_path, ONE_TIME_SETUP="0")
+    assert "Uncommitted changes" not in proc.stderr
+    assert "not a Drive folder id" in proc.stderr  # reached the deploy steps

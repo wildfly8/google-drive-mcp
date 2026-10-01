@@ -1679,3 +1679,52 @@ def test_grep_description_states_the_pattern_cap_and_the_slow_regex_stop():
     assert "too slow to finish stops with PARTIAL, partial_reason max_execution_time" in (
         DRIVE_GREP_DESCRIPTION
     )
+
+
+def _stall_drive():
+    from fakes.fake_drive import FOLDER_MIME, FakeDrive, FakeFile
+
+    drive = FakeDrive()
+    drive.add(FakeFile(id="root", name="My Drive", mime_type=FOLDER_MIME, parents=[]))
+    drive.add(FakeFile(id="top", name="Top", mime_type=FOLDER_MIME, parents=["root"]))
+    for fid in ("first", "stalled", "last"):
+        drive.add(
+            FakeFile(
+                id=fid,
+                name=f"{fid}.md",
+                mime_type="text/markdown",
+                parents=["top"],
+                content=f"the needle is in {fid}",
+            )
+        )
+    original = drive.get_media
+
+    def get_media(file_id: str) -> bytes:
+        if file_id == "stalled":
+            raise TimeoutError("timed out")  # socket timeout: Drive stopped sending this file
+        return original(file_id)
+
+    drive.get_media = get_media  # type: ignore[method-assign]
+    return drive
+
+
+def test_a_stalled_download_is_deferred_and_the_folder_grep_goes_on():
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    result = drive_grep(_stall_drive(), pattern="needle", folder_id="top")
+    assert result["status"] == "PARTIAL"
+    assert result["partial_reason"] == "max_execution_time"
+    assert result["deferred_file_ids"] == ["stalled"]
+    assert {m["file_id"] for m in result["matches"]} == {"first", "last"}
+
+
+def test_a_stalled_single_file_grep_is_still_an_error():
+    from google_drive_mcp.domain.errors import DomainError
+    from google_drive_mcp.retrieval.grep import drive_grep
+
+    try:
+        drive_grep(_stall_drive(), pattern="needle", file_ids=["stalled"])
+    except DomainError as exc:
+        assert exc.error.category.value == "DRIVE_API_ERROR"
+    else:
+        raise AssertionError("a stalled single-file grep should be an error")

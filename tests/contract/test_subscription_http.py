@@ -387,7 +387,7 @@ def test_email_link_continues_the_subscription_in_this_browser(fake_drive: FakeD
         assert landing.status_code == 200
         assert COOKIE_NAME not in landing.cookies
         assert "Continue in this browser" in landing.text
-        assert landing.headers["referrer-policy"] == "no-referrer"
+        assert landing.headers["referrer-policy"] == "same-origin"
         before = billing.checkouts
         done = client.post(
             "/subscribe/email/verify", data={"oobCode": code}, follow_redirects=False
@@ -941,7 +941,7 @@ def _assert_page_headers(reply, csp: str = _PAGE_CSP) -> None:
     assert reply.headers["x-frame-options"] == "DENY"
     assert reply.headers.get_list("content-security-policy") == [csp]
     assert reply.headers["x-content-type-options"] == "nosniff"
-    assert reply.headers["referrer-policy"] == "no-referrer"
+    assert reply.headers["referrer-policy"] == "same-origin"
     assert reply.headers["cache-control"] == "no-store"
 
 

@@ -14,6 +14,9 @@
 .env
 .env.*
 !.env.example
+# Short-lived Google credentials google-github-actions/auth writes into the
+# workspace during a CI deploy; never commit or upload them.
+gha-creds-*.json
 
 # Python
 .venv/

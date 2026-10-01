@@ -53,5 +53,5 @@
 
 ## Phase 8: Logs without emails or keys (2026-10-01)
 
-- [x] T031 Keep typed emails, the Identity Toolkit API key and one-time codes out of Cloud Logging: `httpx`/`httpcore` at `WARNING` (Stripe's email lookup URL), the key sent as `x-goog-api-key` for send, verify and delete, no uvicorn access log; log `stripe_subscription_check_failed` and `stripe_checkout_failed` as JSON `WARNING`s with only the HTTP status or exception type; docstrings say how emails stay out of logs; `tests/unit/test_logging_hygiene.py` drives `/subscribe/email` and its verify step through the real Stripe and Identity Platform adapters over `httpx.MockTransport` at `DEBUG` (FR-004)
-
+- [x] T032 Keep typed emails, the Identity Toolkit API key and one-time codes out of Cloud Logging: `httpx`/`httpcore` at `WARNING` (Stripe's email lookup URL), the key sent as `x-goog-api-key` for send, verify and delete, no uvicorn access log; log `stripe_subscription_check_failed` and `stripe_checkout_failed` as JSON `WARNING`s with only the HTTP status or exception type; docstrings say how emails stay out of logs; `tests/unit/test_logging_hygiene.py` drives `/subscribe/email` and its verify step through the real Stripe and Identity Platform adapters over `httpx.MockTransport` at `DEBUG` (FR-004)
+- [x] T033 HTML and billing pages send `Referrer-Policy: same-origin` (not `no-referrer`), so browsers without Sec-Fetch-Site (Safari before 16.4, Firefox before 90) still send a real Origin on this site's own forms and pass the same-site check; cross-site navigations still carry no referrer

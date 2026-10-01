@@ -40,3 +40,97 @@ jobs:
           uv export --frozen --no-dev --no-emit-project --format requirements-txt \
             > requirements-audit.txt
           uvx pip-audit --disable-pip --require-hashes -r requirements-audit.txt
+
+  # Builds the production image exactly as Cloud Build will (same Dockerfile, uv.lock,
+  # non-root user) and checks it starts, so a broken image fails here, before any
+  # deploy. Nothing is pushed.
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Build the production image
+        run: docker build --pull --tag onto-kb:ci .
+
+      - name: Runs as the non-root user and imports the server
+        run: |
+          test "$(docker run --rm onto-kb:ci id -u)" = "10001"
+          docker run --rm onto-kb:ci python -c "import google_drive_mcp.mcp.server"
+
+      # Without its configuration the server must refuse to start (fail closed),
+      # which also proves the image's start command runs the app.
+      - name: Refuses to start without configuration
+        run: |
+          if out="$(docker run --rm onto-kb:ci 2>&1)"; then
+            echo "The server started without DRIVE_ALLOWED_FOLDER_ID." >&2
+            exit 1
+          fi
+          echo "$out" | grep -q "DRIVE_ALLOWED_FOLDER_ID"
+
+  # Deploys main to Cloud Run once test and image pass. Skipped until the GCP_REGION
+  # variable exists (scripts/setup-github-deploy.sh prints the values). Keep the
+  # project id, number, provider and account as Actions secrets: GitHub hides
+  # secrets everywhere, while a variable shows once in a step header before any
+  # mask applies. Google accepts this job's identity only for this repository,
+  # the main branch and the "production" environment (no key stored).
+  deploy:
+    needs: [test, image]
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/main'
+      && vars.GCP_REGION != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      # The repository is public, so its Actions logs are too: hide project ids
+      # in everything gcloud prints (already hidden when they are secrets).
+      - name: Mask project identifiers
+        run: |
+          echo "::add-mask::${{ secrets.GCP_PROJECT_ID || vars.GCP_PROJECT_ID }}"
+          echo "::add-mask::${{ secrets.GCP_PROJECT_NUMBER || vars.GCP_PROJECT_NUMBER }}"
+          echo "::add-mask::${{ secrets.GCP_DEPLOY_SA || vars.GCP_DEPLOY_SA }}"
+
+      # Actions in this job run with the deploy identity and no approval click, so
+      # they are pinned by commit SHA (release in the comment): a moved tag cannot
+      # change what runs here. Dependabot proposes new SHAs.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER || vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SA || vars.GCP_DEPLOY_SA }}
+
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - name: Deploy to Cloud Run
+        env:
+          GCP_PROJECT: ${{ secrets.GCP_PROJECT_ID || vars.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+          # APIs, IAM grants and dashboards are one-time operator steps.
+          ONE_TIME_SETUP: "0"
+          # The test job above already passed on this commit.
+          SKIP_TESTS: "1"
+          CLOUDSDK_CORE_DISABLE_PROMPTS: "1"
+        run: bash scripts/deploy-cloud-run.sh
+
+      - name: Smoke test
+        env:
+          GCP_PROJECT: ${{ secrets.GCP_PROJECT_ID || vars.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+        run: |
+          url="$(gcloud run services describe onto-kb --project="$GCP_PROJECT" \
+            --region="$GCP_REGION" --format='value(status.url)')"
+          curl -fsS -o /dev/null "${url%/}/subscribe"
+          curl -fsS -o /dev/null "${url%/}/.well-known/oauth-protected-resource"
+          echo "Live: /subscribe and protected-resource metadata answer."

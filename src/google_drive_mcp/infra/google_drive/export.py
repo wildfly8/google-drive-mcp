@@ -115,6 +115,10 @@ def representation_for(mime: str, content_format: str | None, name: str = "") ->
     raise DomainError.of(ErrorCategory.INVALID_ARGUMENT)
 
 
+class DownloadStalled(DomainError):
+    """Drive stopped sending one file (socket timeout or reset). Other files may be fine."""
+
+
 def _download(
     drive: object, file_id: str, mime_type: str, representation: str, request_id: str | None
 ) -> str:
@@ -128,8 +132,8 @@ def _download(
     except GoogleApiError as exc:
         raise DomainError(map_google_error(exc, request_id=request_id)) from exc
     except OSError as exc:
-        # A socket timeout or reset: the Drive client gives up after 20 s.
-        raise DomainError.of(ErrorCategory.DRIVE_API_ERROR, request_id=request_id) from exc
+        # A socket timeout or reset: the Drive client gives up after 30 s.
+        raise DownloadStalled.of(ErrorCategory.DRIVE_API_ERROR, request_id=request_id) from exc
 
 
 def fetch_text(
