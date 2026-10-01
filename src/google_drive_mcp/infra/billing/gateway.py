@@ -18,6 +18,10 @@ class BillingGateway(Protocol):
         """Active subscriber for an email. Only call after the inbox owner proved it."""
         ...
 
+    def create_portal_url(self, customer_id: str, *, return_url: str) -> str | None:
+        """Stripe customer portal (manage or cancel) for this customer, or None."""
+        ...
+
 
 class InactiveBilling:
     """Paywall on but processor missing: nobody is entitled."""
@@ -32,4 +36,7 @@ class InactiveBilling:
         return None
 
     def active_customer_id_for_email(self, email: str) -> str | None:
+        return None
+
+    def create_portal_url(self, customer_id: str, *, return_url: str) -> str | None:
         return None

@@ -221,7 +221,6 @@ class DriveMcpOAuthProvider(
         claims = verify_refresh_claims(refresh_token.token, self.settings)
         if claims is None or not client.client_id:
             raise TokenError(error="invalid_grant", error_description="refresh token does not exist")
-        self._revoked_jti.add(str(claims["jti"]))
         granted = scopes or [MCP_OAUTH_SCOPE]
         if set(granted) - {MCP_OAUTH_SCOPE}:
             raise TokenError(error="invalid_scope", error_description="only drive.read is supported")
@@ -232,6 +231,9 @@ class DriveMcpOAuthProvider(
         if self.settings.mcp_subscription_required:
             if not sid or not self.billing.is_subscription_active(sid):
                 raise TokenError(error="invalid_grant", error_description="subscription inactive")
+        # Rotate only once the refresh succeeds, so a Stripe outage does not burn
+        # a paying subscriber's refresh token.
+        self._revoked_jti.add(str(claims["jti"]))
         return self._issue_tokens(client.client_id, connect_id=cid, scid=sid)
 
     async def load_access_token(self, token: str) -> AccessToken | None:

@@ -128,6 +128,10 @@ def setup_get(
             "Set up your AI chat app only after payment. "
             "While Stripe shows this subscription as active, that app keeps "
             "calling onto-kb with no further steps from you.</p>"
+            '<form method="post" action="/subscribe/manage">'
+            '<button type="submit">Manage or cancel subscription</button></form>'
+            "<p>Cancelling in Stripe keeps access until the end of the period you paid for; "
+            "the AI chat app then loses access within an hour.</p>"
         )
     if settings.mcp_subscription_required:
         auth_step = (

@@ -137,7 +137,8 @@ def subscribe_get(
         setup = ""
     else:
         status = (
-            "USD 20 each month until you cancel in the Stripe customer portal. "
+            "USD 20 each month until you cancel. Cancel any time with Manage or cancel "
+            "subscription on the setup page, or from the link in your Stripe receipt email. "
             "An AI chat app that already finished Connect keeps working "
             "while the subscription is active."
         )
@@ -450,6 +451,35 @@ async def subscribe_email_verify_post(
     page.delete_cookie(RESUME_COOKIE, path="/")
     page.delete_cookie(EMAIL_COOKIE, path="/subscribe/email")
     return page
+
+
+async def subscribe_manage_post(
+    request: Request, settings: Settings, billing: BillingGateway
+) -> Response:
+    """Stripe customer portal (manage or cancel) for the subscriber this browser holds."""
+    if not settings.mcp_subscription_required:
+        return _page("Payments are not enabled on this server.", code=404)
+    if not _LIMITS.allow(f"manage:{_client_ip(request)}", 20, 3600):
+        return _page("Too many requests. Try again later.", code=429)
+    # Same-site POST only: the SameSite=Lax cookie is not sent from other sites.
+    scid = entitlement_from_request(request, settings)
+    if not scid:
+        return _page(
+            "This browser has no onto-kb subscription. To manage or cancel, use the link "
+            "in your Stripe receipt email, or continue your subscription in this browser "
+            "from the subscribe page first.",
+            '<p><a href="/subscribe">Subscribe page</a></p>',
+            code=403,
+        )
+    origin = issuer_url(settings).rstrip("/")
+    url = billing.create_portal_url(scid, return_url=f"{origin}/setup")
+    if not url:
+        return _page(
+            "The Stripe billing page is not available right now. Use the link in your "
+            "Stripe receipt email to manage or cancel, or try again later.",
+            code=503,
+        )
+    return RedirectResponse(url, status_code=303, headers=_PRIVATE_HEADERS)
 
 
 async def stripe_webhook_post(request: Request, settings: Settings) -> Response:

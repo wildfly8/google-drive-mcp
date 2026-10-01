@@ -15,6 +15,9 @@ from google_drive_mcp.infra.config import Settings
 _LOG = logging.getLogger("google_drive_mcp")
 _STRIPE = "https://api.stripe.com"
 _ENTITLED = frozenset({"active", "trialing"})
+# Stripe asks clients to retry these; a blip must not read as "not subscribed".
+_RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
+_RETRY_DELAYS = (0.25, 0.75)
 
 
 class StripeHttpGateway:
@@ -36,26 +39,69 @@ class StripeHttpGateway:
     def _auth(self) -> tuple[str, str]:
         return (self._key(), "")
 
+    def _get_retrying(self, http: httpx.Client, url: str, params: dict) -> httpx.Response | None:
+        """GET with short retries on Stripe rate limits, 5xx and connect errors."""
+        for attempt in range(len(_RETRY_DELAYS) + 1):
+            last = attempt == len(_RETRY_DELAYS)
+            try:
+                response = http.get(url, params=params, auth=self._auth())
+            except (httpx.ConnectError, httpx.RemoteProtocolError):
+                if last:
+                    return None
+            else:
+                if response.status_code not in _RETRY_STATUS or last:
+                    return response
+            time.sleep(_RETRY_DELAYS[attempt])
+        return None
+
     def is_subscription_active(self, customer_id: str) -> bool:
+        """Fails closed: anything but a clear active or trialing answer is False."""
         if not customer_id or not self._key():
             return False
         owns = self._client is None
         http = self._http()
         try:
-            response = http.get(
+            response = self._get_retrying(
+                http,
                 f"{_STRIPE}/v1/subscriptions",
-                params={"customer": customer_id, "status": "all", "limit": 10},
-                auth=self._auth(),
+                {"customer": customer_id, "status": "all", "limit": 10},
             )
-            if response.status_code != 200:
+            if response is None or response.status_code != 200:
                 return False
-            data = response.json().get("data") or []
+            payload = response.json()
+            data = payload.get("data") if isinstance(payload, dict) else None
+            if not isinstance(data, list):
+                return False
             return any(
                 isinstance(item, dict) and str(item.get("status") or "") in _ENTITLED
                 for item in data
             )
-        except httpx.HTTPError:
+        except (httpx.HTTPError, ValueError):
             return False
+        finally:
+            if owns:
+                http.close()
+
+    def create_portal_url(self, customer_id: str, *, return_url: str) -> str | None:
+        """Stripe-hosted customer portal session; None if the portal is not set up."""
+        if not customer_id.startswith("cus_") or not self._key():
+            return None
+        owns = self._client is None
+        http = self._http()
+        try:
+            response = http.post(
+                f"{_STRIPE}/v1/billing_portal/sessions",
+                content=urlencode({"customer": customer_id, "return_url": return_url}),
+                headers={"content-type": "application/x-www-form-urlencoded"},
+                auth=self._auth(),
+            )
+            if response.status_code != 200:
+                _LOG.warning("stripe_portal_unavailable status=%s", response.status_code)
+                return None
+            url = response.json().get("url")
+            return url if isinstance(url, str) and url.startswith("https://") else None
+        except (httpx.HTTPError, ValueError):
+            return None
         finally:
             if owns:
                 http.close()

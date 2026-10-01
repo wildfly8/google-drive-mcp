@@ -30,6 +30,7 @@ from google_drive_mcp.infra.billing.routes import (
     subscribe_email_verify_get,
     subscribe_email_verify_post,
     subscribe_get,
+    subscribe_manage_post,
 )
 from google_drive_mcp.infra.billing.stripe_api import StripeHttpGateway
 from google_drive_mcp.infra.billing.email_link import IdentityPlatformEmailLink
@@ -202,6 +203,10 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
     @server.custom_route("/subscribe/complete", methods=["GET"])
     async def subscribe_complete(request):
         return await subscribe_complete_get(request, settings, runtime.billing)
+
+    @server.custom_route("/subscribe/manage", methods=["POST"])
+    async def subscribe_manage(request):
+        return await subscribe_manage_post(request, settings, runtime.billing)
 
     @server.custom_route("/webhooks/stripe", methods=["POST"])
     async def stripe_hook(request):
@@ -527,6 +532,7 @@ class _AuthorizationHeaderMiddleware:
         set_authorization(headers.get("authorization"))
         reset_request_drive()
         scid = None
+        resume_cookie: bytes | None = None
         if self.settings is not None:
             from urllib.parse import quote
 
@@ -547,30 +553,37 @@ class _AuthorizationHeaderMiddleware:
                 method == "GET"
                 and path == "/authorize"
                 and self.settings.mcp_subscription_required
-                and not scid
             ):
+                # Remember the in-progress Connect so it resumes after payment or
+                # the email link, whether the browser has no subscription or a lapsed one.
                 query = (scope.get("query_string") or b"").decode()
                 resume = "/authorize" + (f"?{query}" if query else "")
                 if safe_resume(resume):
                     secure = issuer_url(self.settings).startswith("https://")
-                    cookie = (
+                    resume_cookie = (
                         f"{RESUME_COOKIE}={quote(resume, safe='')}; HttpOnly; Path=/; "
                         f"Max-Age=3600; SameSite=Lax"
                         + ("; Secure" if secure else "")
-                    )
-                    await send(
-                        {
-                            "type": "http.response.start",
-                            "status": 302,
-                            "headers": [
-                                (b"location", b"/subscribe"),
-                                (b"set-cookie", cookie.encode()),
-                            ],
-                        }
-                    )
-                    await send({"type": "http.response.body", "body": b""})
-                    return
+                    ).encode()
+                    if not scid:
+                        await send(
+                            {
+                                "type": "http.response.start",
+                                "status": 302,
+                                "headers": [
+                                    (b"location", b"/subscribe"),
+                                    (b"set-cookie", resume_cookie),
+                                ],
+                            }
+                        )
+                        await send({"type": "http.response.body", "body": b""})
+                        return
         set_current_scid(scid)
+        subscribe_url = (
+            f"{issuer_url(self.settings).rstrip('/')}/subscribe".encode()
+            if self.settings is not None
+            else b""
+        )
 
         async def send_renewed(message):
             if (
@@ -579,18 +592,27 @@ class _AuthorizationHeaderMiddleware:
                 and self.settings is not None
                 and self.settings.mcp_subscription_required
             ):
-                token = mint_entitlement(self.settings, customer_id=scid)
-                secure = issuer_url(self.settings).startswith("https://")
-                cookie = (
-                    f"{COOKIE_NAME}={token}; HttpOnly; Path=/; Max-Age={ENTITLEMENT_TTL}; "
-                    "SameSite=Lax" + ("; Secure" if secure else "")
-                )
-                updated = dict(message)
-                updated["headers"] = [
-                    *list(message.get("headers") or []),
-                    (b"set-cookie", cookie.encode()),
-                ]
-                message = updated
+                headers = list(message.get("headers") or [])
+                prefix = f"{COOKIE_NAME}=".encode()
+                # A route that just set a new entitlement (Checkout return, email link)
+                # wins; renewing the old cookie after it would put the old one back.
+                if not any(
+                    k.lower() == b"set-cookie" and v.startswith(prefix) for k, v in headers
+                ):
+                    token = mint_entitlement(self.settings, customer_id=scid)
+                    secure = issuer_url(self.settings).startswith("https://")
+                    cookie = (
+                        f"{COOKIE_NAME}={token}; HttpOnly; Path=/; Max-Age={ENTITLEMENT_TTL}; "
+                        "SameSite=Lax" + ("; Secure" if secure else "")
+                    )
+                    headers.append((b"set-cookie", cookie.encode()))
+                # A lapsed subscriber sent to /subscribe resumes this Connect after paying.
+                if resume_cookie and any(
+                    k.lower() == b"location" and v.split(b"?")[0] in {b"/subscribe", subscribe_url}
+                    for k, v in headers
+                ):
+                    headers.append((b"set-cookie", resume_cookie))
+                message = {**message, "headers": headers}
             await send(message)
 
         await self.app(scope, receive, send_renewed)

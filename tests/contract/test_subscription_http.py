@@ -531,3 +531,104 @@ def test_non_ascii_emails_are_rejected(fake_drive: FakeDrive):
         reply = client.post("/subscribe/email", data={"email": "Kate@example.com"})
         assert reply.status_code == 400
     assert email_link.sent == []
+
+
+def _jar_customer(client: TestClient, settings: Settings) -> str | None:
+    from google_drive_mcp.infra.billing.entitlement import verify_entitlement
+
+    return verify_entitlement(client.cookies.get(COOKIE_NAME), settings)
+
+
+def test_lapsed_subscriber_who_pays_again_gets_the_new_subscription(fake_drive: FakeDrive):
+    settings = _paid_settings()
+    billing = FakeBilling()
+    runtime = Runtime(settings=settings, drive=fake_drive, billing=billing)
+    lapsed = mint_entitlement(settings, customer_id="cus_old")  # canceled, period over
+    with _client(runtime) as client:
+        client.cookies.set(COOKIE_NAME, lapsed, domain="testserver.local")
+        registered = client.post(
+            "/register",
+            json={
+                "redirect_uris": ["http://127.0.0.1/callback"],
+                "client_name": "Claude",
+                "grant_types": ["authorization_code", "refresh_token"],
+                "token_endpoint_auth_method": "none",
+                "scope": "drive.read",
+            },
+        )
+        authorize = client.get(
+            "/authorize",
+            params={
+                "response_type": "code",
+                "client_id": registered.json()["client_id"],
+                "redirect_uri": "http://127.0.0.1/callback",
+                "code_challenge": "abc",
+                "code_challenge_method": "S256",
+                "scope": "drive.read",
+                "resource": "http://127.0.0.1/mcp",
+            },
+            follow_redirects=False,
+        )
+        assert urlparse(authorize.headers["location"]).path == "/subscribe"
+        # The in-progress Connect is remembered even though the browser has a cookie.
+        assert "onto_kb_resume" in authorize.cookies
+        started = client.post("/subscribe/checkout", follow_redirects=False)
+        done = client.get(started.headers["location"].replace("http://127.0.0.1", ""))
+        assert done.status_code == 200
+        # The new subscription's cookie wins over the renewal of the lapsed one.
+        assert _jar_customer(client, settings) == "cus_test_1"
+        assert "/authorize?" in done.text  # back to the Connect that was started
+        resumed = client.get(
+            "/authorize?" + str(authorize.request.url.query, "ascii"), follow_redirects=False
+        )
+        assert "/consent?ticket=" in resumed.headers["location"]
+
+
+def test_email_link_replaces_a_lapsed_cookie(fake_drive: FakeDrive):
+    settings, billing, email_link, runtime = _email_runtime(fake_drive)
+    with _client(runtime) as client:
+        billing.emails["lapsed@example.com"] = "cus_live9"
+        lapsed = mint_entitlement(settings, customer_id="cus_old")
+        client.cookies.set(COOKIE_NAME, lapsed, domain="testserver.local")
+        client.post("/subscribe/email", data={"email": "lapsed@example.com"})
+        code = next(iter(email_link.codes))
+        done = client.post(
+            "/subscribe/email/verify",
+            data={"oobCode": code, "email": "lapsed@example.com"},
+            follow_redirects=False,
+        )
+        assert done.status_code == 303
+        assert _jar_customer(client, settings) == "cus_live9"
+
+
+def test_manage_opens_the_stripe_portal_for_this_browser_only(fake_drive: FakeDrive):
+    settings = _paid_settings()
+    billing = FakeBilling()
+    billing.active.add("cus_live1")
+    runtime = Runtime(settings=settings, drive=fake_drive, billing=billing)
+    token = mint_entitlement(settings, customer_id="cus_live1")
+    with _client(runtime) as client:
+        setup = client.get("/setup", cookies={COOKIE_NAME: token})
+        assert 'action="/subscribe/manage"' in setup.text
+        assert "Manage or cancel subscription" in setup.text
+        client.cookies.clear()
+        opened = client.post(
+            "/subscribe/manage", cookies={COOKIE_NAME: token}, follow_redirects=False
+        )
+        assert opened.status_code == 303
+        assert opened.headers["location"].startswith("https://billing.stripe.test/")
+        assert billing.portals == ["cus_live1"]
+        client.cookies.clear()
+        stranger = client.post("/subscribe/manage", follow_redirects=False)
+        assert stranger.status_code == 403
+        assert billing.portals == ["cus_live1"]
+        billing.portal_ready = False
+        client.cookies.clear()
+        missing = client.post(
+            "/subscribe/manage", cookies={COOKIE_NAME: token}, follow_redirects=False
+        )
+        assert missing.status_code == 503
+        assert "receipt email" in missing.text
+        # The subscribe page tells people where to cancel.
+        client.cookies.clear()
+        assert "Manage or cancel" in client.get("/subscribe").text

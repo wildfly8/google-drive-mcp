@@ -10,6 +10,8 @@ class FakeBilling:
         self.emails: dict[str, str] = {}
         self.checkouts = 0
         self.email_lookups = 0
+        self.portals: list[str] = []
+        self.portal_ready = True
 
     def is_subscription_active(self, customer_id: str) -> bool:
         return customer_id in self.active
@@ -31,6 +33,12 @@ class FakeBilling:
         if customer_id and customer_id in self.active:
             return customer_id
         return None
+
+    def create_portal_url(self, customer_id: str, *, return_url: str) -> str | None:
+        if not self.portal_ready:
+            return None
+        self.portals.append(customer_id)
+        return f"https://billing.stripe.test/p/session/{customer_id}"
 
 
 class FakeEmailLink:
