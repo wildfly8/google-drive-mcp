@@ -23,7 +23,7 @@ from google_drive_mcp.infra.mcp_auth.tokens import issuer_url, verify_ticket_cla
 # Pages here must never load inside another site's frame (clickjacking).
 _HEADERS = {
     "Cache-Control": "no-store",
-    "Referrer-Policy": "no-referrer",
+    "Referrer-Policy": "same-origin",
     "X-Frame-Options": "DENY",
     "Content-Security-Policy": "frame-ancestors 'none'",
 }

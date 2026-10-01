@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 
 from google_drive_mcp.domain.budgets import MAX_BYTES_PER_FILE, Budget
@@ -10,6 +11,29 @@ from google_drive_mcp.domain.errors import DomainError, ErrorCategory
 from google_drive_mcp.domain.google_errors import GoogleApiError, map_google_error
 from google_drive_mcp.domain.operation import OperationStatus, PartialReason
 from google_drive_mcp.infra.google_drive.export import fetch_text, representation_for
+
+# Cloud Run rejects HTTP/1 responses over 32 MiB. The content travels JSON-escaped
+# twice (in the tool's JSON text, then in the JSON-RPC envelope), so a quote or
+# backslash costs 4 bytes and a newline 3. Keep the escaped size under this.
+MAX_WIRE_BYTES = 30 * 1024 * 1024
+_OTHER_CONTROL = re.compile("[\x00-\x07\x0b\x0e-\x1f]")
+
+
+def wire_bytes(text: str) -> int:
+    """Bytes `text` takes once escaped twice as JSON (non-ASCII stays as UTF-8)."""
+    size = len(text.encode("utf-8"))
+    size += 3 * (text.count('"') + text.count("\\"))
+    size += 2 * sum(text.count(c) for c in "\n\r\t\b\f")
+    size += 6 * len(_OTHER_CONTROL.findall(text))
+    return size
+
+
+def _fit_wire(text: str) -> str:
+    """The longest prefix whose escaped size fits MAX_WIRE_BYTES."""
+    cut = int(len(text) * MAX_WIRE_BYTES / wire_bytes(text))
+    while cut > 0 and wire_bytes(text[:cut]) > MAX_WIRE_BYTES:
+        cut = int(cut * 0.95)
+    return text[:cut]
 
 
 def _now() -> str:
@@ -44,11 +68,16 @@ def drive_read(
         name=meta.name,
         size=meta.size,
     )
-    budget.note_bytes(exported.byte_length)
+    text, truncated = exported.text, exported.truncated
+    if wire_bytes(text) > MAX_WIRE_BYTES:
+        # Quote- or newline-heavy text (CSV, JSON) can pass the 20 MB content cap
+        # and still not fit Cloud Run's response limit once escaped.
+        text, truncated = _fit_wire(text), True
+    budget.note_bytes(len(text.encode("utf-8")))
     retrieved_at = _now()
     result = {
         "status": (
-            OperationStatus.PARTIAL.value if exported.truncated else OperationStatus.COMPLETE.value
+            OperationStatus.PARTIAL.value if truncated else OperationStatus.COMPLETE.value
         ),
         "file_id": meta.id,
         "file_name": meta.name,
@@ -57,9 +86,9 @@ def drive_read(
         "source_url": meta.source_url,
         "retrieved_at": retrieved_at,
         "representation": exported.representation,
-        "content": exported.text,
+        "content": text,
     }
-    if exported.truncated:
+    if truncated:
         result["partial_reason"] = PartialReason.max_bytes.value
     return result
 

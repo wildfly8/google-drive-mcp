@@ -10,7 +10,7 @@ _HTML_HEADERS = (
     (b"x-frame-options", b"DENY"),
     (b"content-security-policy", b"frame-ancestors 'none'; base-uri 'none'; object-src 'none'"),
     (b"x-content-type-options", b"nosniff"),
-    (b"referrer-policy", b"no-referrer"),
+    (b"referrer-policy", b"same-origin"),
     (b"cache-control", b"no-store"),
 )
 
