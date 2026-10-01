@@ -56,7 +56,7 @@ Payment happens on the processor's hosted checkout. This origin never displays t
 
 ### User Story 3 - Cancel and lapse stop new access (Priority: P1)
 
-A subscriber can cancel renewal on the processor's customer portal. Access continues through the already-paid period, then MCP token refresh and new Connect fail until they pay again.
+A subscriber can cancel renewal on the processor's customer portal, opened from **Manage or cancel subscription** on `/setup` (or from the processor's own emails). Access continues through the already-paid period, then MCP token refresh and new Connect fail until they pay again. Paying again later works in the same browser and resumes a Connect that was in progress.
 
 **Why this priority**: Mandatory monthly fee is meaningless if cancel still mints tokens forever.
 
@@ -64,8 +64,10 @@ A subscriber can cancel renewal on the processor's customer portal. Access conti
 
 **Acceptance Scenarios**:
 
-1. **Given** an active subscription, **When** the subscriber cancels renewal, **Then** existing access tokens may work until expiry of the current paid period, and refresh after that period MUST fail.
+1. **Given** an active subscription, **When** the subscriber cancels renewal, **Then** refresh keeps working until the paid period ends (the processor keeps the subscription active until then); after it ends, refresh and new Connect MUST fail, and the last access token stops working at its own expiry (at most one hour later).
 2. **Given** past_due / unpaid / revoked, **When** `/authorize` or refresh runs, **Then** no new access token is issued.
+3. **Given** a browser whose subscription lapsed, **When** the subscriber pays again or uses the emailed sign-in link, **Then** the browser holds the new subscription (never the lapsed one) and an in-progress Connect resumes at the Allow page.
+4. **Given** the processor is briefly unreachable or rate-limits a refresh, **When** the AI chat app refreshes, **Then** the server retries briefly; if the processor still does not answer, refresh fails closed but the refresh token is not used up, so a later refresh can succeed.
 3. **Given** a later successful $20/month payment, **When** they Connect again, **Then** access is restored.
 
 ---
@@ -120,18 +122,19 @@ The payment processor requires a public, non-password-protected website whose vi
 ### Functional Requirements
 
 - **FR-001**: When the paywall is enabled, MCP authorization-code issuance MUST require an **active** $20 USD / month entitlement from the payment processor. Token refresh MUST re-check that entitlement.
-- **FR-002**: The advertised price MUST be **USD 20 per calendar month**, auto-renewing, cancelable by the subscriber via the processor's customer portal (or equivalent hosted billing portal).
+- **FR-002**: The advertised price MUST be **USD 20 per calendar month**, auto-renewing, cancelable by the subscriber via the processor's customer portal (or equivalent hosted billing portal). The entitled `/setup` page MUST offer **Manage or cancel subscription**, which opens that portal for the subscriber in this browser only (`POST /subscribe/manage`).
 - **FR-003**: Card collection MUST occur on the processor's hosted checkout (PCI). This origin MUST NOT accept card numbers, CVC, or bank account numbers in its own forms.
 - **FR-004**: Pages, JSON, logs, metrics, and `/stats` MUST NOT expose owner bank/card/KYC, subscriber PAN/bank, subscriber email, or processor customer ids.
 - **FR-005**: Unpaid `/authorize` MUST NOT mint an authorization code. Unpaid refresh MUST NOT mint a new access token.
-- **FR-006**: When the paywall is on, `GET /setup` without a valid entitlement cookie for an active subscription MUST show only the fee and a link to checkout. It MUST NOT include the connector URL, copy control, host connection steps, the “knowing this URL is enough” note, usage counts, or Google Cloud console links. Those appear only for an active entitlement. A `GET /subscribe` (or equivalent) MUST start checkout.
+- **FR-006**: When the paywall is on, `GET /setup` without a valid entitlement cookie for an active subscription MUST show only the fee and a link to checkout. It MUST NOT include the connector URL, copy control, host connection steps, the “knowing this URL is enough” note, usage counts, or Google Cloud console links. The connector URL and steps appear only for an active entitlement; usage counts and console links never appear on `/setup` while the paywall is on, and public `/stats` then omits console links (they name the cloud project). A `GET /subscribe` (or equivalent) MUST start checkout.
 - **FR-007**: Drive tools, one deployment Google identity, and Retrieval Core contracts MUST remain as in 001–002. Payment does not expand Google grant.
 - **FR-008**: Connect telemetry (003) MUST still count only successful paid Connects (authorization-code token issuance after entitlement).
 - **FR-009**: Go-live deploy MUST run with the paywall **on**; the deploy script MUST refuse to deploy without the processor key and price rather than serve kb free. `MCP_OAUTH_AUTO_APPROVE` MUST NOT bypass the paywall or the subscriber's Allow click.
 - **FR-010**: Processor webhook (or equivalent signed events) MUST update or confirm entitlement; spoofed unsigned POSTs MUST be rejected.
-- **FR-011**: After a successful payment, a connected AI chat app MUST keep calling tools with no subscriber action while the processor reports that subscription active. Refresh MUST re-check the processor and MUST rotate a long-lived refresh token on success. `/subscribe` shows the Pay button and, when configured, a form that emails a one-time sign-in link. Entitlement in another browser MUST require proof of inbox ownership (the emailed link), never an email address alone. A completed Checkout MUST grant entitlement only to the customer who paid in that session. Checkout in the paying browser MUST still be able to finish Connect without pasting a card on this origin.
+- **FR-011**: After a successful payment, a connected AI chat app MUST keep calling tools with no subscriber action while the processor reports that subscription active. Refresh MUST re-check the processor and MUST rotate a long-lived refresh token on success. `/subscribe` shows the Pay button and, when configured, a form that emails a one-time sign-in link. Entitlement in another browser MUST require proof of inbox ownership (the emailed link), never an email address alone. A completed Checkout MUST grant entitlement only to the customer who paid in that session. Checkout in the paying browser MUST still be able to finish Connect without pasting a card on this origin. A new entitlement set by a route (Checkout return, email link) MUST NOT be overwritten by renewal of the browser's previous cookie.
 - **FR-014**: With the paywall on, every Connect MUST show the subscriber an Allow page naming the client's return address, and MUST issue a code only after the Allow click from the same entitled browser while the processor reports the subscription active. Consent pages MUST NOT be frameable.
 - **FR-015**: The entitlement MUST be accepted only from the HttpOnly cookie this origin sets. It MUST NOT be shown on any page or accepted from a URL query parameter, form field or header, because URLs end up in server logs, browser history and Referer headers and can be shared.
+- **FR-016**: Processor errors MUST fail closed (no token, no Connect). Transient processor errors (rate limits, 5xx, connection failures) MUST be retried briefly before failing, and a refresh that fails for that reason MUST NOT use up the refresh token.
 - **FR-012**: The owner MUST be able to open the processor dashboard to see payouts. That dashboard is not this MCP. This origin MUST NOT print payout bank details.
 - **FR-013**: A free public HTTPS page MUST show the business name **WisdomSpringTech**, state that the product is a hosted read-only MCP subscription (onto-kb) at USD 20 per month for any AI chat app that supports a remote MCP connector, and state that connector setup is available only after payment. The page MUST contain one link, to checkout, and MUST be viewable without a password. It MUST NOT show the connector setup URL, owner bank, or card details.
 
@@ -149,7 +152,7 @@ The payment processor requires a public, non-password-protected website whose vi
 - **SC-001**: A new visitor cannot obtain a working MCP access token in under 5 minutes without completing a $20/month payment (test mode allowed in CI).
 - **SC-002**: After a successful test payment, a visitor can finish Connect and complete one `drive_*` call within 5 minutes using the existing connector steps.
 - **SC-003**: A reviewer of `/setup`, `/subscribe`, `/stats`, and application logs finds zero owner bank/card numbers and zero subscriber card numbers.
-- **SC-004**: After the processor marks a subscription inactive, new Connect and token refresh fail within one token lifetime (≤ 1 hour for access tokens).
+- **SC-004**: After the processor marks a subscription inactive, new Connect and token refresh fail at once, and tool calls stop within one access-token lifetime (≤ 1 hour). With cancel at period end this is after the paid period. Proven end to end in `tests/contract/test_subscription_cancel.py`.
 - **SC-005**: 100% of production Connects that mint tokens have an active paid period at issuance time when the paywall is on.
 - **SC-006**: A reviewer can open `https://wisdomspringtech.github.io/` with no login and see WisdomSpringTech plus the $20/month onto-kb offer within one page load.
 - **SC-007**: An assistant that already connected for an active subscription can refresh and call a Drive tool after 30 days without the subscriber opening checkout again.

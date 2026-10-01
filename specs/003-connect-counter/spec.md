@@ -108,7 +108,7 @@ The owner wants charts in the cloud operations console (not only `GET /stats`): 
 - **FR-008**: Failed `/authorize` probes, `/authorize` redirects to `/subscribe`, Allow clicks never followed by a code exchange, and failed token exchanges (including a code refused because the subscription is no longer active) MUST NOT increment `oauth_connects`.
 - **FR-009**: Deploy MUST publish the same two counters as operations time-series (Connects and first Drive uses), groupable by `host_family` only.
 - **FR-010**: The owner MUST be able to open a named operations dashboard for this connector that shows those two charts, without using `GET /stats`.
-- **FR-011**: `GET /stats` MUST include console links to the log view, metrics explorer, and dashboards list when a cloud project is configured. Links MUST NOT include credentials.
+- **FR-011**: With the paywall off, `GET /stats` MUST include console links to the log view, metrics explorer, and dashboards list when a cloud project is configured. With the paywall on, the public `/stats` MUST omit them, because they name the cloud project; operators get them from `scripts/ensure-connect-telemetry-gcp.sh`. Links MUST NOT include credentials. The log-scan result MAY be reused for up to one minute, and the scan counts only this Cloud Run service.
 
 ### Key Entities
 

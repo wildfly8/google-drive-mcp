@@ -701,6 +701,12 @@ def test_paid_connect_counts_once_and_a_lapsed_exchange_counts_nothing(fake_driv
         return exchanged.status_code
 
     with _client(runtime) as client:
+        unpaid = client.get(
+            "/authorize",
+            params={"response_type": "code", "client_id": "x", "redirect_uri": "http://127.0.0.1/cb"},
+            follow_redirects=False,
+        )
+        assert unpaid.headers["location"] == "/subscribe"
         assert client.get("/stats").json()["oauth_connects"] == 0
         assert connect(client) == 200
         assert client.get("/stats").json()["oauth_connects"] == 1

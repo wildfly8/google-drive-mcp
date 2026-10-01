@@ -12,11 +12,13 @@ STRIPE_PRICE_ID=price_…
 MCP_SUBSCRIPTION_REQUIRED=true
 ```
 
+3a. Customer portal (so subscribers can cancel): Stripe Dashboard → Settings → Billing → Customer portal. Allow cancelling subscriptions **at the end of the billing period**, allow updating the payment method, save in **live mode**, and turn on the portal link in customer emails. Until it is saved in live mode, **Manage or cancel subscription** answers 503 and points subscribers to their receipt email.
+3b. Also in Secret Manager: `MCP_AUTH_TOKEN` (at least 32 random characters; it derives the signing key unless `MCP_OAUTH_SIGNING_KEY` is set, and the server refuses to start with less) and `DRIVE_ALLOWED_FOLDER_ID` (the kb folder id; the deploy reads it from there, never from the repo).
 4. Webhook endpoint: `https://<origin>/webhooks/stripe` events: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`.
 5. Deploy. Open `/setup` with no payment cookie — fee and `/subscribe` only. After Checkout, `/setup` shows Claude, ChatGPT, and Cursor steps. An assistant that already connected keeps working while Stripe shows the subscription active. Another browser continues the same subscription through an emailed one-time sign-in link. Each Connect asks the subscriber to click Allow.
 6. Test mode: pay, then Claude Connect. Unpaid Connect must fail.
 
-Automated: `uv run pytest tests/contract/test_subscription_http.py tests/unit/billing -q`
+Automated: `uv run pytest tests/contract/test_subscription_http.py tests/contract/test_subscription_cancel.py tests/unit/billing -q` (the cancel file drives the real Stripe gateway against a faked Stripe HTTP API through cancel at period end, immediate cancel, failed renewal, trial and outages)
 
 ## Email sign-in links (continue a subscription in another browser)
 

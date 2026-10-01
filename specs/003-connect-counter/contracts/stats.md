@@ -50,6 +50,8 @@ Unauthenticated. Non-PII connect totals for this origin. Always HTTP 200 with JS
 - `0`/`false`/`no`: in-process counts only. `source` is `process`.
 - Unset or any other value: Cloud Logging on Cloud Run (`K_SERVICE` set), else process counts.
 - `gcp` is present when a project is known (`GOOGLE_CLOUD_PROJECT`, `GCP_PROJECT`, `GCLOUD_PROJECT`, or the Cloud Run metadata server), whatever the source. Log links filter on the Cloud Run service name (`K_SERVICE`, else `CLOUD_RUN_SERVICE`, else `onto-kb`).
+- With the paywall on (`MCP_SUBSCRIPTION_REQUIRED`), `gcp` is never present: the links name the cloud project and this endpoint is public.
+- A Cloud Logging scan is reused for 60 s per instance, so repeated anonymous requests do not spend the Logging read quota; the filter includes `resource.labels.service_name` (`K_SERVICE`, else `CLOUD_RUN_SERVICE`, else `onto-kb`).
 
 ## Forbidden
 

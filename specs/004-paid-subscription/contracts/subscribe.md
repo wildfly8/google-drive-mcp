@@ -24,6 +24,10 @@ Starts hosted Checkout (`mode=subscription`). Redirects to Stripe. 503 if Stripe
 
 A `session_id` that is not shaped like a Checkout Session id (`cs_live_…` or `cs_test_…`) → 400 without calling the processor; rate limited per client address. Retrieves the Checkout Session. Only `status=complete` with `payment_status` `paid` (or `no_payment_required`) counts. Set-Cookie entitlement for the customer who paid in that session, never another customer (the email typed at Checkout is not verified). HTML: return to the AI chat app. The entitlement is only set as an HttpOnly cookie; it is never shown on the page.
 
+## `POST /subscribe/manage`
+
+Same-site form button on the entitled `/setup` page. Opens the processor's customer portal (manage card, cancel) for the customer in this browser's entitlement cookie: 303 to the portal session URL, which returns to `/setup`. No cookie → 403 with a pointer to the receipt email and `/subscribe`. Portal not configured or processor error → 503 with the same pointer. Rate limited per client address. Paywall off → 404. The SameSite=Lax cookie is not sent on cross-site POSTs, so other sites cannot open the portal for a subscriber.
+
 ## `POST /webhooks/stripe`
 
 Stripe-Signature required. Invalid signature → 400. Valid → 200. Body not logged.
@@ -32,11 +36,17 @@ Stripe-Signature required. Invalid signature → 400. Valid → 200. Body not lo
 
 When the paywall is on and the request has no active entitlement: HTML is only the $20 fee and a link to `/subscribe`. No connector URL, copy control, AI chat app steps, OAuth note, usage counts, or Google Cloud console links.
 
-When the entitlement verifies and Stripe reports the subscription active: connector URL and setup steps for any AI chat app that can add a remote MCP server, including the Allow step. No operator Google Cloud console links.
+When the entitlement verifies and Stripe reports the subscription active: connector URL and setup steps for any AI chat app that can add a remote MCP server, including the Allow step, and a **Manage or cancel subscription** button (`POST /subscribe/manage`). No usage counts and no operator Google Cloud console links; the page does not scan logs while the paywall is on.
+
+## `GET /stats` (003)
+
+With the paywall on, the public JSON has the non-PII totals but no `gcp` console links (they name the cloud project).
 
 ## `GET /authorize` (existing)
 
-If paywall on and no active entitlement → 302 `/subscribe`. If entitled → 302 `/consent?ticket=` (a signed, 10-minute ticket that names this subscriber). Never a code without the Allow click.
+If paywall on and no entitlement cookie → 302 `/subscribe`. A cookie whose subscription is no longer active → 302 `/subscribe` too. Either way the in-progress `/authorize` URL is kept in a 1-hour resume cookie, so Checkout or the email link returns to it. If entitled → 302 `/consent?ticket=` (a signed, 10-minute ticket that names this subscriber). Never a code without the Allow click.
+
+Cookie renewal: every response to a browser with a valid entitlement cookie renews it for 400 days, unless the route itself just set a new entitlement (Checkout return, email link); the new one is kept.
 
 ## `GET /consent?ticket=` / `POST /consent`
 
@@ -44,4 +54,4 @@ Paid ticket: an Allow page showing the client's self-declared name and the host 
 
 ## `POST /token` refresh
 
-If paywall on and Stripe says not active (or missing `scid`) → `invalid_grant`.
+If paywall on and Stripe says not active (or missing `scid`) → `invalid_grant`. Stripe 429, 5xx or connection errors are retried up to three attempts (about 1 s in all); a non-JSON or malformed reply counts as not active. The refresh token rotates only on success, so a refresh refused during a Stripe outage can be retried with the same token. Access tokens are not re-checked on `/mcp`; they expire within 1 hour.

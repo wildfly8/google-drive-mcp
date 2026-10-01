@@ -43,4 +43,9 @@
 - [x] T022 `scripts/deploy-cloud-run.sh` refuses to deploy without the Stripe key and price instead of deploying a free server (FR-009)
 - [x] T023 Security review fixes: rate limiter memory bounded (LRU, idle keys pruned); `/subscribe/complete` checks the session id shape and is rate limited; subscriber lookup by email ignores case (Stripe Search fallback, stored email must match); non-ASCII emails rejected
 - [x] T024 Remove the `?entitlement=` URL fallback (middleware and `/setup` / `/subscribe`) and the token shown on `/subscribe/complete`; the cookie is the only source (FR-015)
+- [x] T025 Prove cancellation end to end (`tests/contract/test_subscription_cancel.py`, real Stripe gateway, faked Stripe HTTP): cancel at period end, immediate cancel, past_due, unpaid, trialing, Stripe 500/429/unreachable/non-JSON (SC-004)
+- [x] T026 Fix re-subscribe after a lapse: cookie renewal no longer overwrites an entitlement a route just set; the resume cookie is also set when a lapsed cookie is sent to `/subscribe` (US cancel scenario 3, FR-011)
+- [x] T027 Stripe calls retry 429/5xx/connect errors briefly and fail closed on malformed replies; the refresh token rotates only after a successful refresh (FR-016)
+- [x] T028 `POST /subscribe/manage` opens the Stripe customer portal for this browser's subscriber; **Manage or cancel subscription** on the entitled `/setup`; wording on `/subscribe` and the business page (FR-002)
+- [x] T029 Paid `/setup` skips the log scan; paid `/stats` omits console links; the server refuses to start with signing material under 32 characters (FR-006, AC-FR-010)
 

@@ -8,6 +8,13 @@
 - Signed with the same HMAC material as MCP JWTs
 - Never logged
 - Only ever the HttpOnly cookie: never shown on a page, never accepted from a URL (FR-015)
+- Renewed on each response, except when that response sets a new entitlement
+
+## ResumeCookie (browser)
+
+- `onto_kb_resume`: the in-progress `/authorize` path and query, 1 hour, HttpOnly, SameSite=Lax
+- Set when `/authorize` sends the browser to `/subscribe` (no cookie, or a lapsed subscription)
+- Read by the Checkout return and the email link to continue Connect at the Allow page
 
 ## Token claim `scid`
 

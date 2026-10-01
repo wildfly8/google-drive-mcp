@@ -38,3 +38,14 @@
 
 **Alternatives considered**: A dedicated Gmail account sending codes (needs a human to create the account). Resend/Brevo/Mailjet free tiers (need a domain for deliverability). Keeping passkeys with a cross-device prompt (more surface for little gain).
 
+## Decision: Cancellation is enforced by pull checks, tested end to end (2026-10-01)
+
+**Rationale**: Stripe keeps a subscription `active` until the paid period ends when the subscriber cancels at period end, then sets it to `canceled`; an immediate cancel is `canceled` at once; failed renewals are `past_due` then `unpaid` or `canceled` (Stripe docs on cancel, subscription statuses and the list endpoint). Every step that issues a credential asks Stripe live (`status=all`, active or trialing only), so the webhook is not needed for revocation and access ends within one access-token lifetime. Testing this exposed three bugs, now fixed: renewal of the old cookie overwrote a new entitlement (a lapsed subscriber who paid again stayed locked out), a lapsed Connect was not resumed after paying, and a single Stripe 429/5xx used up the refresh token.
+
+**Alternatives considered**: Webhook-driven revocation (needs shared state across instances; pull checks already bound the delay to one hour). Treating `past_due` as entitled during Stripe's retry window (Stripe's "leave as past_due" setting could then grant access forever). Per-request Stripe checks on `/mcp` (one Stripe call per tool call).
+
+## Decision: Cancel through the Stripe customer portal from `/setup` (2026-10-01)
+
+**Rationale**: FR-002 promised cancellation in the processor's portal, but nothing linked to it. A portal session for the customer in this browser's cookie needs no new account or stored data, and the SameSite=Lax cookie keeps other sites from opening it.
+
+**Alternatives considered**: Publishing the no-code portal login link only (works, but subscribers must find it). A cancel button on this origin calling the API directly (re-implements what the portal already does, including retention and invoices).
