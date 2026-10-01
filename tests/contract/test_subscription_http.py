@@ -123,7 +123,9 @@ def test_entitled_cookie_allows_connect(fake_drive: FakeDrive):
         assert page.status_code == 200
         assert "Allow this app to use your onto-kb subscription?" in page.text
         assert "paywall-test" in page.text
-        assert "127.0.0.1" in page.text and "a known AI chat app address" in page.text
+        # A loopback return address is a program on this computer, not a known chat app.
+        assert "127.0.0.1" in page.text and "a program on this computer" in page.text
+        assert "a known AI chat app address" not in page.text
         assert page.headers["x-frame-options"] == "DENY"
         assert "frame-ancestors 'none'" in page.headers["content-security-policy"]
         assert 'type="password"' not in page.text  # no deployment password for subscribers

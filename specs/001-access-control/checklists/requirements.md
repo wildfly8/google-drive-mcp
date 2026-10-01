@@ -31,7 +31,7 @@
 
 ## Notes
 
-- MCP OAuth 2.1 **protocol** (auth-code + PKCE, DCR, RFC 9728, consent password vs access token) is specified in AC-FR-012. JWT codec, TTLs, signing-key derivation, and in-memory DCR storage remain plan-level (Article XII).
+- MCP OAuth 2.1 **protocol** (auth-code + PKCE, DCR, RFC 9728, consent password vs access token) is specified in AC-FR-012. JWT codec, TTLs, signing-key derivation, and the stateless DCR `client_id` encoding remain plan-level (Article XII).
 - Constitution citations use ratified v1.0.0 (source attachments named v2.0.0; article text matches v1.0.0).
 - Error category names (`AUTHENTICATION_ERROR`, `AUTHORIZATION_ERROR`) are agent-visible domain taxonomy, not transport APIs.
 - Analyze remediations (2026-09-08): AUTH metadata vs content I/O; `evaluate_chain` test vehicle; `map_google_error` vs walk 429; AC polish pytest scoped to auth files.

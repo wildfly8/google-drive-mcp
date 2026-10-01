@@ -20,9 +20,9 @@ Denial split (locked):
 
 MCP authentication (locked, AC-FR-012): this Cloud Run origin is both OAuth 2.1 authorization server and MCP resource server. Hosts complete authorization-code + PKCE S256, DCR (`POST /register`) or CIMD, and RFC 9728 discovery, then call `/mcp` with a short-lived access token. `MCP_AUTH_TOKEN` is the consent password only — not a `/mcp` Bearer. Google OAuth (`GOOGLE_*` / authorized-user JSON) is the Drive identity adapter, never the MCP login.
 
-Paid Connect (locked, AC-FR-013, 2026-10-01): with the 004 paywall on, a browser without an active subscription is sent to `/subscribe`. For an active subscriber, `/authorize` always mints a consent ticket that names the subscriber (`scid`) and redirects to the `/consent` Allow page. `POST /consent` issues the code only when the browser’s entitlement cookie names that same subscriber and the processor reports it active. `MCP_OAUTH_AUTO_APPROVE` only skips consent when the paywall is off.
+Paid Connect (locked, AC-FR-013, 2026-10-01): with the 004 paywall on, a browser without an active subscription is sent to `/subscribe`. For an active subscriber, `/authorize` always mints a consent ticket that names the subscriber by a keyed hash (`scid_hash`; the ticket URL lands in request logs, so never the customer id) and redirects to the `/consent` Allow page. `POST /consent` issues the code, for the browser’s own `scid`, only when the hash of the browser’s entitlement matches and the processor reports it active. `MCP_OAUTH_AUTO_APPROVE` only skips consent when the paywall is off.
 
-Technical approach: a Python hexagonal MCP server on Cloud Run. Access control is a domain package with no Google client types. MCP OAuth 2.1 (JWT access tokens, in-memory DCR, consent) and Google OAuth refresh-token use are infrastructure adapters. Retrieval tools may run only after this chain returns `ALLOW`. Shared `map_google_error()` maps 404/403-as-404 (and single-file 429 with no prefix). Walk 429 is Retrieval completeness (`PARTIAL`), not this mapper.
+Technical approach: a Python hexagonal MCP server on Cloud Run. Access control is a domain package with no Google client types. MCP OAuth 2.1 (JWT access tokens, stateless DCR, consent) and Google OAuth refresh-token use are infrastructure adapters. Retrieval tools may run only after this chain returns `ALLOW`. Shared `map_google_error()` maps 404/403-as-404 (and single-file 429 with no prefix). Walk 429 is Retrieval completeness (`PARTIAL`), not this mapper.
 
 ## Technical Context
 
@@ -30,9 +30,9 @@ Technical approach: a Python hexagonal MCP server on Cloud Run. Access control i
 
 **Primary Dependencies**: Official MCP Python SDK (`mcp` 2.x, Streamable HTTP); `google-auth` + `google-api-python-client` (Google adapter only); `pydantic` for request-scoped models; `httpx` for CIMD fetches and Streamable HTTP contract tests
 
-**Storage**: None persistent for Drive content. Google refresh token (or authorized-user JSON), the resource-owner consent password, and the `kb` folder id (`DRIVE_ALLOWED_FOLDER_ID`) live in Secret Manager. MCP access, refresh, authorization-code, and consent-ticket values are HS256 JWTs (verifiable on any instance). DCR client records, CIMD client records fetched on demand, and used-code / revocation `jti` sets are in-memory auth protocol state (Article III exception; hosts re-register).
+**Storage**: None persistent for Drive content. Google refresh token (or authorized-user JSON), the resource-owner consent password, and the `kb` folder id (`DRIVE_ALLOWED_FOLDER_ID`) live in Secret Manager. MCP access, refresh, authorization-code, consent-ticket, and DCR `client_id` values are HS256 JWTs (verifiable on any instance; DCR hosts do not re-register). CIMD client records fetched on demand and used-code / revocation `jti` maps are bounded in-memory auth protocol state (Article III exception).
 
-**Testing**: pytest, pytest-asyncio; contract tests for auth failures via `evaluate_chain` (`folder_id` + `file_ids`) and the in-process `scope_probe` tool; allow-list tests for the omitted-folder rewrite, equal Drive calls for outside / missing / ungranted ids, and the startup checks; Streamable HTTP tests for RFC 9728 / AS metadata, DCR+PKCE and CIMD token issue, the consent password, and rejection of `MCP_AUTH_TOKEN` as Bearer; paywall contract tests for the Allow page (004); unit tests for JWT verify, chain order, `is_within_scope` with an injected parent map, and secret hygiene. Fake Drive counts **metadata**, **subfolder listing**, and **content** I/O separately. `Settings.for_tests()` sets `MCP_OAUTH_AUTO_APPROVE=true` with the paywall off. Production (`scripts/deploy-cloud-run.sh`) also sets it to true, but the deploy refuses to run without the paywall, and with the paywall on auto-approve is ignored. A deploy without the paywall MUST leave auto-approve off unless knowing the URL is meant to be enough to Connect.
+**Testing**: pytest, pytest-asyncio; contract tests for auth failures via `evaluate_chain` (`folder_id` + `file_ids`) and the in-process `scope_probe` tool; allow-list tests for the omitted-folder rewrite, equal Drive calls for outside / missing / ungranted ids, and the startup checks; Streamable HTTP tests for RFC 9728 / AS metadata, DCR+PKCE and CIMD token issue, the consent password, and rejection of `MCP_AUTH_TOKEN` as Bearer; OAuth limit tests (`tests/contract/test_oauth_limits.py`: a DCR client used on a fresh app instance, tampered `client_id`, metadata limits, CIMD bounds, body caps, rate limits, ticket privacy, loopback verdict); paywall contract tests for the Allow page (004); unit tests for JWT verify, chain order, `is_within_scope` with an injected parent map, and secret hygiene. Fake Drive counts **metadata**, **subfolder listing**, and **content** I/O separately. `Settings.for_tests()` sets `MCP_OAUTH_AUTO_APPROVE=true` with the paywall off. Production (`scripts/deploy-cloud-run.sh`) also sets it to true, but the deploy refuses to run without the paywall, and with the paywall on auto-approve is ignored. A deploy without the paywall MUST leave auto-approve off unless knowing the URL is meant to be enough to Connect.
 
 **Target Platform**: Linux, Cloud Run (stateless HTTP). Local stdio optional for inspector, not the production contract.
 
@@ -48,18 +48,19 @@ Technical approach: a Python hexagonal MCP server on Cloud Run. Access control i
 | --- | --- |
 | Combined AS + RS | Same Cloud Run origin (`mcp` SDK `AuthSettings` + `DriveMcpOAuthProvider`) |
 | Access token | HS256 JWT; `aud` / RFC 8707 resource = `{issuer}/mcp`; scope `drive.read` |
-| Claims | `typ` (`access` / `refresh` / `code` / `ticket`), `iss`, `aud`, `sub` = `MCP_PRINCIPAL_ID`, `client_id`, `scope`, `iat`, `exp`, `jti`, `resource`. Access and refresh may add `cid` (Connect id, 003); all four may add `scid` (Stripe customer, 004). Code and ticket add `redirect_uri`, `redirect_uri_provided_explicitly`, `code_challenge`; the ticket adds `state` |
+| Claims | `typ` (`access` / `refresh` / `code` / `ticket`), `iss`, `aud`, `sub` = `MCP_PRINCIPAL_ID`, `client_id`, `scope`, `iat`, `exp`, `jti`, `resource`. Access and refresh may add `cid` (Connect id, 003); access, refresh, and code may add `scid` (Stripe customer, 004), and the ticket instead adds `scid_hash` (base64url `HMAC-SHA256(key, "consent-scid:" + scid)`). Code and ticket add `redirect_uri`, `redirect_uri_provided_explicitly`, `code_challenge`; the ticket adds `state`. A DCR `client_id` is a JWT with `typ` = `dcr`, `aud` = issuer, `iat`, a random `jti`, and the registration (see DCR) |
 | Verify | Signature, `typ`, `iss`, `aud`, unexpired `exp`, scope `drive.read`, non-empty `client_id` and `jti`. Header must be `alg=HS256`, `typ=JWT`; tokens over 8 KiB are rejected. On `/mcp` the `Bearer ` prefix is optional (`extract_bearer`) |
-| Signing key | `SHA-256(MCP_OAUTH_SIGNING_KEY)` if set, else `SHA-256("mcp-oauth-jwt-v1:" + MCP_AUTH_TOKEN)`. The same key signs consent tickets and the 004 entitlement and email-link cookies; `typ` and `aud` keep them apart |
+| Signing key | `SHA-256(MCP_OAUTH_SIGNING_KEY)` if set, else `SHA-256("mcp-oauth-jwt-v1:" + MCP_AUTH_TOKEN)`. The same key signs consent tickets, DCR `client_id` values, and the 004 entitlement and email-link cookies; `typ` and `aud` keep them apart. It also derives DCR client secrets and the ticket `scid_hash` (HMAC with a distinct label each) |
 | Default TTLs | access 3600s; refresh 2592000s (a paid refresh token with `scid`: 400 days, and each refresh re-checks the processor); authorization code 120s; consent ticket 600s (`aud` = `{issuer}/consent`) |
 | Consent (paywall off) | `GET`/`POST /consent` password page; password = `MCP_AUTH_TOKEN` (HMAC compare). Skipped when `MCP_OAUTH_AUTO_APPROVE=true` |
-| Consent (paywall on) | Unpaid `GET /authorize` → `/subscribe`. Entitled → `/consent` Allow page (client name, return host, known AI chat app address or not; no password). `POST /consent` needs the browser’s entitlement `scid` = ticket `scid` and an active subscription, else the expired page (400). Code exchange and refresh re-check the subscription (`invalid_grant`). Auto-approve ignored |
+| Consent (paywall on) | Unpaid `GET /authorize` → `/subscribe`. Entitled → `/consent` Allow page (client name, return host marked a known AI chat app address, a program on this computer for a loopback host, or neither; no password). `POST /consent` needs the keyed hash of the browser’s entitlement `scid` = ticket `scid_hash` and an active subscription, else the expired page (400); the code carries the browser’s `scid`. Code exchange and refresh re-check the subscription (`invalid_grant`). Auto-approve ignored |
 | Consent page headers | `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'` |
 | PKCE | S256 required (MCP SDK authorize/token handlers) |
 | Scope and resource | Only `drive.read`; any other scope is `invalid_scope`. A `resource` other than this server’s `/mcp` URL is `invalid_target` |
-| DCR | `POST /register`; client map is process memory |
-| CIMD | `client_id` HTTPS URLs on `chatgpt.com`, `claude.ai`, `claude.com` (and `www.`) only; fetched on demand (5 s, no redirects); a same-shape public client is synthesized when the fetch fails; granted `drive.read`; public client (`none`) |
-| Codes and refresh | A code is single-use per instance (used `jti` set). Each refresh rotates and revokes the old refresh `jti` on that instance |
+| DCR | `POST /register`, stateless (`infra/mcp_auth/dcr.py`): the provider replaces the SDK’s random `client_id` with a signed record (`ru`, `cn` first 100 characters, `gt`, `rt`, `am`, `sc`) and, for secret auth methods, sets `client_secret` = hex `HMAC-SHA256(key, "dcr-secret:" + client_id)`, `client_secret_expires_at` = 0. The SDK `RegistrationHandler` returns that same object. `get_client` verifies and decodes it on any instance (LRU of 1000). Limits: name ≤ 200, ≤ 5 redirect URIs of ≤ 512, ≤ 5 contacts of ≤ 254, ≤ 16 KB, `client_id` ≤ 4096 characters, else 400 `invalid_client_metadata` |
+| CIMD | `client_id` HTTPS URLs on `chatgpt.com`, `claude.ai`, `claude.com` (and `www.`) only, at most 512 characters; fetched on demand (5 s, no redirects); a same-shape public client is synthesized when the fetch fails and kept 5 minutes; records are an LRU of 2000 per instance (`CimdClients`); granted `drive.read`; public client (`none`) |
+| Codes and refresh | A code is single-use per instance (used `jti` map). Each refresh rotates and revokes the old refresh `jti` on that instance. Both maps hold `jti` → `exp` and drop expired entries on insert |
+| Request limits | `mcp/limits.py`, the outermost middleware: bodies over 4 MiB (`/mcp`), 1 MiB (`/webhooks/stripe`), or 64 KB (elsewhere) → 413 before any route; per client address (last `X-Forwarded-For` entry) `POST /register` 20/hour, `POST /token` 120/minute, `GET`+`POST /authorize` 120/minute → 429 + `Retry-After` |
 | Revocation | `POST /revoke` (RFC 7009) adds the `jti` to that instance’s memory; code and refresh exchange on that instance honor it. The MCP SDK handler requires a `client_secret` form field, so a public client that omits it gets HTTP 400 (`invalid_request`) |
 | `/mcp` Bearer | `verify_access_claims` only (JWT; the revoked `jti` set and the processor are not consulted, so an access token works until it expires) — `MCP_AUTH_TOKEN` MUST 401 |
 | Mixed auth | Only a `tools/call` that names a `drive_*` tool needs a Bearer; `initialize`, `tools/list`, other JSON-RPC methods, and CORS preflight do not. Such a call without a valid Bearer → HTTP 401 + `WWW-Authenticate` (`resource_metadata` = origin `/.well-known/oauth-protected-resource`). `GET /mcp` → 405 |
@@ -80,7 +81,7 @@ Technical approach: a Python hexagonal MCP server on Cloud Run. Access control i
 | evidence carries provenance | N/A (Retrieval Core) |
 | partiality is visible | PASS — auth failures are classified errors, never empty success |
 | compute is ephemeral | PASS — JWT access tokens verify on any instance; Google creds minted per request |
-| no hidden persistent state exists | PASS — no token cache on disk; secrets from env; in-memory DCR is a documented Article III exception |
+| no hidden persistent state exists | PASS — no token cache on disk; secrets from env; DCR is stateless (signed `client_id`); bounded in-memory CIMD records and `jti` maps are a documented Article III exception |
 | authorization is independently enforced | PASS — chain is explicit, ordered, non-skippable |
 | agent reasoning and retrieval mechanics stay separate | PASS — agent justification cannot satisfy any step |
 | no RAG index is required for correctness | PASS — not used |
@@ -125,8 +126,9 @@ src/google_drive_mcp/
 │   │   ├── jwt.py             # HS256 encode/decode (alg=none rejected)
 │   │   ├── tokens.py          # mint/verify access, refresh, code, consent ticket; signing key
 │   │   ├── provider.py        # DCR/CIMD + auth-code + PKCE OAuthAuthorizationServerProvider
+│   │   ├── dcr.py             # stateless DCR: signed client_id, derived secret, metadata limits
 │   │   ├── consent.py         # GET/POST /consent: password page or paid Allow page
-│   │   ├── cimd.py            # Client ID Metadata Documents (ChatGPT, Claude)
+│   │   ├── cimd.py            # Client ID Metadata Documents (ChatGPT, Claude); bounded LRU
 │   │   ├── chatgpt_compat.py  # mixed auth on /mcp, 401 + WWW-Authenticate, metadata routes
 │   │   └── setup.py           # GET /setup connector page
 │   └── google_auth/
@@ -135,6 +137,7 @@ src/google_drive_mcp/
 │   ├── server.py              # composition root: AuthSettings, provider, /consent, mounts tools.py,
 │   │                          # startup allow-list checks
 │   ├── tools.py               # TOOL_ARGUMENTS, authentication before argument checks
+│   ├── limits.py              # outermost: body caps (413), per-address OAuth rate limits (429)
 │   └── middleware.py          # run chain before any tool
 tests/
 ├── fakes/

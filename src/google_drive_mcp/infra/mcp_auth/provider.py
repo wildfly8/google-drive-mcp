@@ -1,12 +1,14 @@
 """Embedded OAuth 2.1 authorization server for this MCP origin.
 
-DCR client records live in process memory (hosts re-register after scale-to-zero).
-Access, refresh, and authorization-code values are signed JWTs so /mcp verification
-does not depend on which Cloud Run instance handled /token.
+A DCR client_id is a signed record of the registration (dcr.py), and access, refresh,
+and authorization-code values are signed JWTs, so neither /authorize, /token nor /mcp
+depends on which Cloud Run instance handled /register or /token.
 """
 
 from __future__ import annotations
 
+import heapq
+import hmac
 import uuid
 
 import anyio.to_thread
@@ -32,16 +34,19 @@ from google_drive_mcp.infra.billing.gateway import (
     InactiveBilling,
 )
 from google_drive_mcp.infra.config import Settings
-from google_drive_mcp.infra.mcp_auth.cimd import fetch_cimd_client
+from google_drive_mcp.infra.mcp_auth.cimd import CimdClients
+from google_drive_mcp.infra.mcp_auth.dcr import DcrClients
 from google_drive_mcp.infra.telemetry.recorder import ConnectRecorder
 from google_drive_mcp.infra.mcp_auth.tokens import (
     MCP_OAUTH_SCOPE,
+    _now,
     issuer_url,
     mint_access_token,
     mint_authorization_code,
     mint_consent_ticket,
     mint_refresh_token,
     resource_url,
+    subscriber_hash,
     verify_access_claims,
     verify_code_claims,
     verify_refresh_claims,
@@ -50,6 +55,37 @@ from google_drive_mcp.infra.mcp_auth.tokens import (
 
 def _normalize_url(value: str) -> str:
     return value.strip().rstrip("/")
+
+
+class _ExpiringIds:
+    """jti -> exp. Each add first drops the ids whose tokens have expired, since an
+    expired token fails verification anyway."""
+
+    def __init__(self) -> None:
+        self._exp: dict[str, int] = {}
+        self._heap: list[tuple[int, str]] = []
+
+    def __contains__(self, jti: object) -> bool:
+        return jti in self._exp
+
+    def __len__(self) -> int:
+        return len(self._exp)
+
+    def add(self, jti: str, exp: int) -> None:
+        now = _now()
+        while self._heap and self._heap[0][0] < now:
+            old_exp, old = heapq.heappop(self._heap)
+            if self._exp.get(old) == old_exp:
+                del self._exp[old]
+        self._exp[jti] = exp
+        heapq.heappush(self._heap, (exp, jti))
+        # Entries left behind by discard: rebuild before they outnumber the live ones.
+        if len(self._heap) > 2 * len(self._exp) + 64:
+            self._heap = [(e, j) for j, e in self._exp.items()]
+            heapq.heapify(self._heap)
+
+    def discard(self, jti: str) -> None:
+        self._exp.pop(jti, None)
 
 
 class DriveMcpOAuthProvider(
@@ -62,9 +98,10 @@ class DriveMcpOAuthProvider(
         self.settings = settings
         self.telemetry = telemetry or ConnectRecorder()
         self.billing = billing or InactiveBilling()
-        self.clients: dict[str, OAuthClientInformationFull] = {}
-        self._used_code_jti: set[str] = set()
-        self._revoked_jti: set[str] = set()
+        self._dcr = DcrClients(settings)
+        self._cimd = CimdClients()
+        self._used_code_jti = _ExpiringIds()
+        self._revoked_jti = _ExpiringIds()
 
     def _resource(self) -> str:
         return resource_url(self.settings)
@@ -82,18 +119,16 @@ class DriveMcpOAuthProvider(
         return expected
 
     async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
-        cached = self.clients.get(client_id)
-        if cached is not None:
-            return cached
-        fetched = await fetch_cimd_client(client_id)
-        if fetched is not None:
-            self.clients[client_id] = fetched
-        return fetched
+        registered = self._dcr.get(client_id)
+        if registered is not None:
+            return registered
+        return await self._cimd.get(client_id)
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
         if not client_info.client_id:
             raise ValueError("No client_id provided")
-        self.clients[client_info.client_id] = client_info
+        # Raises RegistrationError (HTTP 400) for oversized metadata.
+        self._dcr.register(client_info)
 
     async def _subscription_state(self, customer_id: str) -> bool | None:
         """Ask Stripe off the event loop, so a slow or retried call stalls nothing else."""
@@ -149,6 +184,16 @@ class DriveMcpOAuthProvider(
             ticket=ticket,
         )
 
+    def ticket_subscriber(self, claims: dict) -> str | None:
+        """This browser's subscriber, if it is the one the ticket names by hash."""
+        scid = current_scid()
+        expected = claims.get("scid_hash")
+        if not scid or not isinstance(expected, str):
+            return None
+        if not hmac.compare_digest(subscriber_hash(self.settings, scid), expected):
+            return None
+        return scid
+
     def issue_code_from_ticket(self, claims: dict) -> tuple[str, str | None]:
         code = mint_authorization_code(
             self.settings,
@@ -157,7 +202,8 @@ class DriveMcpOAuthProvider(
             redirect_uri_provided_explicitly=bool(claims["redirect_uri_provided_explicitly"]),
             code_challenge=str(claims["code_challenge"]),
             resource=str(claims["resource"]),
-            scid=str(claims["scid"]) if claims.get("scid") else None,
+            # The ticket holds only a hash; the code names the browser's own subscriber.
+            scid=self.ticket_subscriber(claims) if claims.get("scid_hash") else None,
         )
         state = claims.get("state")
         return code, str(state) if state is not None else None
@@ -194,7 +240,7 @@ class DriveMcpOAuthProvider(
         jti = str(claims["jti"])
         if jti in self._used_code_jti:
             raise TokenError(error="invalid_grant", error_description="authorization code does not exist")
-        self._used_code_jti.add(jti)
+        self._used_code_jti.add(jti, int(claims["exp"]))
         connect_id = str(uuid.uuid4())
         scid = claims.get("scid")
         sid = str(scid) if isinstance(scid, str) and scid else None
@@ -252,7 +298,7 @@ class DriveMcpOAuthProvider(
         # Reserve the token before asking Stripe, so two refreshes with it cannot
         # both succeed; give it back if this refresh fails, so a Stripe outage or
         # a lapse that is later fixed (card updated) does not use it up.
-        self._revoked_jti.add(jti)
+        self._revoked_jti.add(jti, int(claims["exp"]))
         try:
             if self.settings.mcp_subscription_required:
                 state = await self._subscription_state(sid) if sid else False
@@ -289,7 +335,7 @@ class DriveMcpOAuthProvider(
         for verifier in (verify_access_claims, verify_refresh_claims, verify_code_claims):
             claims = verifier(raw, self.settings)
             if claims is not None:
-                self._revoked_jti.add(str(claims["jti"]))
+                self._revoked_jti.add(str(claims["jti"]), int(claims["exp"]))
                 return
 
     def _issue_tokens(

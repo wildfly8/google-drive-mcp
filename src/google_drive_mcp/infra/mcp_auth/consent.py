@@ -8,13 +8,13 @@ MCP_AUTH_TOKEN is the password, not an API bearer.
 from __future__ import annotations
 
 import html
+import ipaddress
 from urllib.parse import urlparse
 
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 from mcp.server.auth.provider import construct_redirect_uri
 
-from google_drive_mcp.infra.billing.entitlement import current_scid
 from google_drive_mcp.infra.config import Settings
 from google_drive_mcp.infra.mcp_auth.bearer import verify_bearer
 from google_drive_mcp.infra.mcp_auth.provider import DriveMcpOAuthProvider
@@ -30,8 +30,12 @@ _HEADERS = {
 
 # Hosts of AI chat apps whose Connect flow returns to them. Anything else is
 # shown as unrecognized so a subscriber thinks twice before allowing it.
-KNOWN_RETURN_HOSTS = frozenset(
-    {"claude.ai", "claude.com", "chatgpt.com", "chat.openai.com", "localhost", "127.0.0.1"}
+KNOWN_RETURN_HOSTS = frozenset({"claude.ai", "claude.com", "chatgpt.com", "chat.openai.com"})
+
+# Any program on the subscriber's computer can listen on a loopback address.
+_LOOPBACK_VERDICT = (
+    '<span class="warn">a program on this computer (for example Claude Code or Codex) '
+    "— allow only if you just started Connect from it yourself</span>"
 )
 
 _STYLE = """
@@ -119,6 +123,16 @@ def _recognized(host: str) -> bool:
     return any(host == known or host.endswith("." + known) for known in KNOWN_RETURN_HOSTS)
 
 
+def _loopback(host: str) -> bool:
+    host = host.lower().rstrip(".")
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 def _password_page(ticket: str, error: str | None = None) -> HTMLResponse:
     err_html = f'<p class="err">{html.escape(error)}</p>' if error else ""
     return HTMLResponse(
@@ -134,11 +148,14 @@ async def _allow_page(
     client = await provider.get_client(str(claims.get("client_id") or ""))
     name = (getattr(client, "client_name", None) or "an unnamed app")[:80]
     host = _return_host(str(claims.get("redirect_uri") or ""))
-    verdict = (
-        '<span class="ok">a known AI chat app address</span>'
-        if _recognized(host)
-        else '<span class="warn">not a known AI chat app address; allow only if you trust it</span>'
-    )
+    if _loopback(host):
+        verdict = _LOOPBACK_VERDICT
+    elif _recognized(host):
+        verdict = '<span class="ok">a known AI chat app address</span>'
+    else:
+        verdict = (
+            '<span class="warn">not a known AI chat app address; allow only if you trust it</span>'
+        )
     err_html = f'<p class="err">{html.escape(error)}</p>' if error else ""
     return HTMLResponse(
         _ALLOW_PAGE.format(
@@ -160,7 +177,7 @@ async def consent_get(
     claims = verify_ticket_claims(ticket, settings)
     if claims is None:
         return HTMLResponse(_EXPIRED, status_code=400, headers=_HEADERS)
-    if claims.get("scid"):
+    if claims.get("scid_hash"):
         return await _allow_page(ticket, claims, provider)
     return _password_page(ticket)
 
@@ -177,10 +194,10 @@ async def consent_post(
     claims = verify_ticket_claims(ticket, settings)
     if claims is None:
         return HTMLResponse(_EXPIRED, status_code=400, headers=_HEADERS)
-    scid = claims.get("scid")
-    if scid:
+    if claims.get("scid_hash"):
         # The click must come from the browser that holds this subscription.
-        if current_scid() != scid or not await provider._active(str(scid)):
+        scid = provider.ticket_subscriber(claims)
+        if scid is None or not await provider._active(scid):
             return HTMLResponse(_EXPIRED, status_code=400, headers=_HEADERS)
     else:
         password = form.get("password")

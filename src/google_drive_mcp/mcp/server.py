@@ -52,6 +52,7 @@ from google_drive_mcp.infra.mcp_auth.setup import setup_get
 from google_drive_mcp.infra.mcp_auth.stats import stats_get, stats_snapshot
 from google_drive_mcp.infra.mcp_auth.provider import DriveMcpOAuthProvider
 from google_drive_mcp.infra.mcp_auth.tokens import MCP_OAUTH_SCOPE, issuer_url, resource_url
+from google_drive_mcp.mcp.limits import RequestLimits
 from google_drive_mcp.mcp.middleware import (
     Runtime,
     get_authorization,
@@ -656,6 +657,7 @@ def streamable_app(runtime: Runtime | None = None, *, json_response: bool = True
     install_chatgpt_mcp_http(app, runtime.settings)
     app.add_exception_handler(BillingUnavailable, _billing_unavailable)
     app.add_middleware(_AuthorizationHeaderMiddleware, settings=runtime.settings)
+    app.add_middleware(RequestLimits)  # added last, so it runs first (body caps, rate limits)
     return app
 
 

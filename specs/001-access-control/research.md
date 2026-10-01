@@ -58,6 +58,14 @@ Single domain helper `is_within_scope` (parent-lookup port) is shared with Retri
 
 **Alternatives considered**: Keep auto-approve and allow only known redirect hosts (rejected: breaks Inspector and other DCR hosts, and a known host is not proof the subscriber started Connect). Ask subscribers for `MCP_AUTH_TOKEN` (rejected: that is the operator’s password). Trust the client name (rejected: it is self-declared; the return host is the signal shown).
 
+**Later the same day**: the ticket names the subscriber by a keyed hash (`scid_hash`) instead of `scid`, because the `/consent?ticket=` URL lands in request logs; the code takes the browser’s own `scid`. A loopback return host is no longer a known AI chat app address: any program on the computer can listen there, so the page labels it a program on this computer, in the warning style.
+
+## Decision: Stateless DCR and bounded unauthenticated state (2026-10-01)
+
+**Rationale**: DCR clients lived in one instance’s memory, so Cursor and other DCR hosts got `invalid_client` after scale-to-zero, a deploy, or when a request reached another instance, and had to Connect again. The map also grew without bound: anyone could register, the SDK sets no field limits (a 4 MB `client_name` was accepted), CIMD records (including the synthesized fallback for any path on the allowed hosts) were kept forever, and the used-code and revoked `jti` sets were never pruned. Now the `client_id` is a signed record of the registration (its own `typ` and `aud`, so it never verifies as another token) and the client secret is derived from it, so any instance resolves it with nothing stored. Metadata, CIMD ids, and request bodies have size limits; CIMD records are a bounded LRU; `jti` maps drop expired entries; `/register`, `/token`, and `/authorize` are rate-limited per address.
+
+**Alternatives considered**: Persist DCR clients in a database (rejected: Article III, and a store to run). Encrypt the record (rejected: nothing in it is secret; signing is enough). Rate limits in a shared store (rejected for now: per-instance memory is best effort, like the billing limits).
+
 ## Decision: Request-scoped credential objects, no process-wide Google client cache keyed by identity
 
 **Rationale**: Cloud Run concurrency > 1. v1 has one identity, but leftover credential objects on a shared client must not appear in logs or error payloads. Build a Drive client per request from env secrets; do not log headers.

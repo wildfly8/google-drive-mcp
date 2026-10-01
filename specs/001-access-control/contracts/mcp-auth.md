@@ -11,12 +11,25 @@ This origin is both the OAuth 2.1 **authorization server** and the MCP **resourc
    `/.well-known/oauth-protected-resource`, which ChatGPT also fetches) and
    authorization-server metadata at `/.well-known/oauth-authorization-server`.
 2. Hosts identify as an OAuth client via RFC 7591 DCR (`POST /register`) **or**
-   Client ID Metadata Documents (CIMD). ChatGPT and Claude connectors use CIMD:
+   Client ID Metadata Documents (CIMD). DCR is stateless: the returned `client_id`
+   is an HS256 JWT (`typ` = `dcr`, `aud` = issuer) that carries the registration
+   (redirect URIs, client name trimmed to 100 characters, grant and response types,
+   token auth method, scope, `iat`, a random `jti`), so any instance resolves it and hosts such as
+   Cursor never re-register after scale-to-zero, a deploy, or on another instance.
+   For `client_secret_post` / `client_secret_basic` the `client_secret` is
+   `HMAC-SHA256(signing key, "dcr-secret:" + client_id)` (hex) with
+   `client_secret_expires_at` = 0. A tampered or foreign `client_id` is unknown
+   (`/authorize` 400, `/token` 401 `invalid_client`). `POST /register` answers HTTP 400
+   `invalid_client_metadata` for a `client_name` over 200 characters, more than 5
+   `redirect_uris` or one over 512 characters, more than 5 `contacts` or one over 254
+   characters, metadata over 16 KB, or a registration whose `client_id` would exceed
+   4096 characters. ChatGPT and Claude connectors use CIMD:
    `client_id` is an HTTPS URL on `chatgpt.com`, `claude.ai`, or `claude.com`
-   (or their `www.` hosts); this server fetches that document on demand (5 s
-   timeout, no redirects) so Cloud Run scale-to-zero does not drop the
+   (or their `www.` hosts), at most 512 characters; this server fetches that document
+   on demand (5 s timeout, no redirects) so Cloud Run scale-to-zero does not drop the
    registration. Other hosts are never fetched. If the fetch fails, a public
-   client with that host’s known callback URIs is synthesized. CIMD clients are
+   client with that host’s known callback URIs is synthesized and kept 5 minutes.
+   Fetched records are an LRU of 2000 per instance. CIMD clients are
    public (`none`). Authorization-server metadata advertises
    `client_id_metadata_document_supported`, `authorization_response_iss_parameter_supported`,
    and `token_endpoint_auth_methods_supported` = `none`, `client_secret_post`,
@@ -30,13 +43,18 @@ This origin is both the OAuth 2.1 **authorization server** and the MCP **resourc
      sent to `/subscribe`. A resume cookie (1 hour) remembers the `/authorize` request so
      Connect can continue after payment.
    - An entitled browser is sent to `/consent?ticket=` (AC-FR-013). The ticket is a signed,
-     10-minute JWT that names the subscriber (`scid`). The Allow page shows the client’s
-     self-declared name and the return host, marked as a known AI chat app address or not
-     (`claude.ai`, `claude.com`, `chatgpt.com`, `chat.openai.com`, their subdomains,
-     `localhost`, `127.0.0.1`). There is no password.
-   - `POST /consent` issues the code only when the browser’s entitlement cookie names the
-     same subscriber as the ticket and the processor reports it active. Otherwise it shows
-     the expired page (HTTP 400) and no code.
+     10-minute JWT that names the subscriber by a keyed hash only (`scid_hash` =
+     base64url `HMAC-SHA256(signing key, "consent-scid:" + scid)`), because the URL lands
+     in request logs; it never holds the Stripe customer id. The Allow page shows the
+     client’s self-declared name and the return host, marked as one of: a known AI chat
+     app address (`claude.ai`, `claude.com`, `chatgpt.com`, `chat.openai.com`, their
+     subdomains); a program on this computer (loopback: `localhost`, `*.localhost`,
+     `127.0.0.0/8`, `::1`), in the warning style, “allow only if you just started Connect
+     from it yourself”; or not a known AI chat app address. There is no password.
+   - `POST /consent` issues the code only when the same hash of the browser’s entitlement
+     cookie `scid` matches the ticket and the processor reports it active. The code then
+     carries that browser’s `scid`. Otherwise it shows the expired page (HTTP 400) and no
+     code.
    - `MCP_OAUTH_AUTO_APPROVE` is ignored. The deploy sets it to true; it matters only
      when the paywall is off.
    Without the paywall, `MCP_OAUTH_AUTO_APPROVE=true` issues the code at `/authorize`
@@ -82,9 +100,9 @@ Hosts that implement MCP OAuth 2.1 (ChatGPT custom connectors, Claude connectors
 
 | Name | Role |
 | --- | --- |
-| `MCP_AUTH_TOKEN` | Resource-owner consent password (HMAC-compared only on `POST /consent` for a ticket without `scid`, i.e. paywall off). Also used to derive the JWT HMAC key unless `MCP_OAUTH_SIGNING_KEY` is set |
+| `MCP_AUTH_TOKEN` | Resource-owner consent password (HMAC-compared only on `POST /consent` for a ticket without `scid_hash`, i.e. paywall off). Also used to derive the JWT HMAC key unless `MCP_OAUTH_SIGNING_KEY` is set |
 | `MCP_PUBLIC_URL` | HTTPS issuer origin for this service (no path, no `/mcp`). Required in production |
-| `MCP_OAUTH_SIGNING_KEY` | Optional dedicated JWT HMAC material; key = `SHA-256(value)`. If unset, key = `SHA-256("mcp-oauth-jwt-v1:" + MCP_AUTH_TOKEN)`. The same key signs consent tickets and the 004 entitlement and email-link cookies (`typ` and `aud` keep them apart) |
+| `MCP_OAUTH_SIGNING_KEY` | Optional dedicated JWT HMAC material; key = `SHA-256(value)`. If unset, key = `SHA-256("mcp-oauth-jwt-v1:" + MCP_AUTH_TOKEN)`. The same key signs consent tickets, DCR `client_id` values, and the 004 entitlement and email-link cookies (`typ` and `aud` keep them apart), and derives DCR client secrets and the ticket’s subscriber hash. Rotating it invalidates DCR registrations (hosts re-register) |
 | `MCP_OAUTH_AUTO_APPROVE` | Paywall off: if true, `/authorize` skips the `/consent` password page. Paywall on: ignored; every Connect shows the subscriber an Allow page (no password), because any site can register a client and send a subscriber's browser to `/authorize`. Tools still require a minted access token (AC-FR-010). |
 | `MCP_PRINCIPAL_ID` | Non-secret log label for the deployment identity |
 | `GOOGLE_CLIENT_ID` | Google Drive OAuth client (deployment identity), not MCP OAuth |
@@ -98,7 +116,22 @@ Stdio local inspector MAY read the same env; HTTP serving MUST refuse to start O
 
 ## Ephemeral protocol state (Article III)
 
-Access, refresh, authorization-code, and consent-ticket values are self-contained JWTs (not Drive documents). DCR client records, fetched CIMD records, and used-code / revocation `jti` sets are **in-memory auth protocol state**. They are discarded when the instance disappears. MCP hosts re-register (RFC 7591) **or** use CIMD (`chatgpt.com`, `claude.ai`, and `claude.com` client metadata URLs are fetched on demand and do not require a persisted DCR row). Residual authorization-code replay is bound by PKCE S256 and a ~2 minute code TTL. `POST /revoke` (RFC 7009) and each refresh rotation add the old `jti` to that instance’s set; code and refresh exchange on that instance honor it. Revocation is best-effort: it holds only on that instance and only while it lives, and `/mcp` never consults the set (see above). The MCP SDK `/revoke` handler requires a `client_secret` form field, so a public client (CIMD, or DCR with `none`) that omits it gets HTTP 400 `invalid_request`; an empty value is accepted.
+Access, refresh, authorization-code, consent-ticket, and DCR `client_id` values are self-contained JWTs (not Drive documents), so a DCR registration needs no stored row and survives instance death. Fetched CIMD records and used-code / revocation `jti` maps are **in-memory auth protocol state**, discarded when the instance disappears (`chatgpt.com`, `claude.ai`, and `claude.com` client metadata URLs are fetched again on demand). They are bounded: CIMD records are an LRU of 2000 per instance (a synthesized fallback for 5 minutes), each `jti` map holds `jti` → `exp` and drops expired entries on each insert, and decoded DCR records are an LRU of 1000. Residual authorization-code replay is bound by PKCE S256 and a ~2 minute code TTL. `POST /revoke` (RFC 7009) and each refresh rotation add the old `jti` to that instance’s set; code and refresh exchange on that instance honor it. Revocation is best-effort: it holds only on that instance and only while it lives, and `/mcp` never consults the set (see above). The MCP SDK `/revoke` handler requires a `client_secret` form field, so a public client (CIMD, or DCR with `none`) that omits it gets HTTP 400 `invalid_request`; an empty value is accepted.
+
+## Request limits (AC-FR-063)
+
+`mcp/limits.py` is the outermost ASGI middleware, so it runs before every route, the
+`/mcp` wrapper, CORS, and the entitlement middleware:
+
+- Request bodies: over 4 MiB on `/mcp`, 1 MiB on `/webhooks/stripe`, or 64 KB on any other
+  path → HTTP 413, by `Content-Length` or by counting a streamed body, before any route
+  reads it. A body under the cap is passed on whole.
+- Per client address (the last `X-Forwarded-For` entry, which Cloud Run appends; earlier
+  entries can be forged), in that instance’s memory: `POST /register` 20 per hour;
+  `POST /token` 120 per minute; `GET` and `POST /authorize` together 120 per minute (a new
+  CIMD `client_id` there makes this server fetch a URL). Over the limit → HTTP 429 with
+  `Retry-After` (the window in seconds). 413 and 429 replies carry
+  `Access-Control-Allow-Origin: *` so browser-based clients can read them.
 
 ## Logging
 

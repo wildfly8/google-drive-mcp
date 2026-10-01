@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import time
 import uuid
 from typing import Any
@@ -11,7 +12,7 @@ from pydantic import AnyHttpUrl
 
 from google_drive_mcp.infra.config import Settings
 from google_drive_mcp.infra.mcp_auth.bearer import extract_bearer
-from google_drive_mcp.infra.mcp_auth.jwt import decode_jwt, encode_jwt
+from google_drive_mcp.infra.mcp_auth.jwt import b64url_encode, decode_jwt, encode_jwt
 
 MCP_OAUTH_SCOPE = "drive.read"
 TYP_ACCESS = "access"
@@ -45,6 +46,12 @@ def signing_key(settings: Settings) -> bytes:
 
 def _now() -> int:
     return int(time.time())
+
+
+def subscriber_hash(settings: Settings, scid: str) -> str:
+    """Keyed hash of a Stripe customer id, for values that end up in URLs and logs."""
+    message = b"consent-scid:" + scid.encode("utf-8")
+    return b64url_encode(hmac.new(signing_key(settings), message, hashlib.sha256).digest())
 
 
 def _base_claims(
@@ -169,8 +176,9 @@ def mint_consent_ticket(
     if state is not None:
         extra["state"] = state
     if scid:
-        # Paid Connect: the Allow click must come from this same subscriber.
-        extra["scid"] = scid
+        # Paid Connect: the Allow click must come from this same subscriber. The ticket
+        # URL lands in request logs, so it names the subscriber by a keyed hash only.
+        extra["scid_hash"] = subscriber_hash(settings, scid)
     claims = _base_claims(
         settings,
         typ=TYP_TICKET,

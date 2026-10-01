@@ -1,6 +1,6 @@
 # Data Model: Access Control Boundary
 
-All **Drive** objects below are request-scoped. MCP OAuth access/refresh/authorization-code values and consent tickets are self-contained JWTs (not Drive documents). DCR and fetched CIMD client records are in-memory protocol state (Article III exception).
+All **Drive** objects below are request-scoped. MCP OAuth access/refresh/authorization-code values, consent tickets, and DCR `client_id` values are self-contained JWTs (not Drive documents). Fetched CIMD client records and used-code / revoked ids are in-memory protocol state (Article III exception).
 
 ## Principal
 
@@ -17,7 +17,7 @@ v1: exactly one Principal per deployment. A valid MCP OAuth access token proves 
 | --- | --- | --- |
 | `scheme` | enum | `mcp_oauth21_jwt` in v1 |
 | `token` | secret string | HS256 JWT issued by this origin; `aud` / resource = `{issuer}/mcp`; scope `drive.read`; `typ` = `access`; lifetime 3600 s (`Settings.mcp_access_token_ttl_seconds`, not read from env) |
-| `client_id` | string | DCR or CIMD client that received the token |
+| `client_id` | string | DCR (signed `client_id`, see RegisteredClient) or CIMD client that received the token |
 | `sub` | string | `MCP_PRINCIPAL_ID` |
 | `jti` | string | Unique id; used for revocation and replay sets |
 | `cid` | string? | Opaque Connect id for the 003 counters |
@@ -31,7 +31,7 @@ A refresh token has the same claims with `typ` = `refresh` and lifetime 30 days,
 
 | Field | Type | Rules |
 | --- | --- | --- |
-| `value` | secret string | Env `MCP_AUTH_TOKEN`. HMAC-compared only on `POST /consent` for a ticket without `scid` (paywall off) |
+| `value` | secret string | Env `MCP_AUTH_TOKEN`. HMAC-compared only on `POST /consent` for a ticket without `scid_hash` (paywall off) |
 
 MUST NOT verify as `McpAccessToken`. Used to derive the JWT HMAC key unless `MCP_OAUTH_SIGNING_KEY` is set. With the paywall on, no page asks for it.
 
@@ -41,19 +41,23 @@ MUST NOT verify as `McpAccessToken`. Used to derive the JWT HMAC key unless `MCP
 | --- | --- | --- |
 | `token` | string | HS256 JWT, `typ` = `ticket`, `aud` = `{issuer}/consent`, lifetime 600 s |
 | `client_id`, `redirect_uri`, `redirect_uri_provided_explicitly`, `code_challenge`, `resource`, `state?` | | Copied from the pending `/authorize` request |
-| `scid` | string? | Set when the paywall is on. `POST /consent` issues a code only when the browser’s entitlement cookie names this same subscriber and the processor reports it active |
+| `scid_hash` | string? | Set when the paywall is on: base64url `HMAC-SHA256(signing key, "consent-scid:" + scid)`, never the customer id itself (the URL lands in request logs). `POST /consent` issues a code only when the same hash of the browser’s entitlement `scid` matches and the processor reports it active; the code then carries that browser’s `scid` |
 
-Carried in the `/consent?ticket=` URL and the form. A ticket with `scid` shows the Allow page; without it, the password page. A missing, expired, or tampered ticket shows the expired page (HTTP 400).
+Carried in the `/consent?ticket=` URL and the form. A ticket with `scid_hash` shows the Allow page; without it, the password page. A missing, expired, or tampered ticket shows the expired page (HTTP 400).
 
 ## RegisteredClient
 
 | Field | Type | Rules |
 | --- | --- | --- |
-| `client_id` | string | RFC 7591 id, or a CIMD HTTPS URL on `chatgpt.com` / `claude.ai` / `claude.com` |
-| `client_name` | string? | Self-declared. Shown on the Allow page (first 80 characters); not trusted |
-| `redirect_uris` | string[] | Validated by the MCP SDK. CIMD clients also accept the known ChatGPT, Claude, and loopback callback paths |
+| `client_id` | string | DCR: a signed record of the registration (below). CIMD: an HTTPS URL on `chatgpt.com` / `claude.ai` / `claude.com`, at most 512 characters |
+| `client_name` | string? | Self-declared, at most 200 characters at registration; a DCR record keeps the first 100. Shown on the Allow page (first 80 characters); not trusted |
+| `redirect_uris` | string[] | DCR: at most 5, each at most 512 characters. Validated by the MCP SDK. CIMD clients also accept the known ChatGPT, Claude, and loopback callback paths |
+| `grant_types`, `response_types`, `token_endpoint_auth_method`, `scope` | | As registered (DCR) or published (CIMD, always `none` and `drive.read`) |
+| `client_secret` | secret string? | DCR with `client_secret_post` / `client_secret_basic` only: hex `HMAC-SHA256(signing key, "dcr-secret:" + client_id)`, `client_secret_expires_at` = 0. Derived, never stored |
 
-Stored in process memory only. Discarded when the instance disappears. DCR hosts re-register; CIMD clients are fetched again on demand.
+**DCR (stateless)**: `POST /register` refuses metadata over its limits (`contacts` at most 5, each at most 254 characters; at most 16 KB in all) with HTTP 400 `invalid_client_metadata`. The `client_id` is an HS256 JWT signed with the deployment signing key: `typ` = `dcr`, `aud` = issuer, `iat`, a random `jti` (so every registration gets its own id), and short claims `ru` (redirect URIs), `cn` (name), `gt`, `rt`, `am`, `sc`. No other verifier accepts `typ` = `dcr`, so it is never an access or refresh token, code, ticket, or entitlement. A registration whose `client_id` would exceed 4096 characters is refused, because tokens that carry it must stay under 8 KiB. Any instance resolves the `client_id` by verifying it (an LRU of 1000 decoded records per instance), so hosts do not re-register after scale-to-zero, a deploy, or on another instance. Rotating the signing key invalidates every DCR `client_id`; those hosts then re-register.
+
+**CIMD**: fetched records are an LRU of 2000 per instance, fetched again after instance death. A synthesized fallback record is kept 5 minutes, then the document is fetched again.
 
 ## Credential
 
