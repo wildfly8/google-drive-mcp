@@ -11,12 +11,12 @@ Wire field `source_url` is always the non-dereferenceable locator `drive:{file_i
 | `id` | string | Required |
 | `name` | string | |
 | `mime_type` | string | |
-| `parents` | string[] | Used by `is_within_scope` |
+| `parents` | string[] | Used by `is_within_scope`, the listing membership check, and Access Control's folder-tree check |
 | `modified_time` | datetime | RFC3339 from Drive |
 | `created_time` | datetime? | |
 | `web_view_link` | string? | Drive `webViewLink` if fetched; internal only, never on the wire |
-| `size` | int? | |
-| `owners` | string[]? | Non-secret names/emails if Drive returns them; never tokens |
+| `size` | int? | Drive byte size. `drive_grep` uses it only for blobs: Docs, Sheets and Slides count as unknown size |
+| `owners` | string[]? | Not requested by the production client; never tokens |
 | `trashed` | bool | |
 | `is_folder` | bool | `mime_type == application/vnd.google-apps.folder` |
 
@@ -34,7 +34,7 @@ Canonical type. Access Control enforces the same fields (`src/google_drive_mcp/d
 | `file_ids` | string[]? | If set: only these files |
 | `default_whole_grant` | bool | True when neither folder nor file list named. Access Control refuses this scope (`whole_grant_refused`) |
 
-`is_within_scope(file_id, scope, parent_lookup)` is the only descendant check. Retrieval walks and the authorization chain MUST call it. Do not fork a second parent walk. Folder listings keep only children whose `parents` include the listed folder (one membership check on the listing, not a parent walk).
+Descendant checks live only in `domain/retrieval_scope.py`. Retrieval walks call `is_within_scope(file_id, scope, parent_lookup)` for named `file_ids`. The Access Control allow-list check lists `kb`'s folder tree top down (`folder_tree`) and decides membership in memory (`is_inside_tree`), so an id outside `kb`, a missing id and an ungranted id take the same Drive calls. Do not add a descendant check anywhere else. Folder listings keep only children whose `parents` include the listed folder (one membership check on the listing, not a parent walk).
 
 Enforced by Access Control before content export. `DRIVE_ALLOWED_FOLDER_ID` is required (`kb` on this deployment). Access Control rewrites an omitted `folder_id` on `drive_ls`, `drive_find`, and `drive_grep` to that folder, and refuses any named folder or file it cannot prove is that folder or a descendant, whether or not the id exists. No retrieval path lists without a folder: `drive_ls` never lists My Drive `root`, and the Drive port has no whole-grant listing (`list_all` removed).
 
@@ -56,7 +56,7 @@ Invalid if `file_id` missing. Not a cache key. Plays the **evidence** role when 
 | Field | Type | Rules |
 | --- | --- | --- |
 | `file` | DriveFile | Metadata only; wire `source_url` is `drive:{id}` |
-| `reason` | string | Why it was surfaced (name match, mime filter, etc.) |
+| `reason` | string | Why it was surfaced: `name match`, `mime filter`, or `folder descendant` |
 | `discovery_method` | enum | `find` only (`drive_ls` does not return this type) |
 
 **Not evidence.** MUST NOT be labeled verified.
@@ -69,8 +69,8 @@ Invalid if `file_id` missing. Not a cache key. Plays the **evidence** role when 
 | `file_name` | string | |
 | `pattern` | string | As supplied |
 | `matched_text` | string | Required |
-| `location` | object | `{ "line"?: int, "offset"?: int, "occurrences"?: int }`; line-oriented text has one match per line, `occurrences` counting every hit on it (FR-039) |
-| `context` | string? | Surrounding text per plan (lines or 200-char window) |
+| `location` | object | `{ "line"?: int, "offset"?: int, "occurrences"?: int }`; line-oriented text has one match per line, `offset` is the first hit's character offset in that line and `occurrences` counts every hit on it (FR-039). Otherwise `{ "offset" }`, the character offset in the whole text |
+| `context` | string? | Line-oriented text: the matching line plus `context_lines` lines on each side. Otherwise up to 200 characters on each side of the hit |
 
 A SearchMatch MUST correspond to bytes actually retrieved in this operation. Plays the **evidence** role when returned from `drive_grep` with provenance.
 
@@ -103,10 +103,11 @@ A content-derived result without `file_id` is invalid.
 | `start_time` / `end_time` | datetime | |
 | `result_count` | int | |
 | `status` | enum | `COMPLETE` \| `PARTIAL` \| `EMPTY` \| `ERROR` |
-| `partial_reason` | string? | `max_files` \| `max_bytes` \| `max_matches` \| `max_execution_time` \| `RATE_LIMITED` \| `unsupported_skipped` \| … |
+| `partial_reason` | string? | `max_files` \| `max_bytes` \| `max_matches` \| `max_execution_time` \| `RATE_LIMITED` \| `unsupported_skipped` \| `pagination` (`drive_ls` only) |
 | `files_scanned` / `bytes_scanned` | int | `drive_grep` only; always present |
 | `next_cursor` | string? | `drive_grep`; a file id (continue after it) or `file_id:N` (continue inside it after N matches) when more remains |
-| `deferred_file_ids` | string[]? | `drive_grep`; known-large files not downloaded on this call |
+| `deferred_file_ids` | string[]? | `drive_grep`; searchable files not downloaded on this call because their known size did not fit the bytes left, or the byte cap was reached. Never unsupported files |
+| `next_page_token` | string? | `drive_ls`; decimal offset of the next page, passed back as `page_token` |
 
 ## Relationships
 

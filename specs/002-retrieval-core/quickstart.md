@@ -18,6 +18,8 @@ export MCP_PUBLIC_URL=http://127.0.0.1
 export MCP_OAUTH_AUTO_APPROVE=true
 ```
 
+`MCP_OAUTH_AUTO_APPROVE` only applies without the paywall. With `MCP_SUBSCRIPTION_REQUIRED=true` every Connect needs an active subscription and a click on the Allow page, whatever it is set to. Most tests build settings with `Settings.for_tests()` rather than from these variables.
+
 ## Contract tests
 
 ```bash
@@ -44,6 +46,8 @@ Expected:
 16. Several hits on one line are one match with `location.occurrences`; a folder `drive_grep` scans more than 40 files in one call and stops at 200 with `next_cursor` (`tests/contract/test_drive_grep.py`)
 17. A `max_matches` stop returns `file_id:N` inside a file and resumes there, also with `file_ids`; exactly `max_matches` with nothing left is `COMPLETE` (unless unsupported files were skipped); download-ahead returns the same matches as a one-file scan and never downloads a deferred file; a slow download past the time cap and a download 429 both return a cursor (`tests/contract/test_drive_grep.py`)
 18. `drive_find` returns matching folders without counting them against `max_results` (`tests/contract/test_drive_find.py`)
+19. A `drive_ls` page with more children left is `PARTIAL` (`partial_reason: pagination`) with `next_page_token`; a non-integer `page_token` is `INVALID_ARGUMENT` (`tests/contract/test_partial_status.py`, `tests/contract/test_invalid_argument.py`)
+20. The allow-list check makes the same Drive calls for an id outside the folder, a missing id and an ungranted id; startup refuses an allow-list id that Drive cannot read or reports as a file, a Drive root or trashed (`tests/contract/test_allowed_folder.py`)
 
 ## Optional live smoke
 
@@ -52,6 +56,6 @@ Use a throwaway Drive and set `DRIVE_ALLOWED_FOLDER_ID` to a test folder in it. 
 ## See also
 
 - [drive_ls.md](./contracts/drive_ls.md), [drive_find.md](./contracts/drive_find.md), [drive_read.md](./contracts/drive_read.md), [drive_grep.md](./contracts/drive_grep.md)
-- [result-status.md](./contracts/result-status.md), [error-taxonomy.md](./error-taxonomy.md)
+- [result-status.md](./contracts/result-status.md), [error-taxonomy.md](./contracts/error-taxonomy.md)
 - [data-model.md](./data-model.md)
 - Upstream [Access Control quickstart](../001-access-control/quickstart.md)

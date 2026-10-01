@@ -16,10 +16,10 @@
 | `application/vnd.google-apps.spreadsheet` | export | `text/csv` |
 | `application/vnd.google-apps.presentation` | export | `text/plain` |
 | `text/*`, `application/json`, `application/csv`, markdown | download | as stored |
-| `application/octet-stream` (or empty MIME) whose filename has a known text extension (`.md`, `.mdx`, `.txt`, `.json`, `.csv`, `.yml`, `.yaml`, `.rst`) | download | mapped text MIME (e.g. `.mdx` → `text/markdown`) |
-| other | fail | `UNSUPPORTED_MIME_TYPE` / `FILE_NOT_EXPORTABLE` |
+| `application/octet-stream`, `application/x-octet-stream`, `binary/octet-stream` (or empty MIME) whose filename has a known text extension (`.md`, `.mdx`, `.txt`, `.text`, `.rst`, `.json`, `.csv`, `.yml`, `.yaml`) | download | mapped text MIME (e.g. `.mdx` → `text/markdown`) |
+| other, including folders | fail | `UNSUPPORTED_MIME_TYPE` / `FILE_NOT_EXPORTABLE` |
 
-Omitted `content_format` uses this table. A caller-supplied `content_format` MUST be a MIME that type can produce; unknown or incompatible → `INVALID_ARGUMENT`.
+Omitted `content_format` uses this table. A caller-supplied `content_format` MUST be a MIME that type can produce; unknown or incompatible → `INVALID_ARGUMENT`. Docs, Sheets and Slides accept only their default.
 
 Google Workspace export is capped at 10 MB by Drive. Downloaded text blobs use `max_export_size` and per-file `max_bytes` of 20_000_000, equal to the per-operation byte budget, so one file at that size is a complete read and a second large file in the same call is `PARTIAL` (`partial_reason: max_bytes`). A usable prefix within the cap is `PARTIAL`. A hard refusal with **no** prefix is `RESOURCE_LIMIT`. PDF is not required in v1 (not reliably “usable text” without extra libraries); treat as unsupported unless a later MINOR adds a text extractor.
 
@@ -55,6 +55,12 @@ Descendant checks use domain `is_within_scope` (same helper as Access Control). 
 
 **Alternatives considered**: Keep the allow-list optional (rejected: one missing env var re-opened the whole Drive). Trust `files.list` children without checking `parents` (rejected: a stale index entry could list a file outside the folder). Leave old Cloud Run revisions in place for rollback (rejected: they carry no allow-list).
 
+## Decision: Same Drive calls for every named id; kb id kept out of the repo (2026-09-29, 2026-10-01)
+
+**Rationale**: The check above gave an id outside `kb`, a missing id and an ungranted id the same reply, but it climbed each id's parents, so the number of Drive calls, and the time, depended on the id. Access Control now lists `kb`'s folder tree top down (`folder_tree`, through the Drive port's `list_subfolders`), makes one metadata get per named id, and decides membership in memory (`is_inside_tree`). The three cases take the same Drive calls, and no lookup climbs into folders outside `kb`. At startup the server reads the allow-list folder from Drive and refuses an id Drive cannot read, a file, a Drive root (by alias or by real id), or a trashed folder. Deploy checks that the newest revision carries the allow-list, routes all traffic to the latest revision, clears traffic tags, and deletes every other revision; a rollback is a redeploy of an older commit. Since 2026-10-01 the `kb` folder id lives in the Secret Manager secret `DRIVE_ALLOWED_FOLDER_ID`. The deploy script reads it from there (never from the operator's shell), refuses a missing or malformed value, and does not print it. The repo, `.env.example` and tests hold placeholder ids only.
+
+**Alternatives considered**: Keep climbing parents per named id (rejected: the call count depended on the id). Keep the folder id in the deploy script (rejected: the repo is public).
+
 ## Decision: Stdlib `re` with explicit literal vs regex modes
 
 **Rationale**: Literal mode uses `re.escape(pattern)`. Regex mode compiles the pattern and fails `INVALID_ARGUMENT` on bad regex. `case_sensitive=false` adds `re.IGNORECASE`. Same bytes + same flags → same matches (Art. IX).
@@ -82,7 +88,19 @@ Google 404 after `ALLOW` uses Access Control’s `map_google_error()` — do not
 
 **Alternatives considered**: LRU of exports (MAJOR, needs freshness model).
 
-## Decision: Download small files ahead in `drive_grep`; resumable cursor after `max_matches`
+## Decision: Stay read-only; temporary write tools removed (2026-09-30)
+
+**Rationale**: For a short time `drive_write`, `drive_trash` and `drive_replace` existed behind `DRIVE_WRITE_ENABLED`, with their own Drive writer and a credential with the full `drive` scope. They broke FR-090 and Article V, so they were removed the same day. The server again registers only `drive_ls`, `drive_find`, `drive_read` and `drive_grep`, `DRIVE_WRITE_ENABLED` is no longer read, and the separate writer and its `drive`-scope credential are gone.
+
+**Alternatives considered**: Keep the write tools behind the flag (rejected: FR-090 allows no write code path, flag or not).
+
+## Decision: One grep match per line; 200 files per grep call (2026-09-30)
+
+**Rationale**: In line-oriented text the context already holds the whole line, so a second hit on the same line spent another `max_matches` slot on text the caller had. A match is now one (file, line): `matched_text` and `location.offset` are the first hit and `location.occurrences` counts every hit on it. Sheets, Slides, CSV and JSON have no lines and keep one match per hit, with up to 200 characters of context on each side. A folder grep scans up to 200 files per call instead of 40, so a whole-`kb` sweep takes fewer calls; the 20 MB and 25 s caps still bound each call. `drive_ls` and `drive_find` keep 40.
+
+**Alternatives considered**: Keep one match per hit (rejected: repeat hits spent slots on a line already shown). Keep 40 files per grep call (rejected: a whole-`kb` sweep took many more calls).
+
+## Decision: Download small files ahead in `drive_grep`; resumable cursor after `max_matches` (2026-09-30)
 
 **Rationale**: A live whole-`kb` grep stopped on the 25 s time cap after 42–68 small files (about 0.5 s per `get_media`), long before the 200-file or 20 MB caps. The cost is per-request latency, not bytes, so downloads overlap: up to 8 worker threads fetch the next small files (known size up to 2 MB, at most 16 files and 8 MB ahead, never more than the operation's remaining bytes) while the scan still takes files one at a time in size order. Results therefore match a sequential scan exactly (FR-031), a deferred file is never downloaded, and memory stays near a one-file scan on the 512 MiB instance. Each thread uses its own authorized `httplib2` connection because `httplib2.Http` is not thread-safe. A wait on a download fetched ahead is bounded by the time left once the call has handled a file (after a finished listing the first wait is not, so every call that is not rate limited makes progress and a cursor chain cannot loop on the time cap), so one slow small file ends the call with a cursor instead of running past the cap; larger files are still fetched on the request thread as before. The operation is charged a blob's Drive size, which is also what the download-ahead plans with (Docs, Sheets and Slides report a storage size unrelated to their export, so they count as unknown size), so invalid UTF-8 that grows when decoded cannot make a fetched file look too big later. Skipped matches behind a `file_id:N` cursor are counted, not built, so a deep cursor costs time, not memory. Look-ahead is sized by the `max_matches` room left and the hits per file seen so far, because files fetched ahead past a `max_matches` stop are thrown away and fetched again by the next call (a `max_matches=1` chain over 60 one-hit files went from about 520 downloads to about 60 with this bound). Separately, a folder grep that stopped on `max_matches` had no cursor, so later hits were unreachable, and a single file with more than 50 matching lines could not be finished. The cursor now also encodes a position inside a file (`file_id:N`, skip the first N matches; deterministic for identical bytes) and is accepted with `file_ids`. A one-match look-ahead tells whether anything remains, so an exact fill with nothing left is `COMPLETE`.
 

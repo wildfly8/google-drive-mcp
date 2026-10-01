@@ -10,7 +10,7 @@
 
 Expose four read-only MCP tools — `drive_ls`, `drive_find`, `drive_read`, `drive_grep` — so an agent can iterate `discover → read → exact search` against live Google Drive. No RAG index, no persistent document copy. Candidates are not evidence; `DocumentContent` and `SearchMatch` with provenance play the evidence role (no separate Evidence class). Grep is deterministic over request-scoped bytes. Truncation and walk 429 are `PARTIAL`.
 
-Technical approach: domain operations (discover/inspect/search) behind ports; Google Drive list/export/download and stdlib `re` are adapters (Article XII). Access Control rewrites an omitted `folder_id` to the required `DRIVE_ALLOWED_FOLDER_ID` (`kb`) before tools run (narrow-only) and refuses `RetrievalScope.default_whole_grant`, so every tool runs on a named folder or named files. No listing runs without a folder, and My Drive `root` is never listed. `find`/`grep` on a folder include descendants via shared `is_within_scope`. Wire `source_url` is `drive:{file_id}` (not `webViewLink`). Mixed-folder grep skips unsupported files (`PARTIAL`); single-id unsupported is a classified error.
+Technical approach: domain operations (discover/inspect/search) behind ports; Google Drive list/export/download and stdlib `re` are adapters (Article XII). Access Control rewrites an omitted `folder_id` to the required `DRIVE_ALLOWED_FOLDER_ID` (`kb`) before tools run (narrow-only) and refuses `RetrievalScope.default_whole_grant`, so every tool runs on a named folder or named files. No listing runs without a folder, and My Drive `root` is never listed. `find`/`grep` on a folder walk descendants breadth-first with `files.list`; named `file_ids` are checked with the shared `is_within_scope`. Wire `source_url` is `drive:{file_id}` (not `webViewLink`). Mixed-folder grep skips unsupported files (`PARTIAL`); single-id unsupported is a classified error.
 
 Google 404/403-as-404 (and single-file 429 with no prefix) go through Access Control’s `map_google_error()`. Walk 429 is intercepted in list/grep as `PARTIAL` (`partial_reason: RATE_LIMITED`), not `ErrorEnvelope` `RATE_LIMITED`. AUTH folder∩file_ids on real `drive_grep` is replayed after the tool exists (Access Control already tested the same args on the stub).
 
@@ -30,7 +30,7 @@ Google 404/403-as-404 (and single-file 429 with no prefix) go through Access Con
 
 **Performance Goals**: Correctness → retrieval quality → security → simplicity, then latency. Default budgets below; a usable prefix or partial listing is `PARTIAL`; a hard export refusal with no prefix is `RESOURCE_LIMIT`; a walk cut by 429 is `PARTIAL` (`partial_reason: RATE_LIMITED`). Never silent.
 
-**Constraints**: Read-only adapter methods only. Google Workspace export is capped at 10 MB by Drive; downloaded text blobs (including `.mdx`) may be read up to 20 MB. No embeddings. Tool names/meanings must not depend on a single LLM vendor. `DRIVE_ALLOWED_FOLDER_ID` is required; the server refuses to start without it or with an alias such as `root`. `scripts/deploy-cloud-run.sh` pins it to the My Drive folder named `kb`. Omitted `drive_ls`, `drive_find`, and `drive_grep` use `kb`. A named `folder_id` or `file_id` that is not `kb` or a descendant is `AUTHORIZATION_ERROR`, whether it exists or not. Each tool accepts only the argument keys its body reads.
+**Constraints**: Read-only adapter methods only. Google Workspace export is capped at 10 MB by Drive; downloaded text blobs (including `.mdx`) may be read up to 20 MB. No embeddings. Tool names/meanings must not depend on a single LLM vendor. `DRIVE_ALLOWED_FOLDER_ID` is required; the server refuses to start without it, with an alias such as `root` or a value that is not a plain id, or when Drive cannot read it or reports that it is not one folder below a Drive root (a file, a Drive root, or trashed). `scripts/deploy-cloud-run.sh` reads it from the Secret Manager secret `DRIVE_ALLOWED_FOLDER_ID` (never from the operator's shell or the repo) and refuses to deploy when it is missing or malformed. It names the My Drive folder `kb`. Omitted `drive_ls`, `drive_find`, and `drive_grep` use `kb`. A named `folder_id` or `file_id` that is not `kb` or a descendant is `AUTHORIZATION_ERROR`, whether it exists or not. Each tool accepts only the argument keys its body reads.
 
 **Scale/Scope**: One Drive identity; iterative tool calls; tens of files per operation by default, not a corpus index.
 
@@ -38,27 +38,27 @@ Google 404/403-as-404 (and single-file 429 with no prefix) go through Access Con
 
 | Budget | Default |
 | --- | --- |
-| `max_files` | 40 (`drive_ls` page, `drive_find`) |
+| `max_files` | 40 (`drive_ls` page, `drive_find`); `max_results` may lower it (1–40) |
 | `max_files` for `drive_grep` | 200 (bytes and time caps still bound each call) |
 | `drive_grep` download-ahead | 8 worker threads, at most 16 files and 8 MB ahead, files up to 2 MB with a known size |
-| `max_bytes` per file / export | 20_000_000 |
+| `max_bytes` per file / export | 20_000_000 (`drive_read` `max_bytes` may lower it) |
 | `max_bytes` per operation | 20_000_000 |
-| `max_matches` | 50 |
+| `max_matches` | 50 (also the highest value a caller may set) |
 | `max_execution_time` | 25 seconds |
-| `max_context_lines` | 2 |
+| `max_context_lines` | 2 (default `context_lines`; callers may set 0–10) |
 | `max_export_size` | 20_000_000 |
 
-Sheets/Slides context: character window of 200 characters around a match when the representation is not line-oriented; Docs/plain text use `max_context_lines`.
+Grep context: line-oriented text (Docs, Markdown, plain text) returns `context_lines` lines on each side of the matching line. Sheets, Slides, CSV and JSON are not line-oriented: up to 200 characters on each side of the hit.
 
 ### Listing and grep coverage
 
-`drive_find` sends `name contains`, MIME, `modifiedTime`, and `trashed = false` in `files.list` (`pageSize` 1000). `max_results` counts matching files. Children of a listed folder are not `files.get`'d to walk parents. Every folder listing (ls, find, grep) drops a child whose returned `parents` do not include the listed folder, so a stale Drive search-index entry cannot surface a file outside it. The Drive port has no whole-grant listing.
+`drive_find` sends `name contains`, MIME, `modifiedTime`, and `trashed = false` in `files.list` (`pageSize` 1000). With a filter, the query also keeps subfolders (`mimeType = folder or (...)`) so the walk can descend; a subfolder is returned only if it matches. `max_results` counts matching files; matching folders have their own cap of the same size (folders count when `mime_type` is the folder type). Children of a listed folder are not `files.get`'d to walk parents. Every folder listing (ls, find, grep) drops a child whose returned `parents` do not include the listed folder, so a stale Drive search-index entry cannot surface a file outside it. `drive_ls` lists the whole folder (trashed children excluded) and pages it by `max_results`; `page_token` is the decimal offset from `next_page_token`. The Drive port has no whole-grant listing. Its `list_subfolders` (folders, trashed included, under the given parents; the client puts up to 40 parents in one query) serves Access Control's allow-list tree, not retrieval.
 
 `drive_grep` on a folder sorts known-smaller files first. The 20 MB per-file cap stays, including for one named `file_id`. A known size that does not fit the remaining operation bytes is returned in `deferred_file_ids` and not downloaded. A call scans up to 200 files, downloading small files ahead on worker threads while matches are still taken in size order (FR-038a). After a `max_matches` stop the cursor is the file id, or `file_id:N` inside a file with more matches (FR-039a); `file_ids` calls take the same cursor. Results always include `files_scanned` and `bytes_scanned`. In line-oriented text a match is one line: repeat hits on that line raise `location.occurrences` instead of spending another `max_matches` slot (FR-039). `next_cursor` is set when the listing finished and more remains, or on a continuation whose listing was cut (the incoming cursor, unchanged) (FR-038a, FR-039a). A cut listing scans nothing. A byte-cap stop returns `deferred_file_ids`, not a cursor. After a finished listing the first file of a call is not time-bounded, so a time stop always makes progress. The same value is an input property named `next_cursor` (`cursor` is an alias). There is no persistent folder cache, ripgrep store, or BM25 index. This deployment’s omitted ls/find/grep uses `kb` via `DRIVE_ALLOWED_FOLDER_ID`.
 
 ### `content_format` (plan-level, spec FR-022)
 
-Omitted → default MIME from the research export map (Docs/Slides `text/plain`, Sheets `text/csv`, text blobs as stored). If set, it MUST be a MIME that type can produce. Unknown or type-incompatible value → `INVALID_ARGUMENT`.
+Omitted → default MIME from the research export map (Docs/Slides `text/plain`, Sheets `text/csv`, text blobs as stored). If set, it MUST be a MIME that type can produce. Docs, Sheets and Slides accept only their default. Unknown or type-incompatible value, or any value on a type that cannot yield text → `INVALID_ARGUMENT`.
 
 ## Constitution Check
 
@@ -106,7 +106,7 @@ src/google_drive_mcp/
 │   ├── drive_file.py
 │   ├── list_filter.py       # files.list predicates for drive_find
 │   ├── provenance.py
-│   ├── retrieval_scope.py   # is_within_scope; implemented in Access Control T005
+│   ├── retrieval_scope.py   # is_within_scope (walks); folder_tree / is_inside_tree (Access Control allow-list); from Access Control T005
 │   ├── candidates.py
 │   ├── content.py
 │   ├── matches.py
@@ -119,13 +119,16 @@ src/google_drive_mcp/
 │   └── grep.py
 ├── infra/
 │   ├── google_drive/
+│   │   ├── client.py        # Drive v3 get / list / export / get_media; one connection per thread
 │   │   ├── list.py          # files.list / get metadata; uses is_within_scope
 │   │   ├── query.py         # files.list q text and page size
 │   │   └── export.py        # files.export / get_media
 │   └── exact_search/
 │       └── regex.py         # stdlib re, swappable port
 ├── mcp/
-│   ├── server.py            # composition root (Access Control); mounts tools.py
+│   ├── server.py            # composition root (Access Control); input schemas; mounts tools.py
+│   ├── tool_schema.py       # initialize instructions, tool descriptions
+│   ├── validation.py        # id pattern and numeric bounds shared by schemas and checks
 │   └── tools.py             # drive_ls, drive_find, drive_read, drive_grep
 tests/
 ├── fakes/
@@ -136,7 +139,7 @@ tests/
     └── retrieval/
 ```
 
-**Structure Decision**: Same single package as Access Control. Retrieval owns `retrieval/`, Drive content adapters, exact-search adapter, and MCP tool registration. Access-control middleware wraps every tool. `mcp/server.py` remains the composition root (do not start a second server). One fake Drive: `tests/fakes/fake_drive.py`. Do not fork `RetrievalScope` or a second parent walk. T040 scans `infra/google_drive` for write methods.
+**Structure Decision**: Same single package as Access Control. Retrieval owns `retrieval/`, Drive content adapters, exact-search adapter, and MCP tool registration. Access-control middleware wraps every tool. `mcp/server.py` remains the composition root (do not start a second server). One fake Drive: `tests/fakes/fake_drive.py`. Do not fork `RetrievalScope` or add a descendant check outside `domain/retrieval_scope.py`. T040 scans `infra/google_drive` for write methods.
 
 ## Complexity Tracking
 

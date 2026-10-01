@@ -220,7 +220,7 @@ Task: "Export adapter in src/google_drive_mcp/infra/google_drive/export.py"
 - AUTH folder∩file_ids on real `drive_grep` is T039 (Access Control US1 already covered the same args on the stub)
 - One fake Drive port: `tests/fakes/fake_drive.py`; do not add `fake_drive_store.py`
 - No embeddings, vector DBs, or persistent file cache
-- Do not implement a second `RetrievalScope` type or a second parent walk
+- Do not implement a second `RetrievalScope` type or a descendant check outside `domain/retrieval_scope.py`
 - Push to `main` unless a PR is requested
 - Verify story tests fail before implementation tasks in that phase
 
@@ -315,3 +315,9 @@ Filename discovery and folder grep coverage (FR-012, FR-036, FR-038). No persist
 - [X] T074 Round-4 review follow-ups: a call whose listing is cut by 429 (like one cut by time) scans nothing, so a repeated fresh call never returns a match or deferred id twice; a single-file continuation that gets a 429 returns `PARTIAL` with its own cursor; read the deadline once per file so a file fetched ahead is never downloaded again on the request thread; cursor wording for byte-cap and pre-scan stops, in `retrieval/grep.py`, `mcp/tool_schema.py`, and tests (FR-038a)
 - [X] T075 Round-5 review follow-ups: size download-ahead by the `max_matches` room left and the hits per file seen so far, so `max_matches` chains stop re-downloading files fetched ahead; report `max_bytes` only when a file was truncated or deferred (a slice whose last Doc crosses the byte cap is `COMPLETE`/`EMPTY`); host copy wording for rate-limited continuations, in `retrieval/grep.py`, `mcp/tool_schema.py`, and tests (FR-038a)
 
+---
+
+## Phase 18: Allow-list hardening
+
+- [X] T076 Give the Drive port, client and fake `list_subfolders` (`subfolders_query`: folders, trashed included; the client puts up to 40 parents in one query) so Access Control checks each named id against `kb`'s folder tree (`folder_tree`, `is_inside_tree`) and an id outside `kb`, a missing id and an ungranted id take the same Drive calls; refuse at startup an allow-list id that Drive cannot read or reports as a file, a Drive root (alias or real id) or trashed; in deploy, check the newest revision carries the allow-list, route all traffic to it, clear traffic tags and delete every other revision, in `domain/retrieval_scope.py`, `access_control/chain.py`, `access_control/allowed_folder.py`, `retrieval/ports.py`, `infra/google_drive/client.py`, `infra/google_drive/query.py`, `mcp/middleware.py`, `mcp/server.py`, `scripts/deploy-cloud-run.sh`, `tests/fakes/fake_drive.py`, `tests/contract/test_allowed_folder.py`, and `tests/unit/access_control/test_chain.py` (AC-FR-021, FR-001, FR-010, FR-030)
+- [X] T077 Read the `kb` folder id in deploy from the Secret Manager secret `DRIVE_ALLOWED_FOLDER_ID` (never from the operator's shell or the repo), refuse a missing or malformed value, and stop printing it; `.env.example` and tests use placeholder ids, and the live kb comparison needs `LIVE_KB_FOLDER_ID`, in `scripts/deploy-cloud-run.sh`, `.env.example`, `tests/contract/test_allowed_folder.py`, and `tests/e2e/test_live_mcp.py` (FR-001, FR-010, FR-030)
