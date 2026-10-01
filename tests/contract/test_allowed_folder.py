@@ -275,9 +275,9 @@ def test_startup_accepts_the_kb_folder_id():
     settings = Settings(
         mcp_auth_token=SecretStr("test-token"),
         mcp_principal_id="deployment-1",
-        drive_allowed_folder_id="1qod47BRgPlRnXVboaJsElSNj1WkofLRQ",
+        drive_allowed_folder_id="1kbFolderIdUsedOnlyInTests000000",
     )
-    assert settings.require_allowed_folder() == "1qod47BRgPlRnXVboaJsElSNj1WkofLRQ"
+    assert settings.require_allowed_folder() == "1kbFolderIdUsedOnlyInTests000000"
 
 
 @pytest.mark.parametrize(
@@ -322,7 +322,7 @@ def test_server_refuses_to_start_when_drive_check_fails(monkeypatch):
     from google_drive_mcp.mcp import server
 
     monkeypatch.setenv("MCP_AUTH_TOKEN", "test-token")
-    monkeypatch.setenv("DRIVE_ALLOWED_FOLDER_ID", "1qod47BRgPlRnXVboaJsElSNj1WkofLRQ")
+    monkeypatch.setenv("DRIVE_ALLOWED_FOLDER_ID", "1kbFolderIdUsedOnlyInTests000000")
 
     def refuse(_settings):
         raise ValueError("DRIVE_ALLOWED_FOLDER_ID is a Drive root, not one folder under it.")

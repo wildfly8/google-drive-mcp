@@ -6,7 +6,11 @@
 set -euo pipefail
 
 export PATH="/tmp/google-cloud-sdk/bin:${HOME}/.local/bin:${PATH}"
-PROJECT="${GCP_PROJECT:-project-84207120-95a7-43ac-95e}"
+PROJECT="${GCP_PROJECT:-$(gcloud config get-value project 2>/dev/null || true)}"
+if [[ -z "$PROJECT" ]]; then
+  echo "Set GCP_PROJECT or run: gcloud config set project <project-id>" >&2
+  exit 1
+fi
 REGION="${GCP_REGION:-us-central1}"
 SERVICE="${CLOUD_RUN_SERVICE:-onto-kb}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

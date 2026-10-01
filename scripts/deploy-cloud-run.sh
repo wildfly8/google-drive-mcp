@@ -3,7 +3,11 @@
 # Does not print secret values.
 set -euo pipefail
 
-PROJECT="${GCP_PROJECT:-project-84207120-95a7-43ac-95e}"
+PROJECT="${GCP_PROJECT:-$(gcloud config get-value project 2>/dev/null || true)}"
+if [[ -z "$PROJECT" ]]; then
+  echo "Set GCP_PROJECT or run: gcloud config set project <project-id>" >&2
+  exit 1
+fi
 REGION="${GCP_REGION:-us-central1}"
 SERVICE="${CLOUD_RUN_SERVICE:-onto-kb}"
 AR_REPO="${ARTIFACT_REPO:-cloud-run-source-deploy}"
@@ -144,9 +148,18 @@ DEPLOY_ENV="MCP_PUBLIC_URL=${CANONICAL_PUBLIC}"
 # The only readable folder is kb and its descendants. --set-env-vars replaces
 # the env set, so this bind is the live allow-list (omitted ls/find/grep use kb;
 # a named folder_id or file_id outside kb is AUTHORIZATION_ERROR). The id is
-# pinned here, not read from the operator's shell, so a stray
-# DRIVE_ALLOWED_FOLDER_ID cannot widen it. The server refuses to start without it.
-KB_FOLDER_ID="1qod47BRgPlRnXVboaJsElSNj1WkofLRQ"
+# pinned in Secret Manager (secret DRIVE_ALLOWED_FOLDER_ID), not in this public
+# repo and not read from the operator's shell, so a stray DRIVE_ALLOWED_FOLDER_ID
+# cannot widen it. The server refuses to start without it.
+if ! secret_exists DRIVE_ALLOWED_FOLDER_ID; then
+  echo "Missing Secret Manager secret DRIVE_ALLOWED_FOLDER_ID (the kb folder id)." >&2
+  exit 1
+fi
+KB_FOLDER_ID="$(gcloud secrets versions access latest --secret=DRIVE_ALLOWED_FOLDER_ID --project="$PROJECT")"
+if [[ ! "$KB_FOLDER_ID" =~ ^[A-Za-z0-9_-]{10,128}$ ]]; then
+  echo "Secret DRIVE_ALLOWED_FOLDER_ID is not a Drive folder id. Stopping." >&2
+  exit 1
+fi
 DEPLOY_ENV="${DEPLOY_ENV},DRIVE_ALLOWED_FOLDER_ID=${KB_FOLDER_ID}"
 DEPLOY_ENV="${DEPLOY_ENV},MCP_OAUTH_AUTO_APPROVE=true"
 DEPLOY_ENV="${DEPLOY_ENV},GOOGLE_CLOUD_PROJECT=${PROJECT}"
@@ -187,7 +200,7 @@ print(next((e.get("value", "") for e in env if e.get("name") == "DRIVE_ALLOWED_F
 }
 LATEST="$(gcloud run services describe "$SERVICE" --project="$PROJECT" --region="$REGION" --format='value(status.latestReadyRevisionName)')"
 if [[ -z "$LATEST" || "$(revision_folder "$LATEST")" != "$KB_FOLDER_ID" ]]; then
-  echo "Revision ${LATEST:-<none>} does not carry DRIVE_ALLOWED_FOLDER_ID=${KB_FOLDER_ID}. Stopping." >&2
+  echo "Revision ${LATEST:-<none>} does not carry the pinned DRIVE_ALLOWED_FOLDER_ID. Stopping." >&2
   exit 1
 fi
 echo "Routing all traffic to ${LATEST} and clearing traffic tags..."

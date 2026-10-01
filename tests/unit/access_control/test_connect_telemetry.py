@@ -93,7 +93,7 @@ def test_metric_filters_and_labels_are_non_pii():
         assert "connect_id" not in dumped
         assert "client_id" not in dumped
         assert "host_family" in dumped
-    links = console_links("project-84207120-95a7-43ac-95e", service_name="onto-kb")
+    links = console_links("example-project", service_name="onto-kb")
     assert "oauth_connect" in links["logs_oauth_connects"]
     assert "metrics-explorer" in links["metrics_explorer"]
     assert "monitoring/dashboards" in links["dashboards"]

@@ -27,7 +27,7 @@ LIVE_TOKEN = os.environ.get("MCP_AUTH_TOKEN", "")
 LIVE_DOC = os.environ.get("LIVE_DOC_FILE_ID", "")
 LIVE_FOLDER = os.environ.get("LIVE_FOLDER_ID", "")
 LIVE_PHRASE = os.environ.get("LIVE_PHRASE", "idempotency")
-LIVE_KB_FOLDER = os.environ.get("LIVE_KB_FOLDER_ID", "1qod47BRgPlRnXVboaJsElSNj1WkofLRQ")
+LIVE_KB_FOLDER = os.environ.get("LIVE_KB_FOLDER_ID", "")
 # Optional canary: a file the deployment identity can read that is NOT under kb.
 LIVE_OUTSIDE_FILE = os.environ.get("LIVE_OUTSIDE_FILE_ID", "")
 
@@ -250,6 +250,8 @@ def test_live_omitted_ls_lists_kb_not_my_drive_root(live_oauth):
     for child in listed.get("children") or []:
         assert "content" not in child
         assert child.get("id")
+    if not LIVE_KB_FOLDER:
+        pytest.skip("Set LIVE_KB_FOLDER_ID to compare with the kb folder")
     kb = _call_tool("drive_ls", {"folder_id": LIVE_KB_FOLDER, "max_results": 40})
     assert [c["id"] for c in listed.get("children") or []] == [
         c["id"] for c in kb.get("children") or []

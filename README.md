@@ -27,22 +27,16 @@ This is standard **MCP Streamable HTTP** (`POST /mcp`). The host model — not t
 
 Read-only Google Drive tools. This server cannot write, delete, or share. The app may still ask you to allow read-only tools and to enable the connector in a chat. Menu names differ by app.
 
-**Connector URL**
-
-```
-https://onto-kb-kxjtmypvfa-uc.a.run.app/mcp
-```
-
-Paid setup steps for any AI chat app are on [https://onto-kb-kxjtmypvfa-uc.a.run.app/setup](https://onto-kb-kxjtmypvfa-uc.a.run.app/setup) after payment. Subscribe: [https://onto-kb-kxjtmypvfa-uc.a.run.app/subscribe](https://onto-kb-kxjtmypvfa-uc.a.run.app/subscribe) ($20 USD/month on Stripe; this origin never shows the operator’s bank or collects card numbers).
+**Connector URL:** shown on the setup page once your subscription is active. Paid setup steps for any AI chat app are on [https://onto-kb-kxjtmypvfa-uc.a.run.app/setup](https://onto-kb-kxjtmypvfa-uc.a.run.app/setup) after payment. Subscribe: [https://onto-kb-kxjtmypvfa-uc.a.run.app/subscribe](https://onto-kb-kxjtmypvfa-uc.a.run.app/subscribe) ($20 USD/month on Stripe; this origin never shows the operator’s bank or collects card numbers).
 
 The only folder this server may read is `kb` and its descendants. Nothing outside `kb` is listed or read, not even names or ids. Omit `folder_id` on `drive_ls`, `drive_find`, and `drive_grep` to use `kb`. A `folder_id` or `file_id` outside `kb`, or one that does not exist, is `AUTHORIZATION_ERROR`. `drive_find` asks Drive for the filename stem, so unrelated files do not fill the result cap. One `drive_read` or `drive_grep` returns at most 20 MB. A folder grep scans smaller files first; a file that does not fit is listed in `deferred_file_ids` (grep that id on its own). When the result includes `next_cursor`, call `drive_grep` again with that value in the `next_cursor` argument, the same pattern, `case_sensitive`, `regex` and scope; after a `max_matches` stop it can continue inside a file (`file_id:N`), also for `file_ids` calls. A folder grep downloads small files in parallel, so one call usually covers every small file in `kb`. A single `file_id`, including a large year export, is still searched in one call.
 
-For operators: `DRIVE_ALLOWED_FOLDER_ID` is required. The server refuses to start when it is unset, blank, or an alias such as `root`. `scripts/deploy-cloud-run.sh` pins it to the `kb` folder, sends all traffic to the new revision, and deletes older Cloud Run revisions that lack it, since a rollback to one of those would serve the whole Drive.
+For operators: `DRIVE_ALLOWED_FOLDER_ID` is required. The server refuses to start when it is unset, blank, or an alias such as `root`. `scripts/deploy-cloud-run.sh` pins it to the `kb` folder id kept in the Secret Manager secret `DRIVE_ALLOWED_FOLDER_ID` (not in this repo), sends all traffic to the new revision, and deletes older Cloud Run revisions that lack it, since a rollback to one of those would serve the whole Drive.
 
 Public business site for Stripe verification (free GitHub Pages): [https://wisdomspringtech.github.io/](https://wisdomspringtech.github.io/). That page has one subscribe link and does not publish the connector URL.
 
 1. In your AI chat app, add a remote MCP connector.
-2. Name: **onto-kb**. Paste the URL above. Transport, if asked: Streamable HTTP.
+2. Name: **onto-kb**. Paste the connector URL from the setup page. Transport, if asked: Streamable HTTP.
 3. Authentication: **Sign in** or **OAuth**. Leave extra request headers empty. Do not paste a static token.
 4. Connect. Check the app address on the **Allow** page and click Allow; your browser returns to the app. There is no deployment password.
 5. If the app asks you to **Always allow** read-only tools, allow them, then enable onto-kb in a chat.
@@ -55,7 +49,7 @@ Any AI chat app that can add a remote MCP server uses that same URL and OAuth. D
 
 Non-PII usage totals (Connect completions and first Drive tool use — not unique people): [https://onto-kb-kxjtmypvfa-uc.a.run.app/stats](https://onto-kb-kxjtmypvfa-uc.a.run.app/stats).
 
-In GCP: [Logs (oauth_connect)](https://console.cloud.google.com/logs/query;query=resource.type%3D%22cloud_run_revision%22%0Aresource.labels.service_name%3D%22onto-kb%22%0AjsonPayload.event%3D%22oauth_connect%22;project=project-84207120-95a7-43ac-95e), [Metrics Explorer](https://console.cloud.google.com/monitoring/metrics-explorer?project=project-84207120-95a7-43ac-95e) (`logging.googleapis.com/user/onto_kb_oauth_connects` and `onto_kb_drive_first_uses`), and dashboard **onto-kb connect counter** under [Monitoring dashboards](https://console.cloud.google.com/monitoring/dashboards?project=project-84207120-95a7-43ac-95e). Cloud Run’s own Metrics tab is only request/latency/error.
+Operators, in the deployment's Google Cloud project: Logs Explorer with `jsonPayload.event="oauth_connect"` on the Cloud Run service, Metrics Explorer (`logging.googleapis.com/user/onto_kb_oauth_connects` and `onto_kb_drive_first_uses`), and the Monitoring dashboard **onto-kb connect counter**. `scripts/ensure-connect-telemetry-gcp.sh` prints direct links for your project. Cloud Run’s own Metrics tab is only request/latency/error.
 
 ## Spec-Driven Development
 
