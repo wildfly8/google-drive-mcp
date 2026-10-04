@@ -30,6 +30,10 @@ Every `drive_*` call requires `Authorization: Bearer <access_token>` issued by
 this origin. Never pass tokens, OAuth codes, or Google credentials as tool
 arguments.
 
+Start in kb itself: its own files are the examined essays (the author's current
+positions) and README.md, which maps the subfolders of source archives. Search
+and read the essays before the archives.
+
 Loop (repeat with different terms if needed):
 1. drive_ls or drive_find → file ids (candidates, not evidence)
 2. drive_grep with a short exact phrase taken from the question, preferably on file_ids
@@ -45,8 +49,9 @@ Hard rules:
 - drive_find name_pattern is a case-insensitive substring of the *filename*, not glob, not contents.
 - drive_grep pattern matches exported file *bytes* (literal, or regex if regex=true). Not Drive fullText.
 - drive_ls is immediate children only; drive_find / drive_grep on a folder include descendants.
+- Order: a folder's own files come before anything in its subfolders. drive_ls lists files by name, then folders; drive_find returns shallower files first; a folder grep scans shallower files first, smaller first within a level.
 - The only folder this server may read is kb and its descendants. Omit folder_id to list or search kb. A folder_id or file_id outside kb, or one that does not exist, is AUTHORIZATION_ERROR; nothing outside kb is listed or read. Do not request My Drive root or any other top-level folder.
-- One drive_grep or drive_read returns at most 20 MB. A file at or under that size is complete when you pass that one file_id. A folder grep scans smaller files first. A known size that does not fit the remaining bytes is listed in deferred_file_ids and is not downloaded.
+- One drive_grep or drive_read returns at most 20 MB. A file at or under that size is complete when you pass that one file_id. A known size that does not fit the remaining bytes is listed in deferred_file_ids and is not downloaded.
 - Candidates from drive_find are not quotes. Evidence is drive_read content or drive_grep matches; keep each file_id in your own context to chain calls.
 - Citing: when your answer uses anything these tools returned, cite it with exactly one line at the end of the answer: Source: onto-kb connector
   Do not list, number or link separate references anywhere in the answer: no file names, file ids, drive: locators, URLs found in the documents (Stack Exchange or other), footnotes, bracketed markers or per-quote attributions.
@@ -78,7 +83,7 @@ When not to use:
 Example (do): {"folder_id": "1abcFolderId", "max_results": 40}
 Example (don't): {"folder_id": "1abcFolderId"} to "search for Hegel" — ls does not search names or bodies.
 
-Returns: status (COMPLETE | PARTIAL | EMPTY), children[{id,name,mime_type,is_folder,modified_time,source_url}], optional next_page_token / partial_reason. source_url is drive:{id} (not http). Never includes content.
+Returns: status (COMPLETE | PARTIAL | EMPTY), children[{id,name,mime_type,is_folder,modified_time,source_url}], optional next_page_token / partial_reason. Files come first, by name, then folders. source_url is drive:{id} (not http). Never includes content.
 
 Citing: one line at the end of your answer, Source: onto-kb connector; never list or cite individual files, ids or links.
 """
@@ -97,7 +102,7 @@ When not to use:
 - Reading a file you already have an id for (use drive_read).
 - Treating hits as verified quotes — candidates have no matched_text.
 
-name_pattern is NOT a glob: "activity-2025" matches activity-2025-01-05.md and activity-2025-04-01.md; "*activity*" looks for a literal asterisk and usually misses. The listing asks Drive for `name contains` that stem, then keeps names that contain it (case-insensitive). max_results counts matching files; matching folders have their own cap of the same size (folders count when mime_type is the folder type).
+name_pattern is NOT a glob: "activity-2025" matches activity-2025-01-05.md and activity-2025-04-01.md; "*activity*" looks for a literal asterisk and usually misses. The listing asks Drive for `name contains` that stem, then keeps names that contain it (case-insensitive). max_results counts matching files; matching folders have their own cap of the same size (folders count when mime_type is the folder type). A folder's own files are returned before files deeper down, so a capped result keeps the shallowest matches.
 
 Example (do): {"name_pattern": "activity-2025", "max_results": 40}
 Example (don't): {"name_pattern": "what role does pure mathematics play in the philosophical foundations of mathematics?"} — that is a question, not a filename.
@@ -152,7 +157,7 @@ Example (do): {"pattern": "Vicious Circle Principle", "file_ids": ["1abcFileId"]
 Example (don't): {"pattern": "Assuming I understand the function of Foundations of Mathematics, what role does pure mathematics play..."} — not an exact phrase in any file.
 
 If both folder_id and file_ids are set, every named id must be in that folder or the call is AUTHORIZATION_ERROR.
-Folder walks scan known-smaller files first and keep the 20 MB per-file cap. A file whose known size does not fit the bytes still left in this call is not downloaded; its id is in deferred_file_ids (PARTIAL, partial_reason max_bytes). Grep each deferred id on its own. One call scans up to 200 files. A single file_id is never deferred.
+Folder walks scan the folder's own files first, then each level down, known-smaller first within a level, and keep the 20 MB per-file cap. A file whose known size does not fit the bytes still left in this call is not downloaded; its id is in deferred_file_ids (PARTIAL, partial_reason max_bytes). Grep each deferred id on its own. One call scans up to 200 files. A single file_id is never deferred.
 
 Continuing: a call that stops early returns next_cursor when there is a place to continue from. Pass it back unchanged as the next_cursor argument (cursor is the same argument) with the same pattern, case_sensitive, regex and scope (same folder_id, or the same file_ids). After the file cap, the time cap or a Google rate limit it is the last file id scanned; after max_matches it is that file id when later files remain, or file_id:N to continue inside that file after its first N matches. A continuation that is rate limited before it handles any file, or whose listing is cut, returns its own cursor again (retry it). A call whose listing is cut returns no matches, so repeating it never repeats a match. After a finished listing a call handles at least one file, so a time stop between files always makes progress. No next_cursor after a stop means: a byte-cap stop (grep deferred_file_ids instead), or a fresh call whose listing was cut or whose first download was rate limited (repeat the call). Stopping at exactly max_matches with nothing left is COMPLETE unless unsupported files were also skipped (PARTIAL unsupported_skipped).
 

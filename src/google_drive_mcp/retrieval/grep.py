@@ -1,7 +1,8 @@
 """drive_grep: fetch → exact search → provenance → discard bytes.
 
 No module-level file_id→bytes cache. Walk and multi-target export 429 → PARTIAL RATE_LIMITED.
-Small files are downloaded ahead on worker threads; the scan order stays fixed.
+Small files are downloaded ahead on worker threads; the scan order stays fixed:
+shallower files first (a folder's own files before its subfolders'), then smaller.
 """
 
 from __future__ import annotations
@@ -65,9 +66,10 @@ def _blob_size(file) -> int | None:
     return file.size
 
 
-def _sort_key(file) -> tuple:
+def _sort_key(file, depth: int = 0) -> tuple:
+    """Scan order: files nearer the searched folder first, then known-smaller."""
     size = _blob_size(file)
-    return (size is None, size or 0, file.id)
+    return (depth, size is None, size or 0, file.id)
 
 
 def _coverage(
@@ -98,7 +100,7 @@ def _coverage(
 class _Prefetch:
     """Download small files ahead of the scan on worker threads.
 
-    The scan still takes files one at a time in size order, so results never
+    The scan still takes files one at a time in scan order, so results never
     depend on which download finishes first. Only supported files with a known
     size up to GREP_PREFETCH_MAX_FILE_BYTES are fetched ahead, at most
     GREP_PREFETCH_DEPTH files and GREP_PREFETCH_WINDOW_BYTES at once, and never
@@ -280,7 +282,7 @@ def drive_grep(
             next_cursor=cursor or None,
         )
     if not single_target:
-        files.sort(key=_sort_key)
+        files.sort(key=lambda item: _sort_key(item, walk.depths.get(item.id, 0)))
     skip = 0
     if cursor:
         resume_id, skip = split_cursor(cursor)

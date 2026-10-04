@@ -26,6 +26,8 @@ class WalkResult:
     truncated: bool = False
     more: bool = False
     time_exceeded: bool = False
+    # Levels below the walked folder: 1 for its own children. Named files are 0.
+    depths: dict[str, int] = field(default_factory=dict)
 
 
 def _as_file(item: object) -> DriveFile:
@@ -43,13 +45,16 @@ def _parent_lookup(drive: object) -> object:
 
 
 def _children_of(folder_id: str, items: list) -> list[DriveFile]:
-    """Keep listed items that really are children of folder_id.
+    """Keep listed items that really are children of folder_id, files first.
 
     files.list is answered from Drive's search index; checking the parents it
-    returned keeps a stale or over-broad entry out of the result.
+    returned keeps a stale or over-broad entry out of the result. Drive's
+    order is unspecified, so files come before folders, then by name and id:
+    a folder's own files are listed first and ls pages stay stable.
     """
     files = [_as_file(item) for item in items]
-    return [f for f in files if folder_id in f.parents]
+    kept = [f for f in files if folder_id in f.parents]
+    return sorted(kept, key=lambda f: (f.is_folder, f.name.casefold(), f.name, f.id))
 
 
 def immediate_children(
@@ -103,15 +108,16 @@ def walk_files(
 
     Children returned by listing a folder are already inside that folder, so
     the walk does not fetch each child's parents. ``honor_file_cap`` false
-    keeps listing until time runs out so a later pass can order by size.
+    keeps listing until time runs out so a later pass can order the files.
     Folder nodes do not consume ``max_files`` when ``count_folders`` is false.
     ``count_listed`` false leaves the file budget for the caller (grep scans
-    a size-ordered subset of a finished listing).
+    an ordered subset of a finished listing). ``depths`` records how far below
+    the folder each listed item sits, so callers can put shallower files first.
     """
     result = WalkResult()
     lookup = _parent_lookup(drive)
 
-    def consider(file: DriveFile, *, trust: bool) -> None:
+    def consider(file: DriveFile, *, trust: bool, depth: int = 0) -> None:
         if file.trashed and not include_trashed:
             return
         if not trust and not is_within_scope(file.id, scope, lookup):
@@ -127,6 +133,7 @@ def walk_files(
         if honor_file_cap and counts and budget.files_exhausted():
             return
         result.files.append(file)
+        result.depths.setdefault(file.id, depth)
         if count_listed and counts:
             budget.note_file()
 
@@ -144,7 +151,7 @@ def walk_files(
             return result
 
         if scope.folder_id:
-            queue: deque[str] = deque([scope.folder_id])
+            queue: deque[tuple[str, int]] = deque([(scope.folder_id, 0)])
             seen: set[str] = set()
             while queue:
                 if budget.time_exceeded():
@@ -153,7 +160,7 @@ def walk_files(
                 if honor_file_cap and budget.files_exhausted():
                     result.truncated = True
                     break
-                folder = queue.popleft()
+                folder, level = queue.popleft()
                 if folder in seen:
                     continue
                 seen.add(folder)
@@ -170,8 +177,8 @@ def walk_files(
                     result.time_exceeded = True
                 for index, child in enumerate(children):
                     if child.is_folder:
-                        queue.append(child.id)
-                    consider(child, trust=True)
+                        queue.append((child.id, level + 1))
+                    consider(child, trust=True, depth=level + 1)
                     if honor_file_cap and budget.files_exhausted():
                         if index + 1 < len(children) or queue:
                             result.truncated = True
