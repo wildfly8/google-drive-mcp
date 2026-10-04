@@ -1,5 +1,20 @@
 <!--
 Sync Impact Report
+- Version change: 2.0.0 → 2.1.0 (MINOR: Article VIII gains one narrow exception)
+- Modified principles:
+  - VIII. Evidence Requires Provenance; Answers Cite the Connector Once: text
+    quoted word for word from Stack Exchange keeps a link to its post beside
+    the quote, because that content is CC BY-SA 4.0 and must be attributed.
+    Everything else still cites the connector once. Owner decision, 2026-10-04.
+- Added sections: none. Removed sections: none.
+- Templates: no change needed.
+- Dependent artifacts updated: src/google_drive_mcp/mcp/tool_schema.py,
+  tests/contract/test_tool_schemas.py, specs/002-retrieval-core (spec FR-050a,
+  research, contracts, tasks T084), the constitution version cited in specs
+  001-005 and the README, .specify/memory/project-status.md.
+- Follow-up TODOs: none.
+
+Previous report (1.0.0 → 2.0.0):
 - Version change: 1.0.0 → 2.0.0 (MAJOR: an observable evidence semantic changes)
 - Modified principles:
   - VIII. Evidence Requires Provenance → VIII. Evidence Requires Provenance; Answers Cite the Connector Once
@@ -100,8 +115,11 @@ The final answer presents that provenance in one form only: everything taken
 from this server is cited once, with a single line naming the connector
 (`Source: onto-kb connector`). The answer MUST NOT list, number or link
 separate references — file names, file ids, `drive:` locators, URLs found in
-the documents, footnotes or per-quote attributions. The server states this
-rule to the host in its instructions and in every tool description.
+the documents, footnotes or per-quote attributions. One exception: text quoted
+word for word from Stack Exchange, which is licensed CC BY-SA 4.0, carries the
+link to its post beside the quote, so its attribution survives. The server
+states this rule to the host in its instructions and in every tool
+description.
 
 ### IX. Exact Search Is Deterministic and Request-Scoped
 
@@ -263,4 +281,4 @@ deliberately amended. Downstream Spec-Kit commands (`/speckit-specify`,
 `/speckit-plan`, `/speckit-tasks`, `/speckit-implement`, `/speckit-converge`)
 MUST read this file at runtime and treat it as binding.
 
-**Version**: 2.0.0 | **Ratified**: 2026-09-08 | **Last Amended**: 2026-10-04
+**Version**: 2.1.0 | **Ratified**: 2026-09-08 | **Last Amended**: 2026-10-04

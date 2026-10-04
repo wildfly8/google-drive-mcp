@@ -344,3 +344,7 @@ Filename discovery and folder grep coverage (FR-012, FR-036, FR-038). No persist
 ## Phase 23: Examined content first
 
 - [X] T083 Put a folder's own files before its subfolders' (owner decision, 2026-10-04: `kb`'s examined essays are searched and loaded first): `walk_files` records each item's depth, a folder `drive_grep` sorts by depth then known size, listed children are ordered files first then by name (stable `drive_ls` pages; `drive_find` keeps the shallowest matches under `max_results`), and the server instructions tell hosts to start with `kb`'s own files, in `src/google_drive_mcp/infra/google_drive/list.py`, `src/google_drive_mcp/retrieval/grep.py`, `src/google_drive_mcp/mcp/tool_schema.py`, and `tests/contract/test_shallow_first_order.py` (FR-038, FR-038c)
+
+## Phase 24: Stack Exchange quotes keep their link
+
+- [X] T084 Text quoted word for word from Stack Exchange (CC BY-SA 4.0) carries the link to its post beside the quote; everything else still cites `Source: onto-kb connector` once (owner decision, 2026-10-04; constitution v2.1.0, Article VIII): server instructions and all four tool descriptions, in `src/google_drive_mcp/mcp/tool_schema.py` and `tests/contract/test_tool_schemas.py` (FR-050a)

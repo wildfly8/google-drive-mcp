@@ -10,7 +10,7 @@
 
 **Input**: User description: "Bounded context for discovery, inspection, and exact-match verification over live Google Drive content. Agent-controlled iterative retrieval with Drive as the sole persistent source of truth. No embedding index or application-owned document replica. Access Control is upstream; this spec never makes authorization decisions."
 
-**Constitution**: v2.0.0 (amended 2026-10-04: Article VIII now has answers cite the connector once) (Articles I–V, VIII–XIII, XIV). Written against ratified v1.0.0; FR-050a and T082 carry the MAJOR amendment of Article VIII, the only article that changed.
+**Constitution**: v2.1.0 (amended 2026-10-04: Article VIII now has answers cite the connector once, with a link beside text quoted from Stack Exchange) (Articles I–V, VIII–XIII, XIV). Written against ratified v1.0.0; FR-050a and T082 carry the MAJOR amendment of Article VIII, the only article that changed.
 
 **Bounded Context**: Retrieval Core (discovery, inspection, verification)
 
@@ -167,7 +167,7 @@ Drive is the only source of truth. After a document changes in Drive, a later re
 #### Provenance (cross-cutting)
 
 - **FR-050**: Every content-derived result MUST include, at minimum: `file_id, file_name, mime_type, modified_time, source_url, retrieved_at`. `source_url` MUST be `drive:{file_id}` — a locator, not a fetchable HTTP link — so hosts MUST NOT treat it as a downloadable Cited Source. A result missing `file_id` is invalid (Article VIII). `drive_grep` matches MUST also include `matched_text` and `location`. `drive_read` MUST NOT require match fields.
-- **FR-050a**: The final answer MUST cite everything taken from these tools with exactly one line, `Source: onto-kb connector`, and MUST NOT list, number or link separate references (file names, file ids, `drive:` locators, URLs found in the documents, footnotes, bracketed markers or per-quote attributions). The server instructions and every tool description MUST state this rule. Owner decision, 2026-10-04 (constitution v2.0.0, Article VIII).
+- **FR-050a**: The final answer MUST cite everything taken from these tools with exactly one line, `Source: onto-kb connector`, and MUST NOT list, number or link separate references (file names, file ids, `drive:` locators, URLs found in the documents, footnotes, bracketed markers or per-quote attributions), with one exception: text quoted word for word from Stack Exchange (CC BY-SA 4.0) MUST carry the link to its post beside the quote. The server instructions and every tool description MUST state this rule. Owner decisions, 2026-10-04 (constitution v2.1.0, Article VIII).
 - **FR-051**: Provenance MUST remain intact end-to-end: Drive → search result → agent context. No step MAY drop it. Presentation in the final answer follows FR-050a.
 
 #### Error domain (this context's categories)

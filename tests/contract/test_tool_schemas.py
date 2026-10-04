@@ -124,12 +124,16 @@ async def test_drive_read_and_grep_required_fields_and_bounds(runtime):
 
 
 async def test_answers_cite_onto_kb_in_one_line_only(runtime):
-    # Owner decision (constitution v2.0.0, Article VIII): the final answer names
-    # the connector once and lists no separate file references.
+    # Owner decision (constitution v2.1.0, Article VIII): the final answer names
+    # the connector once and lists no separate file references; text quoted word
+    # for word from Stack Exchange keeps its CC BY-SA link.
     text = create_server(runtime).instructions or ""
     assert "exactly one line at the end of the answer: Source: onto-kb connector" in text
     assert "Do not list, number or link separate references" in text
     assert "Never show it to the user" in text
+    assert "quotes Stack Exchange text word for word" in text
+    assert "CC BY-SA 4.0 and must be attributed" in text
     for tool in await create_server(runtime).list_tools():
         assert "Source: onto-kb connector" in tool.description, tool.name
         assert "never list or cite individual files" in tool.description, tool.name
+        assert "except a Stack Exchange link beside text quoted word for word" in tool.description, tool.name

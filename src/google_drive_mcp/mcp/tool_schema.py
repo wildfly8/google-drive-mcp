@@ -54,7 +54,8 @@ Hard rules:
 - One drive_grep or drive_read returns at most 20 MB. A file at or under that size is complete when you pass that one file_id. A known size that does not fit the remaining bytes is listed in deferred_file_ids and is not downloaded.
 - Candidates from drive_find are not quotes. Evidence is drive_read content or drive_grep matches; keep each file_id in your own context to chain calls.
 - Citing: when your answer uses anything these tools returned, cite it with exactly one line at the end of the answer: Source: onto-kb connector
-  Do not list, number or link separate references anywhere in the answer: no file names, file ids, drive: locators, URLs found in the documents (Stack Exchange or other), footnotes, bracketed markers or per-quote attributions.
+  Do not list, number or link separate references anywhere in the answer: no file names, file ids, drive: locators, URLs found in the documents, footnotes, bracketed markers or per-quote attributions.
+  One exception: when the answer quotes Stack Exchange text word for word (a comment, post or question title), put the link to that Stack Exchange post, as given in the entry, beside the quote. That text is CC BY-SA 4.0 and must be attributed. Paraphrase needs no link.
 - source_url is the locator drive:{file_id}, not an HTTP URL. Never show it to the user or present it as a download or Cited Source link.
 - No write/delete/share tools exist. Do not ask for them.
 """
@@ -85,7 +86,7 @@ Example (don't): {"folder_id": "1abcFolderId"} to "search for Hegel" — ls does
 
 Returns: status (COMPLETE | PARTIAL | EMPTY), children[{id,name,mime_type,is_folder,modified_time,source_url}], optional next_page_token / partial_reason. Files come first, by name, then folders. source_url is drive:{id} (not http). Never includes content.
 
-Citing: one line at the end of your answer, Source: onto-kb connector; never list or cite individual files, ids or links.
+Citing: one line at the end of your answer, Source: onto-kb connector; never list or cite individual files, ids or links, except a Stack Exchange link beside text quoted word for word from Stack Exchange.
 """
 
 DRIVE_FIND_TITLE = "Find files by name or type"
@@ -109,7 +110,7 @@ Example (don't): {"name_pattern": "what role does pure mathematics play in the p
 
 Returns: status, candidates[{file, reason, discovery_method}]. file has id/name/mime/modified_time/source_url (drive:{id}, not http), never content. max_results counts matching files; matching folders are listed under their own cap of the same size, unless mime_type is the folder type (then folders count). Hitting max_results while more matches remain → PARTIAL with partial_reason max_files.
 
-Citing: one line at the end of your answer, Source: onto-kb connector; never list or cite individual files, ids or links.
+Citing: one line at the end of your answer, Source: onto-kb connector; never list or cite individual files, ids or links, except a Stack Exchange link beside text quoted word for word from Stack Exchange.
 """
 
 DRIVE_READ_TITLE = "Read current file text"
@@ -133,7 +134,7 @@ Optional max_bytes: 1..20000000; truncation → PARTIAL (prefix returned).
 
 Returns: status, file_id, file_name, mime_type, modified_time, source_url (drive:{file_id}, not http), retrieved_at, content, optional representation / partial_reason. Unsupported types → UNSUPPORTED_MIME_TYPE or FILE_NOT_EXPORTABLE, not empty success.
 
-Citing: one line at the end of your answer, Source: onto-kb connector; never list or cite individual files, ids or links.
+Citing: one line at the end of your answer, Source: onto-kb connector; never list or cite individual files, ids or links, except a Stack Exchange link beside text quoted word for word from Stack Exchange.
 """
 
 DRIVE_GREP_TITLE = "Exact-search file contents"
@@ -174,5 +175,5 @@ EMPTY means that slice finished with zero hits and nothing deferred — never a 
 
 Returns: status, files_scanned, bytes_scanned, optional partial_reason / next_cursor / deferred_file_ids, matches[{file_id,file_name,mime_type,modified_time,source_url,retrieved_at,pattern,matched_text,location,context}]. source_url is drive:{file_id}, not an HTTP download link.
 
-Citing: one line at the end of your answer, Source: onto-kb connector; never list or cite individual files, ids or links.
+Citing: one line at the end of your answer, Source: onto-kb connector; never list or cite individual files, ids or links, except a Stack Exchange link beside text quoted word for word from Stack Exchange.
 """

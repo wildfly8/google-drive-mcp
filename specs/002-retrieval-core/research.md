@@ -25,6 +25,8 @@ Google Workspace export is capped at 10 MB by Drive. Downloaded text blobs use `
 
 **Citation in answers (2026-10-04)**: the owner chose one citation line per answer, `Source: onto-kb connector`, with no separate references. Tool results keep full provenance so the agent can verify and chain calls; only the presentation in the final answer collapses to that line (constitution v2.0.0, Article VIII; FR-050a). Alternative rejected by the owner: listing each file or Stack Exchange link as a reference.
 
+**Stack Exchange quotes keep their link (2026-10-04)**: the kb's Stack Exchange files carry other users' question titles and short quotes of their comments, licensed CC BY-SA 4.0, which requires attribution. A one-line connector citation would strip it, so an answer that quotes Stack Exchange text word for word puts the post's link beside the quote (constitution v2.1.0). Paraphrase and every other source still cite the connector once.
+
 Wire field `source_url` is the locator `drive:{file_id}`, not Drive `webViewLink`. HTTP view links MUST NOT appear in tool JSON (hosts offer them as downloadable Cited Sources).
 
 **Alternatives considered**: Docs API / Sheets API structural reads (more faithful layout, more APIs — rejected for v1; Drive export is enough for exact search). Always markdown for Docs (fine later via `content_format`).

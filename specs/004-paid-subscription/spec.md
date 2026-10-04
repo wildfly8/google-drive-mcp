@@ -10,7 +10,7 @@
 
 **Input**: User description: "Add brand new feat 004 to get ready go live to accept mandatory $20 monthly subscription fee via Stripe/PayPal or whatever secure payment approach you recommend as the best payment approach based on the entire context while I don't want to disclose my credit card/bank account or any other PII data to receive mandatory $20/month subscription fee to use my MCP Server."
 
-**Constitution**: Written against ratified v1.0.0; current v2.0.0 (2026-10-04) changed only Article VIII, which this spec does not touch. **MINOR** (Article XIV): paywall on existing MCP Connect. Does not change Drive as source of truth, read-only tools, one Google identity per deployment, or document-as-data. Subscription records are operational entitlements (Article III exception: not a retrieval cache or RAG index). Per-subscriber Google accounts remain out of scope (MAJOR).
+**Constitution**: Written against ratified v1.0.0; current v2.1.0 (2026-10-04; v2.0.0 and v2.1.0) changed only Article VIII, which this spec does not touch. **MINOR** (Article XIV): paywall on existing MCP Connect. Does not change Drive as source of truth, read-only tools, one Google identity per deployment, or document-as-data. Subscription records are operational entitlements (Article III exception: not a retrieval cache or RAG index). Per-subscriber Google accounts remain out of scope (MAJOR).
 
 **Bounded Context**: Paid entitlement (upstream of Access Control token issuance; does not authorize Drive itself)
 

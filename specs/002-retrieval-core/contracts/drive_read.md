@@ -62,4 +62,4 @@ Canonical categories: [error-taxonomy.md](./error-taxonomy.md).
 
 ## Citing
 
-The tool description ends with: "Citing: one line at the end of your answer, Source: onto-kb connector; never list or cite individual files, ids or links." Provenance fields in the result are for the agent, not for the answer (FR-050a).
+The tool description ends with: "Citing: one line at the end of your answer, Source: onto-kb connector; never list or cite individual files, ids or links, except a Stack Exchange link beside text quoted word for word from Stack Exchange." Provenance fields in the result are for the agent, not for the answer (FR-050a).

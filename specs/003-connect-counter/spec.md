@@ -10,7 +10,7 @@
 
 **Input**: User description: "Add a non-PII connect counter for successful OAuth Connect completions and first Drive tool use per connect. Do not identify public people." Follow-up: show the same counters on the cloud operations dashboard, not only `/stats`.
 
-**Constitution**: Written against ratified v1.0.0; current v2.0.0 (2026-10-04) changed only Article VIII, which this spec does not touch. MINOR (Article XIV): operational telemetry only. Does not change Drive as source of truth, read-only tools, or MCP auth. Counts are not document content (Article III exception: operational metrics in the same log stream already used for `chain` / `retrieval`, not a retrieval cache).
+**Constitution**: Written against ratified v1.0.0; current v2.1.0 (2026-10-04; v2.0.0 and v2.1.0) changed only Article VIII, which this spec does not touch. MINOR (Article XIV): operational telemetry only. Does not change Drive as source of truth, read-only tools, or MCP auth. Counts are not document content (Article III exception: operational metrics in the same log stream already used for `chain` / `retrieval`, not a retrieval cache).
 
 **Bounded Context**: Connect telemetry (downstream of Access Control; does not authorize)
 
