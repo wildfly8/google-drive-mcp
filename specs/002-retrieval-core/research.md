@@ -108,3 +108,8 @@ Google 404 after `ALLOW` uses Access Control’s `map_google_error()` — do not
 
 **Alternatives considered**: Raise the per-operation byte cap (rejected: bytes were not the limit, and larger files in memory risk the 512 MiB instance). Prefetch every file regardless of size (rejected: several 12–19 MB exports at once could exhaust memory). Process results as downloads finish (rejected: match order would depend on timing, breaking FR-031). A cursor that re-scans the stopped file from its start (rejected: returns the same matches twice).
 
+## Decision: A folder's own files first; kb's examined essays lead (2026-10-04)
+
+**Rationale**: The owner moved the 27 examined essays (current theses) to `kb`'s root and the archives (about 440 files of ~100 KB) into subfolders, and asked that the essays be searched and loaded first. Size-only grep order interleaved essays with indexes and small archive files, and the breadth-first find walk reached `chatgpt/` before the essays when they sat two levels deep. Grep now sorts by depth, then size; listed children are files first, then by name. Drive's `files.list` order is unspecified, so the sort also keeps `drive_ls` offset paging stable. The rule names no folder, so it holds for any layout.
+
+**Alternatives considered**: A priority folder setting by name or id (rejected: deployment-specific configuration for what layout already expresses). Size-only order with the essays kept the smallest files (rejected: fragile; one long essay or a short index breaks it).

@@ -340,3 +340,7 @@ Filename discovery and folder grep coverage (FR-012, FR-036, FR-038). No persist
 ## Phase 22: One-line citation
 
 - [X] T082 Answers cite onto-kb in one line (owner decision, 2026-10-04; constitution v2.0.0, Article VIII): the server instructions and all four tool descriptions tell the host to end any answer that uses tool results with the single line `Source: onto-kb connector` and never to list, number or link separate references (file names, ids, `drive:` locators, document URLs, footnotes, per-quote attributions); tool results keep full provenance for the agent's own use. Test `test_answers_cite_onto_kb_in_one_line_only` in `tests/contract/test_tool_schemas.py`; text in `src/google_drive_mcp/mcp/tool_schema.py` (FR-050a, FR-051)
+
+## Phase 23: Examined content first
+
+- [X] T083 Put a folder's own files before its subfolders' (owner decision, 2026-10-04: `kb`'s examined essays are searched and loaded first): `walk_files` records each item's depth, a folder `drive_grep` sorts by depth then known size, listed children are ordered files first then by name (stable `drive_ls` pages; `drive_find` keeps the shallowest matches under `max_results`), and the server instructions tell hosts to start with `kb`'s own files, in `src/google_drive_mcp/infra/google_drive/list.py`, `src/google_drive_mcp/retrieval/grep.py`, `src/google_drive_mcp/mcp/tool_schema.py`, and `tests/contract/test_shallow_first_order.py` (FR-038, FR-038c)
