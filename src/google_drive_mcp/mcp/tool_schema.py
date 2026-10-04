@@ -97,7 +97,7 @@ When not to use:
 - Reading a file you already have an id for (use drive_read).
 - Treating hits as verified quotes — candidates have no matched_text.
 
-name_pattern is NOT a glob: "activity" matches activity-2025.mdx; "*activity*" looks for a literal asterisk and usually misses. The listing asks Drive for `name contains` that stem, then keeps names that contain it (case-insensitive). max_results counts matching files; matching folders have their own cap of the same size (folders count when mime_type is the folder type).
+name_pattern is NOT a glob: "activity-2025" matches activity-2025-01-05.md and activity-2025-04-01.md; "*activity*" looks for a literal asterisk and usually misses. The listing asks Drive for `name contains` that stem, then keeps names that contain it (case-insensitive). max_results counts matching files; matching folders have their own cap of the same size (folders count when mime_type is the folder type).
 
 Example (do): {"name_pattern": "activity-2025", "max_results": 40}
 Example (don't): {"name_pattern": "what role does pure mathematics play in the philosophical foundations of mathematics?"} — that is a question, not a filename.
@@ -121,7 +121,7 @@ When not to use:
 - The target is a folder_id (folders are not readable as documents).
 
 Example (do): {"file_id": "1abcFileId"}
-Example (don't): {"file_id": "activity-2025.mdx"} — names are not ids. Example (don't): pass a user question; this tool does not search.
+Example (don't): {"file_id": "activity-2025-01-05.md"} — names are not ids. Example (don't): pass a user question; this tool does not search.
 
 Optional content_format: omit for the default export (Docs/Slides text/plain, Sheets csv, text blobs as stored). Unknown or incompatible format → INVALID_ARGUMENT.
 Optional max_bytes: 1..20000000; truncation → PARTIAL (prefix returned).

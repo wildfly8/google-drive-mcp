@@ -315,7 +315,7 @@ def create_server(runtime: Runtime | None = None) -> MCPServer:
                 default=None,
                 description=(
                     "Case-insensitive substring of the filename only (not glob, not contents). "
-                    "Example: 'activity-2025' matches activity-2025.mdx. Do not pass a user question."
+                    "Example: 'chatgpt-2025-03' matches the ChatGPT files that start in March 2025. Do not pass a user question."
                 ),
             ),
         ] = None,
