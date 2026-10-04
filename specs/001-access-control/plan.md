@@ -80,7 +80,7 @@ Technical approach: a Python hexagonal MCP server on Cloud Run. Access control i
 | document content is untrusted | PASS — retrieved text is never an input to `AuthorizationDecision` |
 | retrieval can iterate | PASS — chain is re-evaluated every call; prior success is not a credential |
 | exact search is deterministic | N/A (Retrieval Core) |
-| evidence carries provenance | N/A (Retrieval Core) |
+| evidence carries provenance to the agent; answers cite the connector once | N/A (Retrieval Core) |
 | partiality is visible | PASS — auth failures are classified errors, never empty success |
 | compute is ephemeral | PASS — JWT access tokens verify on any instance; Google creds minted per request |
 | no hidden persistent state exists | PASS — no token cache on disk; secrets from env; DCR is stateless (signed `client_id`); bounded in-memory CIMD records and `jti` maps are a documented Article III exception |

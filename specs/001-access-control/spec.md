@@ -10,7 +10,7 @@
 
 **Input**: User description: "Bounded context for who may act and on what authority over the Google Drive Agentic Retrieval MCP. Every call must pass an identical independently-enforced authorization chain before it reaches Drive. Document content is untrusted and cannot acquire authority. Retrieval Core is a conformist consumer of this context."
 
-**Constitution**: Ratified v1.0.0 (Articles VI, VII, V, XIV). Source attachments cited Constitution v2.0.0; this spec conforms to the ratified v1.0.0 text in `.specify/memory/constitution.md`.
+**Constitution**: v2.0.0 (amended 2026-10-04: Article VIII now has answers cite the connector once) (Articles VI, VII, V, XIV). Written against ratified v1.0.0; the amendment changed only Article VIII, which this spec does not own. Text in `.specify/memory/constitution.md`.
 
 **Bounded Context**: Access Control / Authorization Boundary
 

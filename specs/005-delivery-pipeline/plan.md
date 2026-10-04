@@ -54,7 +54,7 @@ Code the pipeline deploys runs as the runtime account, with every bound secret, 
 | XIV. Change Control | Yes | PASS: **PATCH**. No behavior or invariant of the server changes and no capability is added to it. Not MINOR (no new server capability) and not MAJOR (no invariant, security boundary, source-of-truth model or evidence semantic changes). The deploy identity is new, but the server's request-time boundary (the Article VII chain, the `kb` allow-list, the paywall) is unchanged, and the owner still decides what goes live: by the owner's decision deploys need no approval click (FR-005), and only the owner can put a commit on `main`. The owner is still the only one who can ship code, so PATCH stands. Precedence holds: security invariants (the `kb` pin, the paywall) stop a deploy rather than yield to it. |
 | XV. Constitutional Fitness | Yes | PASS: every fitness line is unchanged; the pipeline only ships code that must already conform. |
 
-No amendment is needed under Governance: the constitution text does not change and stays v1.0.0.
+No amendment is needed under Governance: the constitution text does not change for 005 (it was v1.0.0 then; the later v2.0.0 amendment of Article VIII belongs to 002 T082).
 
 **Post-design re-check**: Still PASS. T014 (e436ea0), T016 and T022–T023 (6fa3143, run 17), the closed T024 (owner decision: no approval click), T021 (SHA pins), T015 (identifiers as secrets), T017 (branch rulesets), T018 (dependency updates, lockfile only) and the optional open tasks (T019, T020) change delivery settings only.
 

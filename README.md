@@ -8,7 +8,7 @@ spec-driven development. Governing principles live in
 [`.specify/memory/constitution.md`](.specify/memory/constitution.md) and bind
 every subsequent spec, plan, task list, and implementation.
 
-## Constitution (ratified v1.0.0)
+## Constitution (v2.0.0)
 
 Google Drive is the sole source of truth. The MCP is a secure, deterministic,
 ephemeral evidence-acquisition layer. The calling agent owns reasoning and the
@@ -51,7 +51,7 @@ Public business site for Stripe verification (free GitHub Pages): [https://wisdo
 
 Knowing the connector URL is not enough: Connect finishes only in a browser with an active subscription, after its Allow click. Drive calls require the short-lived token that app stores after Connect. Do not put `MCP_AUTH_TOKEN` in request headers.
 
-Tool results identify files with `file_id` and `source_url` as `drive:{file_id}` — not an HTTPS Drive link — so Cited Sources cannot offer a download. Document text is still returned as evidence; use `drive_read` for the body.
+Answers that use onto-kb cite it in one line only, `Source: onto-kb connector`, with no separate references; the server's instructions and tool descriptions tell the AI app so. Tool results identify files with `file_id` and `source_url` as `drive:{file_id}` — not an HTTPS Drive link — so Cited Sources cannot offer a download. Document text is still returned as evidence; use `drive_read` for the body.
 
 Any AI chat app that can add a remote MCP server uses that same URL and OAuth. Do not put tokens in the MCP URL or in tool arguments. Do not send `MCP_AUTH_TOKEN` as the `/mcp` Bearer.
 
@@ -63,7 +63,7 @@ Operators, in the deployment's Google Cloud project: Logs Explorer with `jsonPay
 
 Cursor skills are installed under `.cursor/skills/`. Use them in this order:
 
-0. `/speckit-constitution` — project principles (done: v1.0.0)
+0. `/speckit-constitution` — project principles (done: v1.0.0; amended to v2.0.0 on 2026-10-04)
 1. `/speckit-specify` — what to build (done: access control + retrieval core + connect counter)
 2. `/speckit-clarify` — optional; de-risk underspecified areas (done: session 2026-09-08)
 3. `/speckit-plan` — how to build it (done: access control + retrieval core + connect counter)

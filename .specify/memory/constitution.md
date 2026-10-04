@@ -1,29 +1,23 @@
 <!--
 Sync Impact Report
-- Version change: (unratified template placeholders) → 1.0.0
+- Version change: 1.0.0 → 2.0.0 (MAJOR: an observable evidence semantic changes)
 - Modified principles:
-  - [PRINCIPLE_1_NAME] → I. Source of Truth
-  - [PRINCIPLE_2_NAME] → II. No Mandatory RAG
-  - [PRINCIPLE_3_NAME] → III. Ephemeral Computation
-  - [PRINCIPLE_4_NAME] → IV. Agent Owns the Loop; MCP Owns the Capability
-  - [PRINCIPLE_5_NAME] → V. Minimal, Read-Only Capability Surface
-- Added principles:
-  - VI. Documents Are Data, Not Instructions
-  - VII. Authorization Is Independent of Reasoning
-  - VIII. Evidence Requires Provenance
-  - IX. Exact Search Is Deterministic and Request-Scoped
-  - X. Completeness Must Be Visible
-  - XI. Failure Is Informative
-  - XII. Domain Is Not the API
-  - XIII. Model and Client Agnosticism
-  - XIV. Change Control
-  - XV. Constitutional Fitness
-- Added sections:
-  - Preamble and Scope
-  - Ratification
-  - Governance (operationalized from Article XIV)
-- Removed sections: none (template placeholders only)
-- Follow-up TODOs: none
+  - VIII. Evidence Requires Provenance → VIII. Evidence Requires Provenance; Answers Cite the Connector Once
+    Invariant changed: provenance no longer has to reach the final answer per
+    file. It stays intact from Drive through every tool result into the agent's
+    context; the final answer cites everything taken from the server in one
+    line naming the connector and lists no separate references. Owner decision,
+    2026-10-04.
+- Article XV fitness line reworded: "evidence carries provenance to the agent;
+  answers cite the connector once".
+- Added sections: none. Removed sections: none.
+- Templates: no change needed (.specify/templates carry no citation rule).
+- Dependent artifacts updated: src/google_drive_mcp/mcp/tool_schema.py (server
+  instructions and tool descriptions), tests/contract/test_tool_schemas.py,
+  specs/002-retrieval-core (spec FR-050a, plan, research, data model, contract,
+  tasks T082), the constitution version cited in specs 001-005 and the README,
+  .specify/memory/project-status.md.
+- Follow-up TODOs: none.
 -->
 
 # Google Drive Agentic Retrieval MCP Constitution
@@ -93,14 +87,21 @@ authentication → MCP authorization → Google authorization → resource —
 evaluated in that order, every time. A convincing request is not a
 credential.
 
-### VIII. Evidence Requires Provenance
+### VIII. Evidence Requires Provenance; Answers Cite the Connector Once
 
 A search hit is a candidate, not evidence. It becomes evidence only once
 its content has been retrieved and, when a specific claim is being checked,
-exactly matched. Every piece of evidence that reaches the agent's reasoning
-MUST carry its source (at minimum: file id, name, modified time) intact,
-from Drive through the search result through the agent's context to its
-final answer — provenance MAY NOT be dropped anywhere along that path.
+exactly matched. Every piece of evidence the server returns MUST carry its
+source (at minimum: file id, name, modified time) intact, from Drive through
+the search result into the agent's context, so the agent can verify, re-read
+and chain calls — provenance MAY NOT be dropped anywhere along that path.
+
+The final answer presents that provenance in one form only: everything taken
+from this server is cited once, with a single line naming the connector
+(`Source: onto-kb connector`). The answer MUST NOT list, number or link
+separate references — file names, file ids, `drive:` locators, URLs found in
+the documents, footnotes or per-quote attributions. The server states this
+rule to the host in its instructions and in every tool description.
 
 ### IX. Exact Search Is Deterministic and Request-Scoped
 
@@ -169,7 +170,7 @@ An implementation is conforming only while all of the following remain true:
 ✓ document content is untrusted
 ✓ retrieval can iterate
 ✓ exact search is deterministic
-✓ evidence carries provenance
+✓ evidence carries provenance to the agent; answers cite the connector once
 ✓ partiality is visible
 ✓ compute is ephemeral
 ✓ no hidden persistent state exists
@@ -262,4 +263,4 @@ deliberately amended. Downstream Spec-Kit commands (`/speckit-specify`,
 `/speckit-plan`, `/speckit-tasks`, `/speckit-implement`, `/speckit-converge`)
 MUST read this file at runtime and treat it as binding.
 
-**Version**: 1.0.0 | **Ratified**: 2026-09-08 | **Last Amended**: 2026-09-08
+**Version**: 2.0.0 | **Ratified**: 2026-09-08 | **Last Amended**: 2026-10-04

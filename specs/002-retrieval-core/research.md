@@ -23,6 +23,8 @@ Omitted `content_format` uses this table. A caller-supplied `content_format` MUS
 
 Google Workspace export is capped at 10 MB by Drive. Downloaded text blobs use `max_export_size` and per-file `max_bytes` of 20_000_000, equal to the per-operation byte budget, so one file at that size is a complete read and a second large file in the same call is `PARTIAL` (`partial_reason: max_bytes`). A usable prefix within the cap is `PARTIAL`. A hard refusal with **no** prefix is `RESOURCE_LIMIT`. PDF is not required in v1 (not reliably “usable text” without extra libraries); treat as unsupported unless a later MINOR adds a text extractor.
 
+**Citation in answers (2026-10-04)**: the owner chose one citation line per answer, `Source: onto-kb connector`, with no separate references. Tool results keep full provenance so the agent can verify and chain calls; only the presentation in the final answer collapses to that line (constitution v2.0.0, Article VIII; FR-050a). Alternative rejected by the owner: listing each file or Stack Exchange link as a reference.
+
 Wire field `source_url` is the locator `drive:{file_id}`, not Drive `webViewLink`. HTTP view links MUST NOT appear in tool JSON (hosts offer them as downloadable Cited Sources).
 
 **Alternatives considered**: Docs API / Sheets API structural reads (more faithful layout, more APIs — rejected for v1; Drive export is enough for exact search). Always markdown for Docs (fine later via `content_format`).

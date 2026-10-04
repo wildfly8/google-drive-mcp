@@ -2,7 +2,7 @@
 
 Request-scoped only. Drive remains the source of truth.
 
-Wire field `source_url` is always the non-dereferenceable locator `drive:{file_id}`. Domain `DriveFile.web_view_link` may store Drive `webViewLink` internally but MUST NEVER be copied onto the wire (hosts treat HTTPS URLs in tool JSON as downloadable Cited Sources).
+Wire field `source_url` is always the non-dereferenceable locator `drive:{file_id}`. Provenance fields are for the agent's own tracking; a final answer cites all of them as the single line `Source: onto-kb connector` (FR-050a). Domain `DriveFile.web_view_link` may store Drive `webViewLink` internally but MUST NEVER be copied onto the wire (hosts treat HTTPS URLs in tool JSON as downloadable Cited Sources).
 
 ## DriveFile
 

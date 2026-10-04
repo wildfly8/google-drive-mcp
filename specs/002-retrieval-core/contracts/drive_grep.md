@@ -78,3 +78,7 @@ In line-oriented text (Docs, Markdown, plain text) each match is one line: `matc
 | Only `file_ids`, and every named file is unsupported / not exportable (a folder id named here counts as unsupported) | `ERROR` / `UNSUPPORTED_MIME_TYPE` or `FILE_NOT_EXPORTABLE` |
 | `folder_id` walk: mix of searchable and unsupported | Skip unsupported, search the rest, `PARTIAL` with `partial_reason` noting skips |
 | Walk: every target unsupported | `ERROR` / `UNSUPPORTED_MIME_TYPE` or `FILE_NOT_EXPORTABLE` |
+
+## Citing
+
+The tool description ends with: "Citing: one line at the end of your answer, Source: onto-kb connector; never list or cite individual files, ids or links." Provenance fields in the result are for the agent, not for the answer (FR-050a).

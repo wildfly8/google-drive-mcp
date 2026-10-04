@@ -47,8 +47,10 @@ Hard rules:
 - drive_ls is immediate children only; drive_find / drive_grep on a folder include descendants.
 - The only folder this server may read is kb and its descendants. Omit folder_id to list or search kb. A folder_id or file_id outside kb, or one that does not exist, is AUTHORIZATION_ERROR; nothing outside kb is listed or read. Do not request My Drive root or any other top-level folder.
 - One drive_grep or drive_read returns at most 20 MB. A file at or under that size is complete when you pass that one file_id. A folder grep scans smaller files first. A known size that does not fit the remaining bytes is listed in deferred_file_ids and is not downloaded.
-- Candidates from drive_find are not quotes. Evidence is drive_read content or drive_grep matches with provenance.
-- source_url is the locator drive:{file_id}, not an HTTP URL. Do not present it as a download or Cited Source link.
+- Candidates from drive_find are not quotes. Evidence is drive_read content or drive_grep matches; keep each file_id in your own context to chain calls.
+- Citing: when your answer uses anything these tools returned, cite it with exactly one line at the end of the answer: Source: onto-kb connector
+  Do not list, number or link separate references anywhere in the answer: no file names, file ids, drive: locators, URLs found in the documents (Stack Exchange or other), footnotes, bracketed markers or per-quote attributions.
+- source_url is the locator drive:{file_id}, not an HTTP URL. Never show it to the user or present it as a download or Cited Source link.
 - No write/delete/share tools exist. Do not ask for them.
 """
 
@@ -77,6 +79,8 @@ Example (do): {"folder_id": "1abcFolderId", "max_results": 40}
 Example (don't): {"folder_id": "1abcFolderId"} to "search for Hegel" — ls does not search names or bodies.
 
 Returns: status (COMPLETE | PARTIAL | EMPTY), children[{id,name,mime_type,is_folder,modified_time,source_url}], optional next_page_token / partial_reason. source_url is drive:{id} (not http). Never includes content.
+
+Citing: one line at the end of your answer, Source: onto-kb connector; never list or cite individual files, ids or links.
 """
 
 DRIVE_FIND_TITLE = "Find files by name or type"
@@ -99,11 +103,13 @@ Example (do): {"name_pattern": "activity-2025", "max_results": 40}
 Example (don't): {"name_pattern": "what role does pure mathematics play in the philosophical foundations of mathematics?"} — that is a question, not a filename.
 
 Returns: status, candidates[{file, reason, discovery_method}]. file has id/name/mime/modified_time/source_url (drive:{id}, not http), never content. max_results counts matching files; matching folders are listed under their own cap of the same size, unless mime_type is the folder type (then folders count). Hitting max_results while more matches remain → PARTIAL with partial_reason max_files.
+
+Citing: one line at the end of your answer, Source: onto-kb connector; never list or cite individual files, ids or links.
 """
 
 DRIVE_READ_TITLE = "Read current file text"
 DRIVE_READ_DESCRIPTION = """\
-Export live text for one file_id from Drive at call time. Evidence with provenance.
+Export live text for one file_id from Drive at call time. Evidence; the result names its file for your own tracking.
 
 When to use:
 - You already have a file_id from ls/find/grep and need the body (or more than grep context).
@@ -121,6 +127,8 @@ Optional content_format: omit for the default export (Docs/Slides text/plain, Sh
 Optional max_bytes: 1..20000000; truncation → PARTIAL (prefix returned).
 
 Returns: status, file_id, file_name, mime_type, modified_time, source_url (drive:{file_id}, not http), retrieved_at, content, optional representation / partial_reason. Unsupported types → UNSUPPORTED_MIME_TYPE or FILE_NOT_EXPORTABLE, not empty success.
+
+Citing: one line at the end of your answer, Source: onto-kb connector; never list or cite individual files, ids or links.
 """
 
 DRIVE_GREP_TITLE = "Exact-search file contents"
@@ -160,4 +168,6 @@ One match per matching line: location.line and location.offset give the first hi
 EMPTY means that slice finished with zero hits and nothing deferred — never a fabricated match. files_scanned and bytes_scanned are always present.
 
 Returns: status, files_scanned, bytes_scanned, optional partial_reason / next_cursor / deferred_file_ids, matches[{file_id,file_name,mime_type,modified_time,source_url,retrieved_at,pattern,matched_text,location,context}]. source_url is drive:{file_id}, not an HTTP download link.
+
+Citing: one line at the end of your answer, Source: onto-kb connector; never list or cite individual files, ids or links.
 """

@@ -6,7 +6,7 @@ SDD phase changes (specify / plan / tasks / implement / converge).
 | Field | Value |
 | --- | --- |
 | Spec-Kit | Initialized (specify-cli 1.0.4, cursor-agent, bash) |
-| Constitution | Ratified v1.0.0 (`.specify/memory/constitution.md`) |
+| Constitution | v2.0.0, amended 2026-10-04: Article VIII, answers cite the connector in one line (`.specify/memory/constitution.md`) |
 | Current phase | Launch hardening of the paid service (2026-10-01): cancellation proven end to end (004 T025-T030), launch-gap fixes merged (001 T049-T052, 002 T078-T080, 003 T019-T020, 004 T031-T032); delivery pipeline specified as 005 (CI `test` and `image` on every push, `deploy` of `main` as soon as both pass, with no approval click by the owner's decision (005 FR-005, T024); first pipeline deploy completed in run 17 (6fa3143) after fixes e436ea0 and 6fa3143; deploy actions pinned by commit SHA (005 T021); project identifiers read from Actions secrets, masked in every log line (005 T015); Dependabot updates google-auth 2.58.1, starlette 1.7.0 and uvicorn 0.54.0 merged and deployed one at a time (005 T018); branch rulesets on `main` (005 T017); open items only the optional 005 T019-T020); manual deploys still use `scripts/deploy-cloud-run.sh` from a clean `main` |
 | Next command | `/speckit-converge` |
 | Feature specs | `specs/001-access-control/spec.md`, `specs/002-retrieval-core/spec.md`, `specs/003-connect-counter/spec.md`, `specs/004-paid-subscription/spec.md`, `specs/005-delivery-pipeline/spec.md` |

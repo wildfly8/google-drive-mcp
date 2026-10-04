@@ -50,3 +50,7 @@ Invalid `max_results`, a `folder_id` that does not match the id pattern, a `page
 ```
 
 If `page_token`/`max_results` leave more children, `status` is `PARTIAL`, `partial_reason: pagination`, with `next_page_token` (`COMPLETE` only when `next_page_token` is absent and no truncation). Empty folder → `EMPTY`, `children: []`. Walk cut by Google 429 → `PARTIAL`, `partial_reason: RATE_LIMITED`. Time cap → `PARTIAL`, `partial_reason: max_execution_time`. Trashed children are not listed. A listed child whose `parents` do not include `folder_id` is dropped (stale Drive search-index entry).
+
+## Citing
+
+The tool description ends with: "Citing: one line at the end of your answer, Source: onto-kb connector; never list or cite individual files, ids or links." Provenance fields in the result are for the agent, not for the answer (FR-050a).
