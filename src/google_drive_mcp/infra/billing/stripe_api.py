@@ -24,6 +24,19 @@ _ENTITLED = frozenset({"active", "trialing"})
 # Stripe asks clients to retry these; a blip must not read as "not subscribed".
 _RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
 _RETRY_DELAYS = (0.25, 0.75)
+TERMS_URL = "https://wisdomspringtech.github.io/terms.html"
+# Shown beside a required checkbox on Checkout (it replaces Stripe's default Terms text, so
+# it must carry the link). Access starts at payment, so the buyer makes the express request
+# for that. It does not end a statutory 14-day withdrawal right: for a subscription service
+# (EU CRD Art. 8(8) and 14(3), UK CCR reg 36) a buyer who withdraws gets the first payment
+# back minus a pro-rata charge for the days used. The text must never say the right is lost.
+CHECKOUT_TERMS_CONSENT = (
+    f"I agree to the [Terms of service]({TERMS_URL}). I ask for my access to start "
+    "immediately, before any 14-day withdrawal period ends. If I have a legal right to "
+    "withdraw within 14 days of paying and I use it, I get my first payment back minus a "
+    "pro-rata charge for the days I had access. Cancelling later only stops renewal; it "
+    "does not by itself refund a month already paid."
+)
 
 
 def _warn(event: str, *, http_status: int | None = None, error: str | None = None) -> None:
@@ -155,6 +168,11 @@ class StripeHttpGateway:
             "line_items[0][quantity]": "1",
             # Ties the session to the browser that started it.
             "client_reference_id": reference,
+            # A required checkbox: the buyer accepts the Terms and asks for access to start
+            # at once; a statutory 14-day withdrawal right stays, pro rata. Stripe answers
+            # 400 for every session unless the account's public details list a Terms URL.
+            "consent_collection[terms_of_service]": "required",
+            "custom_text[terms_of_service_acceptance][message]": CHECKOUT_TERMS_CONSENT,
         }
         if customer:
             # A returning subscriber pays as the same customer, not a second one.

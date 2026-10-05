@@ -1083,6 +1083,12 @@ def test_stripe_checkout_names_the_customer_only_when_given():
     forms.clear()
     assert gateway.create_checkout_url(**urls, reference="ref-3", customer="cus_gone")
     assert [form.get("customer") for form in forms] == [["cus_gone"], None]
+    # The Terms consent box (FR-019) is on both attempts, so a returning subscriber sees it too.
+    from google_drive_mcp.infra.billing.stripe_api import CHECKOUT_TERMS_CONSENT
+
+    for form in forms:
+        assert form["consent_collection[terms_of_service]"] == ["required"]
+        assert form["custom_text[terms_of_service_acceptance][message]"] == [CHECKOUT_TERMS_CONSENT]
 
 
 def test_email_replies_take_the_same_minimum_time(fake_drive: FakeDrive, monkeypatch):

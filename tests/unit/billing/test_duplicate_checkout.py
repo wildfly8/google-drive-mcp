@@ -99,3 +99,36 @@ def test_email_lookup_ignores_case_through_search():
     # A search hit whose stored email differs is never used.
     assert gateway.active_customer_id_for_email("payer@example.com") == "cus_payer"
     assert gateway.active_customer_id_for_email("Kate@example.com") is None
+
+
+def test_checkout_requires_terms_consent_and_an_express_request_for_immediate_access():
+    from urllib.parse import parse_qs
+
+    from google_drive_mcp.infra.billing.stripe_api import CHECKOUT_TERMS_CONSENT, TERMS_URL
+
+    sent: list[dict[str, list[str]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert (request.method, request.url.path) == ("POST", "/v1/checkout/sessions")
+        sent.append(parse_qs(request.content.decode()))
+        return httpx.Response(200, json={"url": "https://checkout.stripe.com/c/pay/cs_test_1"})
+
+    url = _gateway(handler).create_checkout_url(
+        success_url="https://example.test/ok", cancel_url="https://example.test/no", reference="r1"
+    )
+    assert url == "https://checkout.stripe.com/c/pay/cs_test_1"
+    form = sent[0]
+    assert form["consent_collection[terms_of_service]"] == ["required"]
+    message = form["custom_text[terms_of_service_acceptance][message]"][0]
+    assert message == CHECKOUT_TERMS_CONSENT
+    # The text replaces Stripe's default Terms line, so it must link the Terms itself.
+    assert f"]({TERMS_URL})" in message
+    # The buyer asks for access to start at once, and is told what withdrawal costs.
+    assert "access to start immediately" in message
+    assert "legal right to withdraw within 14 days" in message
+    assert "pro-rata charge for the days I had access" in message
+    # For a subscription service a ticked box does not end the 14-day right (EU CRD Art. 16(a)
+    # and 14(3)), so the text must never tell the buyer they lose it.
+    assert "lose" not in message.lower() and "waive" not in message.lower()
+    # Stripe caps this custom text at 1,200 characters.
+    assert len(message) <= 1200
