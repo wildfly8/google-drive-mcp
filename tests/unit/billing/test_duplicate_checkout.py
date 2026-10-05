@@ -125,7 +125,8 @@ def test_checkout_requires_terms_consent_and_an_express_request_for_immediate_ac
     assert f"]({TERMS_URL})" in message
     # The buyer asks for access to start at once, and is told what withdrawal costs.
     assert "access to start immediately" in message
-    assert "legal right to withdraw within 14 days" in message
+    # The right depends on the buyer's country, so 14 days is only the EU and UK example.
+    assert "legal right to withdraw (for example, within 14 days of paying in the EU and UK)" in message
     assert "pro-rata charge for the days I had access" in message
     # For a subscription service a ticked box does not end the 14-day right (EU CRD Art. 16(a)
     # and 14(3)), so the text must never tell the buyer they lose it.

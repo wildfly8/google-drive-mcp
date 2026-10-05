@@ -78,7 +78,7 @@ Feature specs (ready for implementation):
 - [Access Control Boundary](specs/001-access-control/spec.md) — who may act, and on what authority
 - [Retrieval Core](specs/002-retrieval-core/spec.md) — discover, read, exact-search once a call is cleared
 - [Non-PII Connect Counter](specs/003-connect-counter/spec.md) — Connect and first Drive-use counts on `/stats` and the GCP dashboard **onto-kb connect counter**
-- [Mandatory paid subscription](specs/004-paid-subscription/spec.md) — $20 USD/month Stripe Checkout before MCP Connect; Checkout requires a ticked box that accepts the Terms and asks for access to start at once (a 14-day withdrawal right, where the law gives one, stays, pro rata)
+- [Mandatory paid subscription](specs/004-paid-subscription/spec.md) — $20 USD/month Stripe Checkout before MCP Connect; Checkout requires a ticked box that accepts the Terms and asks for access to start at once (a withdrawal right, where the buyer's law gives one, stays, pro rata)
 - [Delivery pipeline](specs/005-delivery-pipeline/spec.md) — CI tests and an image build on every push; `main` deploys to Cloud Run once they pass, without a stored key
 
 Repeat implement and converge until converge reports **Converged**.
