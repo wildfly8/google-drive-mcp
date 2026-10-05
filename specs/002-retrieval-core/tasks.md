@@ -348,3 +348,7 @@ Filename discovery and folder grep coverage (FR-012, FR-036, FR-038). No persist
 ## Phase 24: Stack Exchange quotes keep their link
 
 - [X] T084 Text quoted word for word from Stack Exchange (CC BY-SA 4.0) carries the link to its post beside the quote; everything else still cites `Source: onto-kb connector` once (owner decision, 2026-10-04; constitution v2.1.0, Article VIII): server instructions and all four tool descriptions, in `src/google_drive_mcp/mcp/tool_schema.py` and `tests/contract/test_tool_schemas.py` (FR-050a)
+
+## Phase 25: The citation rule leads
+
+- [X] T085 Put the citation rule first (owner report, 2026-10-05: a connected AI app still listed `file.md (drive:…)` as sources): `CITING_RULE` is the second paragraph of every tool description and the instructions open with their Citing section, before authentication; `drive_grep`'s description, which Claude Code showed cut at 4,096 characters (removing the rule and the result format), is now 3,980 characters, and no description may exceed 3,996; in `src/google_drive_mcp/mcp/tool_schema.py` and `tests/contract/test_tool_schemas.py` (`test_citing_rule_leads_the_instructions_and_every_description`) (FR-050a)

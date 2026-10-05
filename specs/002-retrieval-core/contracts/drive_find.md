@@ -59,4 +59,4 @@ Zero matches after a finished scan → `EMPTY`. Hitting `max_files` while more m
 
 ## Citing
 
-The tool description ends with: "Citing: one line at the end of your answer, Source: onto-kb connector; never list or cite individual files, ids or links, except a Stack Exchange link beside text quoted word for word from Stack Exchange." Provenance fields in the result are for the agent, not for the answer (FR-050a).
+The tool description's second paragraph, straight after its one-line purpose, is: "Citing: end your answer with exactly one line: Source: onto-kb connector. File names, ids and drive: locators in results are for your own tracking; never list, number or link them in the answer. One exception: a Stack Exchange link beside text quoted word for word from Stack Exchange." Provenance fields in the result are for the agent, not for the answer (FR-050a).

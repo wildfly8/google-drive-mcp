@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from google_drive_mcp.mcp.server import create_server
-from google_drive_mcp.mcp.tool_schema import SERVER_INSTRUCTIONS
+from google_drive_mcp.mcp.tool_schema import CITING_RULE, SERVER_INSTRUCTIONS
 from google_drive_mcp.mcp.tools import READ_ONLY_TOOLS
 from google_drive_mcp.mcp.validation import (
     CONTEXT_LINES_MAX,
@@ -133,7 +133,34 @@ async def test_answers_cite_onto_kb_in_one_line_only(runtime):
     assert "Never show it to the user" in text
     assert "quotes Stack Exchange text word for word" in text
     assert "CC BY-SA 4.0 and must be attributed" in text
+    assert "for your own tracking only" in text
     for tool in await create_server(runtime).list_tools():
+        assert CITING_RULE in tool.description, tool.name
         assert "Source: onto-kb connector" in tool.description, tool.name
-        assert "never list or cite individual files" in tool.description, tool.name
-        assert "except a Stack Exchange link beside text quoted word for word" in tool.description, tool.name
+        assert "never list, number or link them in the answer" in tool.description, tool.name
+        assert "One exception: a Stack Exchange link beside text quoted word for word" in (
+            tool.description
+        ), tool.name
+
+
+# Claude Code clips a tool description at 4,096 characters; it cut the rule off the end of
+# drive_grep's, and the answer then listed file names and drive: locators as sources.
+HOST_DESCRIPTION_CLIP = 4096
+
+
+async def test_citing_rule_leads_the_instructions_and_every_description(runtime):
+    server = create_server(runtime)
+    instructions = server.instructions or ""
+    assert instructions.index("Source: onto-kb connector") < 400
+    # The whole rule, exception included, sits before the authentication text.
+    assert instructions.index("Paraphrase needs no link.") < instructions.index("Authentication")
+    assert instructions.count("Source: onto-kb connector") == 1
+    for tool in await server.list_tools():
+        text = tool.description
+        purpose, rule, _details = text.split("\n\n", 2)
+        assert "\n" not in purpose and len(purpose) < 150, tool.name
+        assert rule == CITING_RULE, tool.name
+        # A host that keeps only the first kilobyte still keeps the rule.
+        assert CITING_RULE in text[:1024], tool.name
+        # Nothing long enough to be clipped, so the result format arrives too.
+        assert len(text) <= HOST_DESCRIPTION_CLIP - 100, f"{tool.name}: {len(text)} characters"

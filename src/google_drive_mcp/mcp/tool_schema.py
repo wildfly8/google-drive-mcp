@@ -19,10 +19,26 @@ SERVER_DESCRIPTION = (
     "parse natural-language questions, run semantic/RAG search, or synthesize answers."
 )
 
+# The citation rule (FR-050a) leads the instructions and every tool description,
+# straight after the tool's one-line purpose. Hosts clip long text: Claude Code
+# cuts a description at 4,096 characters, which removed the rule from the end of
+# drive_grep's, while the file names and drive: locators in every result invited
+# the host to list them as sources.
+CITING_RULE = (
+    "Citing: end your answer with exactly one line: Source: onto-kb connector. "
+    "File names, ids and drive: locators in results are for your own tracking; "
+    "never list, number or link them in the answer. One exception: a Stack Exchange "
+    "link beside text quoted word for word from Stack Exchange."
+)
+
 SERVER_INSTRUCTIONS = """\
 Read-only Google Drive retrieval. You (the host agent) turn the user's question
 into structured tool calls. This server never extracts keywords and never writes
 the final answer.
+
+Citing: when your answer uses anything these tools returned, cite it with exactly one line at the end of the answer: Source: onto-kb connector
+Do not list, number or link separate references anywhere in the answer: no file names, file ids, drive: locators, URLs found in the documents, footnotes, bracketed markers or per-quote attributions. The file names and drive: locators in tool results are for your own tracking only.
+One exception: when the answer quotes Stack Exchange text word for word (a comment, post or question title), put the link to that Stack Exchange post, as given in the entry, beside the quote. That text is CC BY-SA 4.0 and must be attributed. Paraphrase needs no link.
 
 Authentication is MCP OAuth 2.1 (authorization code + PKCE). Hosts may call
 `initialize` and `tools/list` without a Bearer so they can advertise tools.
@@ -53,9 +69,6 @@ Hard rules:
 - The only folder this server may read is kb and its descendants. Omit folder_id to list or search kb. A folder_id or file_id outside kb, or one that does not exist, is AUTHORIZATION_ERROR; nothing outside kb is listed or read. Do not request My Drive root or any other top-level folder.
 - One drive_grep or drive_read returns at most 20 MB. A file at or under that size is complete when you pass that one file_id. A known size that does not fit the remaining bytes is listed in deferred_file_ids and is not downloaded.
 - Candidates from drive_find are not quotes. Evidence is drive_read content or drive_grep matches; keep each file_id in your own context to chain calls.
-- Citing: when your answer uses anything these tools returned, cite it with exactly one line at the end of the answer: Source: onto-kb connector
-  Do not list, number or link separate references anywhere in the answer: no file names, file ids, drive: locators, URLs found in the documents, footnotes, bracketed markers or per-quote attributions.
-  One exception: when the answer quotes Stack Exchange text word for word (a comment, post or question title), put the link to that Stack Exchange post, as given in the entry, beside the quote. That text is CC BY-SA 4.0 and must be attributed. Paraphrase needs no link.
 - source_url is the locator drive:{file_id}, not an HTTP URL. Never show it to the user or present it as a download or Cited Source link.
 - No write/delete/share tools exist. Do not ask for them.
 """
@@ -68,10 +81,15 @@ READ_ONLY_ANNOTATIONS = ToolAnnotations(
     openWorldHint=False,
 )
 
-DRIVE_LS_TITLE = "List immediate folder children"
-DRIVE_LS_DESCRIPTION = """\
-List the immediate children of one Drive folder. Metadata only — no file bodies.
+def _describe(purpose: str, body: str) -> str:
+    """The tool's one-line purpose, then the citation rule, then the details."""
+    return f"{purpose}\n\n{CITING_RULE}\n\n{body}"
 
+
+DRIVE_LS_TITLE = "List immediate folder children"
+DRIVE_LS_DESCRIPTION = _describe(
+    "List the immediate children of one Drive folder. Metadata only — no file bodies.",
+    """\
 When to use:
 - Orient: what folders/files sit directly under kb, or under a folder_id inside kb.
 - Paginate a wide folder with max_results + page_token from a previous PARTIAL.
@@ -85,14 +103,13 @@ Example (do): {"folder_id": "1abcFolderId", "max_results": 40}
 Example (don't): {"folder_id": "1abcFolderId"} to "search for Hegel" — ls does not search names or bodies.
 
 Returns: status (COMPLETE | PARTIAL | EMPTY), children[{id,name,mime_type,is_folder,modified_time,source_url}], optional next_page_token / partial_reason. Files come first, by name, then folders. source_url is drive:{id} (not http). Never includes content.
-
-Citing: one line at the end of your answer, Source: onto-kb connector; never list or cite individual files, ids or links, except a Stack Exchange link beside text quoted word for word from Stack Exchange.
-"""
+""",
+)
 
 DRIVE_FIND_TITLE = "Find files by name or type"
-DRIVE_FIND_DESCRIPTION = """\
-Recursive metadata discovery. Returns SearchCandidate records (file + reason). Not evidence.
-
+DRIVE_FIND_DESCRIPTION = _describe(
+    "Recursive metadata discovery. Returns SearchCandidate records (file + reason). Not evidence.",
+    """\
 When to use:
 - Locate files whose *filename* contains a short stem (name_pattern is a case-insensitive substring).
 - Filter by mime_type, modified_after / modified_before (ISO-8601), or trashed.
@@ -109,14 +126,13 @@ Example (do): {"name_pattern": "activity-2025", "max_results": 40}
 Example (don't): {"name_pattern": "what role does pure mathematics play in the philosophical foundations of mathematics?"} — that is a question, not a filename.
 
 Returns: status, candidates[{file, reason, discovery_method}]. file has id/name/mime/modified_time/source_url (drive:{id}, not http), never content. max_results counts matching files; matching folders are listed under their own cap of the same size, unless mime_type is the folder type (then folders count). Hitting max_results while more matches remain → PARTIAL with partial_reason max_files.
-
-Citing: one line at the end of your answer, Source: onto-kb connector; never list or cite individual files, ids or links, except a Stack Exchange link beside text quoted word for word from Stack Exchange.
-"""
+""",
+)
 
 DRIVE_READ_TITLE = "Read current file text"
-DRIVE_READ_DESCRIPTION = """\
-Export live text for one file_id from Drive at call time. Evidence; the result names its file for your own tracking.
-
+DRIVE_READ_DESCRIPTION = _describe(
+    "Export live text for one file_id from Drive at call time. Evidence; the result names its file for your own tracking.",
+    """\
 When to use:
 - You already have a file_id from ls/find/grep and need the body (or more than grep context).
 - Re-read after Drive changed; there is no MCP cache.
@@ -133,17 +149,18 @@ Optional content_format: omit for the default export (Docs/Slides text/plain, Sh
 Optional max_bytes: 1..20000000; truncation → PARTIAL (prefix returned).
 
 Returns: status, file_id, file_name, mime_type, modified_time, source_url (drive:{file_id}, not http), retrieved_at, content, optional representation / partial_reason. Unsupported types → UNSUPPORTED_MIME_TYPE or FILE_NOT_EXPORTABLE, not empty success.
+""",
+)
 
-Citing: one line at the end of your answer, Source: onto-kb connector; never list or cite individual files, ids or links, except a Stack Exchange link beside text quoted word for word from Stack Exchange.
-"""
-
+# Host clients clip long descriptions (Claude Code at 4,096 characters), so this
+# one stays under 4,000: everything it says, including the result format, arrives.
 DRIVE_GREP_TITLE = "Exact-search file contents"
-DRIVE_GREP_DESCRIPTION = """\
-Deterministic exact match over bytes exported in this call. Not Drive fullText, not embeddings, not keyword-ranking.
-
+DRIVE_GREP_DESCRIPTION = _describe(
+    "Deterministic exact match over bytes exported in this call. Not Drive fullText, not embeddings, not keyword-ranking.",
+    """\
 When to use:
 - Verify a claim with a short distinctive phrase, identifier, title, or term of art taken from the user question.
-- Search known file_ids inside kb (preferred) or all descendants of a folder_id inside kb. Omit folder_id to search kb. A folder or file outside kb is AUTHORIZATION_ERROR. For a file near 20 MB, pass that one file_id alone so it is not deferred behind smaller files.
+- Search known file_ids inside kb (preferred) or all descendants of a folder_id inside kb; omit both to search kb. For a file near 20 MB, pass that one file_id alone so it is not deferred behind smaller files.
 - Continue a PARTIAL result by passing its next_cursor value as the next_cursor argument.
 - Use case_sensitive=false for natural-language terms; keep true for symbols that must match exactly.
 - Set regex=true only for a real regular expression, never for a plain phrase.
@@ -154,26 +171,25 @@ When not to use:
 - Passing the entire user question or an essay as pattern — that looks for that whole string and usually returns EMPTY.
 - Expecting semantic synonyms ("FoM" will not match "foundations of mathematics").
 
-Example (do): {"pattern": "Vicious Circle Principle", "file_ids": ["1abcFileId"], "case_sensitive": false, "context_lines": 3, "max_matches": 20}
-Example (don't): {"pattern": "Assuming I understand the function of Foundations of Mathematics, what role does pure mathematics play..."} — not an exact phrase in any file.
+Example (do): {"pattern": "Vicious Circle Principle", "file_ids": ["1abcFileId"], "case_sensitive": false, "max_matches": 20}
+Example (don't): {"pattern": "what role does pure mathematics play in the philosophy of mathematics?"} — a question, not an exact phrase in any file.
 
 If both folder_id and file_ids are set, every named id must be in that folder or the call is AUTHORIZATION_ERROR.
 Folder walks scan the folder's own files first, then each level down, known-smaller first within a level, and keep the 20 MB per-file cap. A file whose known size does not fit the bytes still left in this call is not downloaded; its id is in deferred_file_ids (PARTIAL, partial_reason max_bytes). Grep each deferred id on its own. One call scans up to 200 files. A single file_id is never deferred.
 
-Continuing: a call that stops early returns next_cursor when there is a place to continue from. Pass it back unchanged as the next_cursor argument (cursor is the same argument) with the same pattern, case_sensitive, regex and scope (same folder_id, or the same file_ids). After the file cap, the time cap or a Google rate limit it is the last file id scanned; after max_matches it is that file id when later files remain, or file_id:N to continue inside that file after its first N matches. A continuation that is rate limited before it handles any file, or whose listing is cut, returns its own cursor again (retry it). A call whose listing is cut returns no matches, so repeating it never repeats a match. After a finished listing a call handles at least one file, so a time stop between files always makes progress. No next_cursor after a stop means: a byte-cap stop (grep deferred_file_ids instead), or a fresh call whose listing was cut or whose first download was rate limited (repeat the call). Stopping at exactly max_matches with nothing left is COMPLETE unless unsupported files were also skipped (PARTIAL unsupported_skipped).
+Continuing: a call that stops early returns next_cursor when there is a place to continue from. Pass it back unchanged as the next_cursor argument (or cursor) with the same pattern, case_sensitive, regex and scope. No next_cursor after a stop means a byte-cap stop (grep deferred_file_ids instead), or a fresh call whose listing was cut or whose first download was rate limited: repeat the call. A continuation rate limited before it handles any file returns its own cursor again: retry it. Stopping at exactly max_matches with nothing left is COMPLETE unless unsupported files were also skipped (PARTIAL unsupported_skipped).
 
 pattern is at most 512 characters (literal or regex). A regex runs under the call's time cap: one \
 too slow to finish stops with PARTIAL, partial_reason max_execution_time, keeps the matches it \
-finished, and its next_cursor continues in the file it stopped in (file_id:N after N matches \
-there, else the file id handled before it; none if it was a fresh call's first file, so repeat the \
-call). If the next call stops at the same place, simplify the regex (avoid nested quantifiers such \
-as (a|aa)+). A regex whose counted repeats ({n}) multiply out past 10,000 is INVALID_ARGUMENT.
+finished, and its next_cursor continues in the file it stopped in (none if that was a fresh call's \
+first file: repeat the call). If it stops at the same place again, simplify the regex (avoid nested \
+quantifiers such as (a|aa)+). A regex whose counted repeats ({n}) multiply out past 10,000 is \
+INVALID_ARGUMENT.
 
 One match per matching line: location.line and location.offset give the first hit on that line, location.occurrences counts every hit on it, and the context holds the whole line. max_matches counts lines, not hits. Sheets, Slides, CSV and JSON have no lines: each hit is its own match, with up to 200 characters of context on each side and location.offset only.
 
-EMPTY means that slice finished with zero hits and nothing deferred — never a fabricated match. files_scanned and bytes_scanned are always present.
+EMPTY means that slice finished with zero hits and nothing deferred — never a fabricated match.
 
 Returns: status, files_scanned, bytes_scanned, optional partial_reason / next_cursor / deferred_file_ids, matches[{file_id,file_name,mime_type,modified_time,source_url,retrieved_at,pattern,matched_text,location,context}]. source_url is drive:{file_id}, not an HTTP download link.
-
-Citing: one line at the end of your answer, Source: onto-kb connector; never list or cite individual files, ids or links, except a Stack Exchange link beside text quoted word for word from Stack Exchange.
-"""
+""",
+)

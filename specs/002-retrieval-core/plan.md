@@ -75,7 +75,7 @@ Omitted → default MIME from the research export map (Docs/Slides `text/plain`,
 | document content is untrusted | PASS — content cannot change tool control flow |
 | retrieval can iterate | PASS — tools are primitives; agent owns the loop |
 | exact search is deterministic | PASS — stdlib `re` (literal) or the `regex` package (regex, timed) over retrieved bytes in-request; a regex time stop is a visible `PARTIAL` |
-| evidence carries provenance to the agent; answers cite the connector once | PASS — `file_id` required on content-derived results; instructions and every tool description require the single line `Source: onto-kb connector` and no separate references, except a link beside text quoted word for word from Stack Exchange (FR-050a, T082, T084; amendments v2.0.0 and v2.1.0 ratified by the owner 2026-10-04) |
+| evidence carries provenance to the agent; answers cite the connector once | PASS — `file_id` required on content-derived results; instructions and every tool description require the single line `Source: onto-kb connector` and no separate references, except a link beside text quoted word for word from Stack Exchange (FR-050a, T082, T084, T085; amendments v2.0.0 and v2.1.0 ratified by the owner 2026-10-04; the rule leads each description and none exceeds 3,996 characters) |
 | partiality is visible | PASS — `COMPLETE`/`PARTIAL`/`EMPTY`/`ERROR` |
 | compute is ephemeral | PASS — discard exports after the operation |
 | no hidden persistent state exists | PASS — no index, no cache |
