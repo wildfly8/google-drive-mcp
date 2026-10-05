@@ -12,7 +12,6 @@ class SearchMatch(BaseModel):
     file_name: str
     mime_type: str
     modified_time: str
-    source_url: str
     retrieved_at: str
     pattern: str
     matched_text: str
@@ -25,7 +24,6 @@ class SearchMatch(BaseModel):
             "file_name": self.file_name,
             "mime_type": self.mime_type,
             "modified_time": self.modified_time,
-            "source_url": self.source_url,
             "retrieved_at": self.retrieved_at,
             "pattern": self.pattern,
             "matched_text": self.matched_text,

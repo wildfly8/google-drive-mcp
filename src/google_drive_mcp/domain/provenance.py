@@ -12,7 +12,6 @@ class Provenance(BaseModel):
     file_name: str
     mime_type: str
     modified_time: str
-    source_url: str
     retrieved_at: str
     matched_text: str | None = None
     location: dict | None = None
@@ -23,6 +22,5 @@ class Provenance(BaseModel):
             "file_name": self.file_name,
             "mime_type": self.mime_type,
             "modified_time": self.modified_time,
-            "source_url": self.source_url,
             "retrieved_at": self.retrieved_at,
         }

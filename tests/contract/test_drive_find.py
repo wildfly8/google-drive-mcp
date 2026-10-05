@@ -17,8 +17,7 @@ def test_find_includes_nested_doc_as_candidate_not_evidence(runtime, authz):
         assert "reason" in cand
         assert "content" not in cand
         assert "content" not in cand["file"]
-        assert cand["file"]["source_url"] == f"drive:{cand['file']['id']}"
-        assert not cand["file"]["source_url"].lower().startswith("http")
+        assert "source_url" not in cand["file"]
         assert "verified" not in cand
         assert "evidence" not in cand
     assert "trashed-doc" not in ids

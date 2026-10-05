@@ -24,7 +24,7 @@ Must run Access Control chain first. A `file_id` not proven to be inside `DRIVE_
 ```json
 {
   "type": "object",
-  "required": ["status", "file_id", "file_name", "mime_type", "modified_time", "source_url", "retrieved_at", "content"],
+  "required": ["status", "file_id", "file_name", "mime_type", "modified_time", "retrieved_at", "content"],
   "properties": {
     "status": { "enum": ["COMPLETE", "PARTIAL"] },
     "partial_reason": { "type": "string" },
@@ -32,7 +32,6 @@ Must run Access Control chain first. A `file_id` not proven to be inside `DRIVE_
     "file_name": { "type": "string" },
     "mime_type": { "type": "string" },
     "modified_time": { "type": "string" },
-    "source_url": { "type": "string", "description": "Non-HTTP locator drive:{file_id}; never a downloadable URL" },
     "retrieved_at": { "type": "string" },
     "representation": { "type": "string" },
     "content": { "type": "string" }
@@ -40,7 +39,7 @@ Must run Access Control chain first. A `file_id` not proven to be inside `DRIVE_
 }
 ```
 
-Match fields (`matched_text`, `location`) MUST NOT be required. Truncation at `max_bytes` with a usable prefix → `PARTIAL`, `partial_reason: max_bytes`; content is the prefix actually read. Missing `file_id` in output is invalid. `source_url` MUST be `drive:{file_id}` and MUST NOT be an HTTP URL.
+Match fields (`matched_text`, `location`) MUST NOT be required. Truncation at `max_bytes` with a usable prefix → `PARTIAL`, `partial_reason: max_bytes`; content is the prefix actually read. Missing `file_id` in output is invalid. The result carries no `source_url` or other link.
 
 On the wire the answer stays near the UTF-8 size of `content` (no `\uXXXX` re-encoding), so a read at the 20 MB cap fits Cloud Run's 32 MiB response cap even for CJK text (FR-106).
 
@@ -62,4 +61,4 @@ Canonical categories: [error-taxonomy.md](./error-taxonomy.md).
 
 ## Citing
 
-The tool description's second paragraph, straight after its one-line purpose, is: "Citing: end your answer with exactly one line: Source: onto-kb connector. File names, ids and drive: locators in results are for your own tracking; never list, number or link them in the answer. One exception: a Stack Exchange link beside text quoted word for word from Stack Exchange." Provenance fields in the result are for the agent, not for the answer (FR-050a).
+The tool description's second paragraph, straight after its one-line purpose, is: "Citing: end your answer with exactly one line: Source: onto-kb connector. Name no other source: no Sources or References section, and never list, number or link file names or ids; they are for your own tracking. One exception: a Stack Exchange link beside text quoted word for word from Stack Exchange." Provenance fields in the result are for the agent, not for the answer (FR-050a).

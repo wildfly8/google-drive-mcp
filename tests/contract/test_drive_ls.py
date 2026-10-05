@@ -5,7 +5,7 @@ from __future__ import annotations
 from google_drive_mcp.mcp.tools import handle_tool
 
 
-def test_ls_folder_returns_children_metadata_with_source_url_no_content(runtime, authz):
+def test_ls_folder_returns_children_metadata_without_content_or_links(runtime, authz):
     result = handle_tool(
         runtime, "drive_ls", {"folder_id": "folder-a"}, authz
     )
@@ -14,8 +14,7 @@ def test_ls_folder_returns_children_metadata_with_source_url_no_content(runtime,
     assert "nested-doc" in ids
     assert "trashed-doc" not in ids
     for child in result["children"]:
-        assert child["source_url"] == f"drive:{child['id']}"
-        assert not child["source_url"].lower().startswith("http")
+        assert "source_url" not in child
         assert "content" not in child
         assert child["modified_time"]
     assert result.get("content") is None

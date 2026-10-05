@@ -29,9 +29,9 @@ uv run pytest tests/contract tests/unit/retrieval -q
 Expected:
 
 1. `tools/list` returns four tools with non-empty when-to-use / when-not / do / don't descriptions and schema bounds (`tests/contract/test_tool_schemas.py`)
-2. `drive_ls` on a folder returns children metadata including `source_url` = `drive:{id}` (not http), no `content` keys
+2. `drive_ls` on a folder returns children metadata (no link or locator, no `source_url`), no `content` keys
 3. `drive_find` on that folder includes the nested Doc as a candidate, not evidence
-4. `drive_read` returns body + `file_id` / `modified_time` / `source_url` (no match fields required)
+4. `drive_read` returns body + `file_id` / `file_name` / `modified_time` (no `source_url`; no match fields required)
 5. `drive_grep` pattern `idempotency` returns a match with provenance including `matched_text` and `location`
 6. Same grep twice in one process on the same fixture bytes → identical matches
 7. `max_matches=1` on a file with two hits → `PARTIAL`

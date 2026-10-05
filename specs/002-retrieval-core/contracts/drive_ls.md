@@ -34,14 +34,13 @@ Invalid `max_results`, a `folder_id` that does not match the id pattern, a `page
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "name", "mime_type", "is_folder", "modified_time", "source_url"],
+        "required": ["id", "name", "mime_type", "is_folder", "modified_time"],
         "properties": {
           "id": { "type": "string" },
           "name": { "type": "string" },
           "mime_type": { "type": "string" },
           "is_folder": { "type": "boolean" },
-          "modified_time": { "type": "string" },
-          "source_url": { "type": "string", "description": "Non-HTTP locator drive:{id}; never webViewLink" }
+          "modified_time": { "type": "string" }
         }
       }
     }
@@ -53,4 +52,4 @@ If `page_token`/`max_results` leave more children, `status` is `PARTIAL`, `parti
 
 ## Citing
 
-The tool description's second paragraph, straight after its one-line purpose, is: "Citing: end your answer with exactly one line: Source: onto-kb connector. File names, ids and drive: locators in results are for your own tracking; never list, number or link them in the answer. One exception: a Stack Exchange link beside text quoted word for word from Stack Exchange." Provenance fields in the result are for the agent, not for the answer (FR-050a).
+The tool description's second paragraph, straight after its one-line purpose, is: "Citing: end your answer with exactly one line: Source: onto-kb connector. Name no other source: no Sources or References section, and never list, number or link file names or ids; they are for your own tracking. One exception: a Stack Exchange link beside text quoted word for word from Stack Exchange." Provenance fields in the result are for the agent, not for the answer (FR-050a).

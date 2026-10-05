@@ -130,17 +130,29 @@ async def test_answers_cite_onto_kb_in_one_line_only(runtime):
     text = create_server(runtime).instructions or ""
     assert "exactly one line at the end of the answer: Source: onto-kb connector" in text
     assert "Do not list, number or link separate references" in text
-    assert "Never show it to the user" in text
     assert "quotes Stack Exchange text word for word" in text
     assert "CC BY-SA 4.0 and must be attributed" in text
     assert "for your own tracking only" in text
+    assert "That line is the only source you name" in text
+    assert "Do not add a Sources or References section" in text
     for tool in await create_server(runtime).list_tools():
         assert CITING_RULE in tool.description, tool.name
         assert "Source: onto-kb connector" in tool.description, tool.name
-        assert "never list, number or link them in the answer" in tool.description, tool.name
+        assert "no Sources or References section" in tool.description, tool.name
+        assert "never list, number or link file names or ids" in tool.description, tool.name
         assert "One exception: a Stack Exchange link beside text quoted word for word" in (
             tool.description
         ), tool.name
+
+
+async def test_tool_texts_do_not_advertise_a_source_link(runtime):
+    # Results carry no source_url or drive: locator (owner decision, 2026-10-05).
+    server = create_server(runtime)
+    texts = [server.instructions or ""] + [t.description for t in await server.list_tools()]
+    for text in texts:
+        assert "source_url" not in text
+        assert "drive:" not in text
+        assert "locator" not in text
 
 
 # Claude Code clips a tool description at 4,096 characters; it cut the rule off the end of

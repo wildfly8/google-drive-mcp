@@ -51,7 +51,7 @@ description: "Task list for Retrieval Core"
 
 **Goal**: `drive_ls` (immediate children), `drive_find` (recursive descendants), `drive_read` (live text + provenance). Unsupported types fail classified, not empty.
 
-**Independent Test**: Fake Drive with a nested Doc. `ls` has no body and includes `source_url`; `find` on parent includes nested file as candidate; `read` returns text + `file_id`/`modified_time`; binary file by id → `UNSUPPORTED_MIME_TYPE`.
+**Independent Test**: Fake Drive with a nested Doc. `ls` has no body and no link or locator; `find` on parent includes nested file as candidate; `read` returns text + `file_id`/`modified_time`; binary file by id → `UNSUPPORTED_MIME_TYPE`.
 
 ### Tests for User Story 1
 
@@ -352,3 +352,7 @@ Filename discovery and folder grep coverage (FR-012, FR-036, FR-038). No persist
 ## Phase 25: The citation rule leads
 
 - [X] T085 Put the citation rule first (owner report, 2026-10-05: a connected AI app still listed `file.md (drive:…)` as sources): `CITING_RULE` is the second paragraph of every tool description and the instructions open with their Citing section, before authentication; `drive_grep`'s description, which Claude Code showed cut at 4,096 characters (removing the rule and the result format), is now 3,980 characters, and no description may exceed 3,996; in `src/google_drive_mcp/mcp/tool_schema.py` and `tests/contract/test_tool_schemas.py` (`test_citing_rule_leads_the_instructions_and_every_description`) (FR-050a)
+
+## Phase 26: No source link in results
+
+- [X] T086 Stop returning `source_url` and say that the one cited line is the only source named (owner decisions, 2026-10-05: a connected AI app listed `file.md (drive:…)` as sources even with the rule first): `drive_ls` children, `drive_find` candidate files, `drive_read` and `drive_grep` matches carry `file_id`/`id` and `file_name`/`name` and no link or locator; the rule adds "Name no other source: no Sources or References section", and the instructions and descriptions no longer mention `drive:` locators; `DriveFile.source_url`, `drive_source_locator` and the field on `SearchMatch` and `Provenance` are removed. Article VIII's minimum provenance (file id, name, modified time) is unchanged, so no amendment. In `src/google_drive_mcp/domain/{drive_file,matches,provenance}.py`, `src/google_drive_mcp/retrieval/{grep,read}.py`, `src/google_drive_mcp/mcp/tool_schema.py`, `tests/contract/test_no_source_link_in_results.py`, `tests/unit/retrieval/test_no_source_link_on_wire.py` (replacing `test_source_url_locator.py` and `test_source_url_not_downloadable.py`) and the tool tests (FR-001, FR-050, FR-050a, FR-051)

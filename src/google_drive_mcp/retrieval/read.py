@@ -83,7 +83,6 @@ def drive_read(
         "file_name": meta.name,
         "mime_type": meta.mime_type,
         "modified_time": meta.modified_time,
-        "source_url": meta.source_url,
         "retrieved_at": retrieved_at,
         "representation": exported.representation,
         "content": text,

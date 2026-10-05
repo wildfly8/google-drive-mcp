@@ -48,13 +48,12 @@ When **both** `folder_id` and `file_ids` are set: Access Control step 4 lists `k
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["file_id", "file_name", "mime_type", "modified_time", "source_url", "retrieved_at", "pattern", "matched_text", "location"],
+        "required": ["file_id", "file_name", "mime_type", "modified_time", "retrieved_at", "pattern", "matched_text", "location"],
         "properties": {
           "file_id": { "type": "string" },
           "file_name": { "type": "string" },
           "mime_type": { "type": "string" },
           "modified_time": { "type": "string" },
-          "source_url": { "type": "string", "description": "Non-HTTP locator drive:{file_id}; never a downloadable URL" },
           "retrieved_at": { "type": "string" },
           "pattern": { "type": "string" },
           "matched_text": { "type": "string" },
@@ -81,4 +80,4 @@ In line-oriented text (Docs, Markdown, plain text) each match is one line: `matc
 
 ## Citing
 
-The tool description's second paragraph, straight after its one-line purpose, is: "Citing: end your answer with exactly one line: Source: onto-kb connector. File names, ids and drive: locators in results are for your own tracking; never list, number or link them in the answer. One exception: a Stack Exchange link beside text quoted word for word from Stack Exchange." Provenance fields in the result are for the agent, not for the answer (FR-050a).
+The tool description's second paragraph, straight after its one-line purpose, is: "Citing: end your answer with exactly one line: Source: onto-kb connector. Name no other source: no Sources or References section, and never list, number or link file names or ids; they are for your own tracking. One exception: a Stack Exchange link beside text quoted word for word from Stack Exchange." Provenance fields in the result are for the agent, not for the answer (FR-050a).

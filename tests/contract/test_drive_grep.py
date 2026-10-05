@@ -18,8 +18,8 @@ def test_grep_idempotency_returns_match_with_provenance(runtime, authz):
     assert match["file_id"]
     assert match["matched_text"]
     assert "location" in match
-    assert match["source_url"] == f"drive:{match['file_id']}"
-    assert not match["source_url"].lower().startswith("http")
+    assert match["file_name"]
+    assert "source_url" not in match
     assert match["retrieved_at"]
     assert match["pattern"] == "idempotency"
 

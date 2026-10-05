@@ -475,7 +475,6 @@ def drive_grep(
                         file_name=file.name,
                         mime_type=file.mime_type,
                         modified_time=file.modified_time,
-                        source_url=file.source_url,
                         retrieved_at=retrieved_at,
                         pattern=pattern,
                         matched_text=item.matched_text,

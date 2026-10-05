@@ -51,7 +51,7 @@ Invalid `max_results`, date-time or `folder_id` shape, or an argument not in thi
 }
 ```
 
-`file` is DriveFile metadata only (id, name, mime_type, modified_time, `source_url` = `drive:{id}`, is_folder, trashed). No `content` field. `source_url` MUST NOT be an HTTP URL. `reason` is `name match` (when `name_pattern` is set), `mime filter` (when `mime_type` is set without `name_pattern`), or `folder descendant`.
+`file` is DriveFile metadata only (id, name, mime_type, modified_time, is_folder, trashed). No `content` field and no link or locator (no `source_url`). `reason` is `name match` (when `name_pattern` is set), `mime filter` (when `mime_type` is set without `name_pattern`), or `folder descendant`.
 
 The server pushes `name contains` (when `name_pattern` is set), `mimeType`, `modifiedTime` bounds, and `trashed = false` unless `trashed` is true, into `files.list`. `name_pattern` is still confirmed as a case-insensitive filename substring on the listed names. `max_results` counts matching non-folder files only; matching folders are still returned, under their own cap of the same size (more → `PARTIAL` `max_files`). The walk stops listing at the file cap, so a folder listed after it may be omitted from that `PARTIAL` result. When `mime_type` is the folder type, folders count. With any filter, the query also returns subfolders so the walk can descend; a subfolder is a candidate only if it matches. Listing a folder does not `files.get` each child. A listed child whose `parents` do not include the folder being listed is dropped. Page size is 1000.
 
@@ -59,4 +59,4 @@ Zero matches after a finished scan → `EMPTY`. Hitting `max_files` while more m
 
 ## Citing
 
-The tool description's second paragraph, straight after its one-line purpose, is: "Citing: end your answer with exactly one line: Source: onto-kb connector. File names, ids and drive: locators in results are for your own tracking; never list, number or link them in the answer. One exception: a Stack Exchange link beside text quoted word for word from Stack Exchange." Provenance fields in the result are for the agent, not for the answer (FR-050a).
+The tool description's second paragraph, straight after its one-line purpose, is: "Citing: end your answer with exactly one line: Source: onto-kb connector. Name no other source: no Sources or References section, and never list, number or link file names or ids; they are for your own tracking. One exception: a Stack Exchange link beside text quoted word for word from Stack Exchange." Provenance fields in the result are for the agent, not for the answer (FR-050a).

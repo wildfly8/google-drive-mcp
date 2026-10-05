@@ -13,8 +13,8 @@ def test_read_returns_body_and_provenance(runtime, authz):
     assert result["file_id"] == "nested-doc"
     assert "idempotency" in result["content"]
     assert result["modified_time"]
-    assert result["source_url"] == "drive:nested-doc"
-    assert not result["source_url"].lower().startswith("http")
+    assert result["file_name"]
+    assert "source_url" not in result
     assert result["retrieved_at"]
     assert "matched_text" not in result
     assert result["representation"] == "text/plain"

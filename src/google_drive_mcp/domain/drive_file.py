@@ -1,15 +1,10 @@
-"""DriveFile domain model. Wire source_url is a non-HTTP Drive locator."""
+"""DriveFile domain model. The wire carries no Drive link and no source locator."""
 
 from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
 FOLDER_MIME = "application/vnd.google-apps.folder"
-
-
-def drive_source_locator(file_id: str) -> str:
-    """Stable provenance locator. Not dereferenceable; hosts must not offer download."""
-    return f"drive:{file_id}"
 
 
 class DriveFile(BaseModel):
@@ -21,6 +16,8 @@ class DriveFile(BaseModel):
     parents: list[str] = Field(default_factory=list)
     modified_time: str
     created_time: str | None = None
+    # Kept off the wire: hosts list any link or locator in a result as a source
+    # (and offer a download), so results carry file_id and file_name only.
     web_view_link: str | None = None
     size: int | None = None
     owners: list[str] | None = None
@@ -30,12 +27,6 @@ class DriveFile(BaseModel):
     def is_folder(self) -> bool:
         return self.mime_type == FOLDER_MIME
 
-    @property
-    def source_url(self) -> str:
-        # Never emit Drive webViewLink or any http(s) URL. Hosts treat HTTPS
-        # strings in tool JSON as Cited Sources and offer a download.
-        return drive_source_locator(self.id)
-
     def child_wire(self) -> dict:
         return {
             "id": self.id,
@@ -43,7 +34,6 @@ class DriveFile(BaseModel):
             "mime_type": self.mime_type,
             "is_folder": self.is_folder,
             "modified_time": self.modified_time,
-            "source_url": self.source_url,
         }
 
     def candidate_file_wire(self) -> dict:
@@ -52,7 +42,6 @@ class DriveFile(BaseModel):
             "name": self.name,
             "mime_type": self.mime_type,
             "modified_time": self.modified_time,
-            "source_url": self.source_url,
             "is_folder": self.is_folder,
             "trashed": self.trashed,
         }

@@ -22,13 +22,13 @@ SERVER_DESCRIPTION = (
 # The citation rule (FR-050a) leads the instructions and every tool description,
 # straight after the tool's one-line purpose. Hosts clip long text: Claude Code
 # cuts a description at 4,096 characters, which removed the rule from the end of
-# drive_grep's, while the file names and drive: locators in every result invited
-# the host to list them as sources.
+# drive_grep's, while the file names, ids and source links in every result invited
+# the host to list them as sources. Results no longer carry a source link at all.
 CITING_RULE = (
     "Citing: end your answer with exactly one line: Source: onto-kb connector. "
-    "File names, ids and drive: locators in results are for your own tracking; "
-    "never list, number or link them in the answer. One exception: a Stack Exchange "
-    "link beside text quoted word for word from Stack Exchange."
+    "Name no other source: no Sources or References section, and never list, number "
+    "or link file names or ids; they are for your own tracking. One exception: a "
+    "Stack Exchange link beside text quoted word for word from Stack Exchange."
 )
 
 SERVER_INSTRUCTIONS = """\
@@ -37,7 +37,7 @@ into structured tool calls. This server never extracts keywords and never writes
 the final answer.
 
 Citing: when your answer uses anything these tools returned, cite it with exactly one line at the end of the answer: Source: onto-kb connector
-Do not list, number or link separate references anywhere in the answer: no file names, file ids, drive: locators, URLs found in the documents, footnotes, bracketed markers or per-quote attributions. The file names and drive: locators in tool results are for your own tracking only.
+That line is the only source you name. Do not add a Sources or References section. Do not list, number or link separate references anywhere in the answer: no file names, file ids, URLs found in the documents, footnotes, bracketed markers or per-quote attributions. The file names and ids in tool results are for your own tracking only.
 One exception: when the answer quotes Stack Exchange text word for word (a comment, post or question title), put the link to that Stack Exchange post, as given in the entry, beside the quote. That text is CC BY-SA 4.0 and must be attributed. Paraphrase needs no link.
 
 Authentication is MCP OAuth 2.1 (authorization code + PKCE). Hosts may call
@@ -69,7 +69,6 @@ Hard rules:
 - The only folder this server may read is kb and its descendants. Omit folder_id to list or search kb. A folder_id or file_id outside kb, or one that does not exist, is AUTHORIZATION_ERROR; nothing outside kb is listed or read. Do not request My Drive root or any other top-level folder.
 - One drive_grep or drive_read returns at most 20 MB. A file at or under that size is complete when you pass that one file_id. A known size that does not fit the remaining bytes is listed in deferred_file_ids and is not downloaded.
 - Candidates from drive_find are not quotes. Evidence is drive_read content or drive_grep matches; keep each file_id in your own context to chain calls.
-- source_url is the locator drive:{file_id}, not an HTTP URL. Never show it to the user or present it as a download or Cited Source link.
 - No write/delete/share tools exist. Do not ask for them.
 """
 
@@ -102,7 +101,7 @@ When not to use:
 Example (do): {"folder_id": "1abcFolderId", "max_results": 40}
 Example (don't): {"folder_id": "1abcFolderId"} to "search for Hegel" — ls does not search names or bodies.
 
-Returns: status (COMPLETE | PARTIAL | EMPTY), children[{id,name,mime_type,is_folder,modified_time,source_url}], optional next_page_token / partial_reason. Files come first, by name, then folders. source_url is drive:{id} (not http). Never includes content.
+Returns: status (COMPLETE | PARTIAL | EMPTY), children[{id,name,mime_type,is_folder,modified_time}], optional next_page_token / partial_reason. Files come first, by name, then folders. Never includes content or links.
 """,
 )
 
@@ -125,7 +124,7 @@ name_pattern is NOT a glob: "activity-2025" matches activity-2025-01-05.md and a
 Example (do): {"name_pattern": "activity-2025", "max_results": 40}
 Example (don't): {"name_pattern": "what role does pure mathematics play in the philosophical foundations of mathematics?"} — that is a question, not a filename.
 
-Returns: status, candidates[{file, reason, discovery_method}]. file has id/name/mime/modified_time/source_url (drive:{id}, not http), never content. max_results counts matching files; matching folders are listed under their own cap of the same size, unless mime_type is the folder type (then folders count). Hitting max_results while more matches remain → PARTIAL with partial_reason max_files.
+Returns: status, candidates[{file, reason, discovery_method}]. file has id/name/mime/modified_time, never content or links. max_results counts matching files; matching folders are listed under their own cap of the same size, unless mime_type is the folder type (then folders count). Hitting max_results while more matches remain → PARTIAL with partial_reason max_files.
 """,
 )
 
@@ -148,7 +147,7 @@ Example (don't): {"file_id": "activity-2025-01-05.md"} — names are not ids. Ex
 Optional content_format: omit for the default export (Docs/Slides text/plain, Sheets csv, text blobs as stored). Unknown or incompatible format → INVALID_ARGUMENT.
 Optional max_bytes: 1..20000000; truncation → PARTIAL (prefix returned).
 
-Returns: status, file_id, file_name, mime_type, modified_time, source_url (drive:{file_id}, not http), retrieved_at, content, optional representation / partial_reason. Unsupported types → UNSUPPORTED_MIME_TYPE or FILE_NOT_EXPORTABLE, not empty success.
+Returns: status, file_id, file_name, mime_type, modified_time, retrieved_at, content, optional representation / partial_reason. Unsupported types → UNSUPPORTED_MIME_TYPE or FILE_NOT_EXPORTABLE, not empty success.
 """,
 )
 
@@ -190,6 +189,6 @@ One match per matching line: location.line and location.offset give the first hi
 
 EMPTY means that slice finished with zero hits and nothing deferred — never a fabricated match.
 
-Returns: status, files_scanned, bytes_scanned, optional partial_reason / next_cursor / deferred_file_ids, matches[{file_id,file_name,mime_type,modified_time,source_url,retrieved_at,pattern,matched_text,location,context}]. source_url is drive:{file_id}, not an HTTP download link.
+Returns: status, files_scanned, bytes_scanned, optional partial_reason / next_cursor / deferred_file_ids, matches[{file_id,file_name,mime_type,modified_time,retrieved_at,pattern,matched_text,location,context}].
 """,
 )

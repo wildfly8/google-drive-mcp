@@ -2,7 +2,7 @@
 
 Request-scoped only. Drive remains the source of truth.
 
-Wire field `source_url` is always the non-dereferenceable locator `drive:{file_id}`. Provenance fields are for the agent's own tracking; a final answer cites all of them as the single line `Source: onto-kb connector` (FR-050a). Domain `DriveFile.web_view_link` may store Drive `webViewLink` internally but MUST NEVER be copied onto the wire (hosts treat HTTPS URLs in tool JSON as downloadable Cited Sources).
+Results carry `file_id`, `file_name` and `modified_time` as provenance, for the agent's own tracking, and no source link or locator (no `source_url`, no `drive:{id}`), because hosts list any such field as a source (T086). A final answer cites everything as the single line `Source: onto-kb connector` (FR-050a). Domain `DriveFile.web_view_link` may store Drive `webViewLink` internally but MUST NEVER be copied onto the wire (hosts treat HTTPS URLs in tool JSON as downloadable Cited Sources).
 
 ## DriveFile
 
@@ -55,7 +55,7 @@ Invalid if `file_id` missing. Not a cache key. Plays the **evidence** role when 
 
 | Field | Type | Rules |
 | --- | --- | --- |
-| `file` | DriveFile | Metadata only; wire `source_url` is `drive:{id}` |
+| `file` | DriveFile | Metadata only; no link or locator on the wire |
 | `reason` | string | Why it was surfaced: `name match`, `mime filter`, or `folder descendant` |
 | `discovery_method` | enum | `find` only (`drive_ls` does not return this type) |
 
@@ -86,7 +86,6 @@ Not a class, not a wire type, not a task. Role played by `DocumentContent` and `
 | `file_name` | string | yes |
 | `mime_type` | string | yes |
 | `modified_time` | datetime | yes |
-| `source_url` | string | yes (`drive:{file_id}`; never `http`/`https`) |
 | `matched_text` / `location` | string / object | grep only; omit on `drive_read` |
 | `retrieved_at` | datetime | yes |
 

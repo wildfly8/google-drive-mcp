@@ -52,7 +52,7 @@ Public business site for Stripe verification (free GitHub Pages): [https://wisdo
 
 Knowing the connector URL is not enough: Connect finishes only in a browser with an active subscription, after its Allow click. Drive calls require the short-lived token that app stores after Connect. Do not put `MCP_AUTH_TOKEN` in request headers.
 
-Answers that use onto-kb cite it in one line only, `Source: onto-kb connector`, with no separate references, except that text quoted word for word from Stack Exchange keeps the link to its post beside the quote (it is CC BY-SA 4.0); the server's instructions and tool descriptions tell the AI app so. Tool results identify files with `file_id` and `source_url` as `drive:{file_id}` — not an HTTPS Drive link — so Cited Sources cannot offer a download. Document text is still returned as evidence; use `drive_read` for the body.
+Answers that use onto-kb cite it in one line only, `Source: onto-kb connector`, with no separate references, except that text quoted word for word from Stack Exchange keeps the link to its post beside the quote (it is CC BY-SA 4.0); the server's instructions and tool descriptions tell the AI app so. Tool results identify files by `file_id` and `file_name` only, with no link and no `source_url`, so an AI app has no source link to list or to offer as a download; the one cited line is the only source it should name. Document text is still returned as evidence; use `drive_read` for the body.
 
 Any AI chat app that can add a remote MCP server uses that same URL and OAuth. Do not put tokens in the MCP URL or in tool arguments. Do not send `MCP_AUTH_TOKEN` as the `/mcp` Bearer.
 
