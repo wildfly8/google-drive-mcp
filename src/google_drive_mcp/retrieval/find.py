@@ -90,6 +90,15 @@ def drive_find(
         list_filter=list_filter,
         honor_file_cap=True,
         count_folders=False,
+        accept=lambda f: _matches(
+            f,
+            name_pattern=name_pattern,
+            mime_type=mime_type,
+            modified_after=after,
+            modified_before=before,
+            include_trashed=trashed,
+        )
+        is not None,
         request_id=request_id,
     )
     candidates: list[SearchCandidate] = []

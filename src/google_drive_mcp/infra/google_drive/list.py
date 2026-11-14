@@ -8,6 +8,7 @@ Walk HTTP 429 is completeness (PARTIAL), not map_google_error RATE_LIMITED.
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from google_drive_mcp.domain.budgets import Budget
@@ -102,6 +103,7 @@ def walk_files(
     honor_file_cap: bool = True,
     count_folders: bool = True,
     count_listed: bool = True,
+    accept: Callable[[DriveFile], bool] | None = None,
     request_id: str | None = None,
 ) -> WalkResult:
     """BFS descendants (folder scope) or the named files. Never the whole grant.
@@ -113,6 +115,10 @@ def walk_files(
     ``count_listed`` false leaves the file budget for the caller (grep scans
     an ordered subset of a finished listing). ``depths`` records how far below
     the folder each listed item sits, so callers can put shallower files first.
+    ``accept`` drops a listed item the caller does not want before it counts against
+    the file cap. Drive's ``name contains`` matches words by prefix, so it lists
+    near-misses; they must not use up a small ``max_results``. Folders are still
+    descended into whether or not they are accepted.
     """
     result = WalkResult()
     lookup = _parent_lookup(drive)
@@ -123,6 +129,8 @@ def walk_files(
         if not trust and not is_within_scope(file.id, scope, lookup):
             return
         if file.is_folder and not include_folders:
+            return
+        if accept is not None and not accept(file):
             return
         counts = count_folders or not file.is_folder
         if budget.time_exceeded():

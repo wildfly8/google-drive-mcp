@@ -117,3 +117,10 @@ Google 404 after `ALLOW` uses Access Control’s `map_google_error()` — do not
 **Rationale**: The owner moved the 27 examined essays (current theses) to `kb`'s root and the archives (about 440 files of ~100 KB) into subfolders, and asked that the essays be searched and loaded first. Size-only grep order interleaved essays with indexes and small archive files, and the breadth-first find walk reached `chatgpt/` before the essays when they sat two levels deep. Grep now sorts by depth, then size; listed children are files first, then by name. Drive's `files.list` order is unspecified, so the sort also keeps `drive_ls` offset paging stable. The rule names no folder, so it holds for any layout.
 
 **Alternatives considered**: A priority folder setting by name or id (rejected: deployment-specific configuration for what layout already expresses). Size-only order with the essays kept the smallest files (rejected: fragile; one long essay or a short index breaks it).
+
+## Decision: Near-misses from Drive do not use the find cap (2026-11-14)
+
+**Rationale**: A live `drive_find` for `chatgpt-2025-03` with `max_results` 5 returned 2 of the 10 files that start in March 2025 and said `PARTIAL`; with `max_results` 40 it returned all 10. Drive's `name contains` matches words by prefix, so it also lists files such as `chatgpt-2025-01-03-a.md`; the walk counted every listed file against the cap before the name was confirmed, so near-misses used the slots. The walk now takes an `accept` filter and drops an unwanted file before it counts, so `max_results` counts matching files as FR-012 says. Folders are still descended into.
+
+**Alternatives considered**: Raising the listing cap for `drive_find` (rejected: it hides the miscount and lists more than the caller asked for). Dropping the Drive-side `name contains` and filtering locally (rejected: it lists every file under the folder on every call).
+
