@@ -281,6 +281,12 @@ class DriveClient:
                 raise DriveError(text) from exc
         raise DriveError("unreachable")  # pragma: no cover
 
+    def whoami(self) -> str:
+        """The Google account the changes would be made as."""
+        info = self._call(self._service.about().get(fields="user(emailAddress,displayName)"))
+        user = info.get("user") or {}
+        return user.get("emailAddress") or user.get("displayName") or "unknown"
+
     def get_item(self, file_id: str) -> dict:
         return self._call(
             self._service.files().get(fileId=file_id, fields=FIELDS, supportsAllDrives=True)
@@ -429,6 +435,31 @@ def apply_plan(
     return out
 
 
+def _header(
+    client: Any,
+    meta: dict,
+    folder_id: str,
+    remote: dict[str, list[RemoteItem]],
+    source: Path,
+    local_count: int,
+) -> list[str]:
+    """Who is signed in, which folder, and what is in it: enough to spot the wrong
+    account or the wrong folder named kb before --apply."""
+    try:
+        who = client.whoami() if hasattr(client, "whoami") else "unknown"
+    except DriveError:
+        who = "unknown"
+    items = [item for found in remote.values() for item in found]
+    files = sum(1 for item in items if not item.is_folder)
+    newest = max((item.modified for item in items), default="")[:10] or "nothing"
+    return [
+        f"Signed in to Google as: {who}",
+        f"Drive folder {meta['name']!r}: https://drive.google.com/drive/folders/{folder_id}",
+        f"  it holds {files} files in {len(items) - files} folders; newest change {newest}",
+        f"Local folder {source}: {local_count} files",
+    ]
+
+
 def _print_plan(plan: list[Action], say: Callable[[str], None], *, verbose: bool) -> None:
     counts: dict[str, int] = {}
     for action in plan:
@@ -543,7 +574,8 @@ def main(
         say(f"Cannot use the Drive folder: {exc}")
         return 2
 
-    say(f"Drive folder {meta['name']!r}  <-  {source}  ({len(local)} files)")
+    for line in _header(client, meta, folder_id, remote, source, len(local)):
+        say(line)
     plan = make_plan(local, remote, trash_extras=args.trash)
     _print_plan(plan, say, verbose=args.verbose)
     problems = sum(1 for a in plan if a.kind == "problem")

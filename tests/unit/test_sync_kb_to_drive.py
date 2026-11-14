@@ -60,6 +60,9 @@ class FakeDrive:
         return [i for i in self.items.values() if not i["trashed"]]
 
     # --- what the script calls ---
+    def whoami(self):
+        return "owner@example.test"
+
     def get_item(self, file_id):
         if file_id not in self.items:
             raise sync.DriveError("HTTP 404: not found")
@@ -167,6 +170,35 @@ def test_without_apply_nothing_is_written(tmp_path):
     assert code == 0 and drive.writes == []
     assert any("Nothing was changed" in line for line in lines)
     assert any(line.startswith("Plan: ") and "4 create" in line for line in lines)
+
+
+def test_the_preview_names_the_account_the_folder_and_what_it_holds(tmp_path):
+    # A sync that lands in another account or another folder named kb looks like a success
+    # unless the output says which account and which folder it changed.
+    src = make_kb(tmp_path, KB)
+    drive = FakeDrive()
+    drive.put("README.md", b"r")
+    drive.put("chatgpt/x.md", b"x")
+    code, lines = run(src, drive)
+    text = "\n".join(lines)
+    assert code == 0
+    assert "Signed in to Google as: owner@example.test" in text
+    assert "https://drive.google.com/drive/folders/ROOT" in text
+    assert "it holds 2 files in 1 folders" in text
+    assert f"Local folder {src}: 4 files" in text
+
+
+def test_a_failed_account_lookup_does_not_stop_the_preview(tmp_path):
+    src = make_kb(tmp_path, KB)
+    drive = FakeDrive()
+
+    def refuse():
+        raise sync.DriveError("HTTP 500")
+
+    drive.whoami = refuse  # type: ignore[method-assign]
+    code, lines = run(src, drive)
+    assert code == 0
+    assert any("Signed in to Google as: unknown" in line for line in lines)
 
 
 def test_files_only_in_drive_are_left_alone_unless_trash_is_given(tmp_path):
@@ -336,6 +368,17 @@ def http_error(status: int, reason: str = "") -> HttpError:
 def client_with(service=None):
     sleeps: list[float] = []
     return sync.DriveClient(service or MagicMock(), sleep=sleeps.append), sleeps
+
+
+def test_whoami_asks_drive_who_is_signed_in():
+    client, _ = client_with()
+    about = client._service.about.return_value.get.return_value
+    about.execute.return_value = {"user": {"emailAddress": "me@example.test"}}
+    assert client.whoami() == "me@example.test"
+    about.execute.return_value = {"user": {"displayName": "Me"}}
+    assert client.whoami() == "Me"
+    about.execute.return_value = {}
+    assert client.whoami() == "unknown"
 
 
 def test_listing_batches_parents_and_follows_pages():
