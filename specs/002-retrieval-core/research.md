@@ -124,3 +124,17 @@ Google 404 after `ALLOW` uses Access Control’s `map_google_error()` — do not
 
 **Alternatives considered**: Raising the listing cap for `drive_find` (rejected: it hides the miscount and lists more than the caller asked for). Dropping the Drive-side `name contains` and filtering locally (rejected: it lists every file under the folder on every call).
 
+## Decision: Make searches faster by cutting Drive round trips, not by building an index (2026-11-14)
+
+**Measurement** (live server, one call at a time, end to end as an AI host sees it, taken from the session transcript's tool-call timestamps; one or two samples each, so a quick call is good to about ±0.7 s). Scanning all 38 MB of `kb` with the same code and no network takes 0.7 s, so the time was Drive round trips of about 0.2 s each, plus about 0.25 s per MB. Before the change:
+
+- `drive_ls` of `kb` 0.9 s; `drive_find` by name 3.4–4.0 s (11 sequential `files.list`); `drive_grep` on 1 file 2.5–3.0 s.
+- `drive_grep` on 10 file ids 5.4 s and on 29 ids (all essays, 196 KB) 15.7 s, about 0.5 s per id: the access check and the search each asked Drive for the same metadata, one id after another (two gets per id).
+- A whole-`kb` scan with a phrase that matches nothing: three calls, 13.4 + 14.7 + 7.7 = 35.8 s (457 files, 37.9 MB), each call re-listing the tree (about 4.5 s) and downloading eight files at a time. A rare term, "Hadoop", cost 12.7 s for its first call (4 hits in the first 200 files).
+
+**Changes** (T088–T090): one metadata get per named id, looked up side by side and shared with the tool by a per-call memo (dropped with the call, so nothing is kept between requests, Article III); the folders of a walk listed side by side; 16 download workers and 32 files ahead. The access token is fetched once under a lock, because the lookups now start together. Results are identical (same matches, files, bytes and cursors); only the time changed.
+
+**After** (same calls, two samples): 10 ids 2.4 s; 29 ids 2.5 s and 2.4 s (about 6× faster, and no longer per id); the whole-`kb` scan 20.3 s and 18.0 s (1.8–2.0×; call by call 7.9/8.0/4.4 s and 6.2/7.4/4.4 s); "Hadoop" 6.9 s; `drive_find` 2.7–3.1 s. Unchanged within noise: `drive_ls` 0.8–2.0 s and a 1-file grep 2.4–3.0 s. A single-file call is bound by a fixed floor of about 2.4 s: fetching the access token, listing the three levels of the tree for the access check (AC-FR-025: the same calls for any id), the download, and transport.
+
+**Alternatives considered**: A term-to-file index file in Drive (3.3 MB for the whole `kb`, 0.9 MB for terms in 25 files or fewer; the server stays stateless). Not built: a complete archive search for a rare term now takes 18–20 s over three calls, an index would bring it to roughly 5–6 s (one lookup, then a grep on the listed ids), but it helps only that pattern, must be regenerated after every upload, and each AI step already costs several seconds of model time. Revisit if complete archive searches for rare terms are a frequent need. A cross-request cache of listings or metadata (rejected: Article I, Article III, Article XIV). Caching the access token or the Drive discovery document across requests (not done: credentials are minted for each request on purpose; the discovery document was not measured).
+
