@@ -32,7 +32,7 @@ after a later implement pass or a spec/plan/tasks rewrite.
 - **Operator, not code:** save the Stripe customer portal settings in live mode
   (cancel at period end); terms, privacy, refund and contact pages on the
   business site; sales tax / where to sell; Stripe billing emails and failed
-  payment settings; a content-rights review of `kb`; a Cloud Billing budget,
+  payment settings; a content-rights review of `kb`; uploading `kb` changes with `scripts/sync-kb-to-drive.py` (005 T025, first run T026); a Cloud Billing budget,
   an uptime check and alert email.
 - **Known limits:** revocation is per instance and `/mcp` checks the JWT only
   (access ends within one access-token lifetime); the webhook only logs.

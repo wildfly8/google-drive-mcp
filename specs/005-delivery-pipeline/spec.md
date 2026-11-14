@@ -115,6 +115,22 @@ The owner can still deploy from a clean checkout with their own gcloud login. Th
 4. **Given** a revision that cannot be deleted, **When** cleanup runs, **Then** the script exits non-zero and names each revision left, so the owner can remove its traffic and delete it by hand.
 5. **Given** `ONE_TIME_SETUP=0`, **When** the owner runs the script by hand, **Then** it behaves as the CI deploy does, except that it still runs the tests unless `SKIP_TESTS=1`.
 
+### User Story 6 - Publish the kb content to Drive (Priority: P2)
+
+The owner can put the `onto-kb` repo's files into the Drive `kb` folder with one command from their own machine, and see first what would change. The server only reads Drive, so content reaches Drive through this operator tool, not through the server.
+
+**Why this priority**: Every kb change (a new essay, a regenerated index) had to be uploaded by hand, and an upload that keeps both files leaves duplicates that every search then reads twice.
+
+**Independent Test**: `uv run python scripts/sync-kb-to-drive.py --source ../onto-kb --folder-id <id>` prints a plan and changes nothing; with `--apply` the Drive folder matches the repo; a second run changes nothing. `tests/unit/test_sync_kb_to_drive.py` runs the same against an in-memory Drive.
+
+**Acceptance Scenarios**:
+
+1. **Given** a file whose content differs from Drive's, **When** the owner runs the tool with `--apply`, **Then** the Drive file is updated in place and keeps its id.
+2. **Given** files or folders missing from Drive, **When** it runs with `--apply`, **Then** they are created, each folder before the files in it.
+3. **Given** a path with duplicates in Drive, a file where a folder belongs (or the reverse), or a Google Doc where a file belongs, **When** it runs, **Then** the path is reported and not changed, and the exit code is not zero.
+4. **Given** files that exist only in Drive, **When** it runs, **Then** they are listed and left alone; with `--trash` they move to the Drive trash. Nothing is deleted.
+5. **Given** an id that is a Drive root, a trashed folder, a file, or a folder with another name, **When** it runs, **Then** it refuses before any write.
+
 ---
 
 ### Edge Cases
@@ -167,6 +183,8 @@ The owner can still deploy from a clean checkout with their own gcloud login. Th
 - **FR-020**: A manual deploy (`ONE_TIME_SETUP` unset or `1`) MUST also enable the required APIs, grant the runtime account access to each bound secret, grant the Cloud Build and runtime accounts their build roles, create `MCP_PRINCIPAL_ID` when missing, and ensure the connect-counter log metrics and dashboard (`scripts/ensure-connect-telemetry-gcp.sh`). It MUST apply the same preflight, refusals, `kb` guard and cleanup as the CI deploy.
 - **FR-021**: A rollback MUST be a deploy of an older commit (a revert on `main` through the pipeline, or a manual deploy from that commit). Older revisions are not kept for traffic rollback.
 - **FR-022**: Unit tests MUST pin the build and pipeline settings: image from the lockfile as non-root with the expected start command; bounded runtime dependencies and dev-only test tools; lockfile in step with `pyproject.toml`; the CI test steps; the three Dependabot ecosystems weekly; the `image` job checks; and a `deploy` job that needs `test` and `image`, uses `production`, runs only on `main`, sets `ONE_TIME_SETUP: "0"` and pins every action by commit SHA. They MUST also prove the preflight: a dirty tree and failing tests stop before gcloud, the overrides work, CI mode never enables APIs or grants IAM, operator mode still does, and a git-ignored `gha-creds-*.json` does not block a deploy. They MUST pin the ignore rules for that file in `.gitignore`, `.gcloudignore` (with `#!include:.gitignore`) and `.dockerignore`.
+- **FR-023**: `scripts/sync-kb-to-drive.py` MUST mirror a local folder into one named Drive folder: print a plan and change nothing without `--apply`; create folders before the files in them; update a changed file in place so its Drive file id is kept; leave a file whose md5 matches alone; be safe to run again (a second run changes nothing).
+- **FR-024**: The tool MUST stay inside the folder it is given: refuse a Drive root, a trashed folder, a non-folder, or a folder whose name is not `--expect-name` (default `kb`); never delete (`--trash` moves to the Drive trash); leave alone a path with duplicates, a type clash or a non-file item; never retry a create after a server error (it may have happened); stop at the first permission error; skip dot files and symbolic links. It MUST live outside `src/` and the container image, so the server keeps no code path that writes to Drive (Article V; `test_google_drive_adapter_has_no_write_methods` scans all of `src/`).
 
 ### Key Entities
 
