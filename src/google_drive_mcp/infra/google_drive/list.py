@@ -9,9 +9,10 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 
-from google_drive_mcp.domain.budgets import Budget
+from google_drive_mcp.domain.budgets import LIST_WORKERS, Budget
 from google_drive_mcp.domain.drive_file import DriveFile
 from google_drive_mcp.domain.errors import DomainError, ErrorCategory
 from google_drive_mcp.domain.google_errors import GoogleApiError, map_google_error
@@ -43,6 +44,58 @@ def _as_file(item: object) -> DriveFile:
 
 def _parent_lookup(drive: object) -> object:
     return drive.parent_lookup
+
+
+class _Listings:
+    """Folder listings, fetched side by side when the Drive port allows it.
+
+    A folder is queued for listing as soon as the walk discovers it, so each level of
+    the tree lists at once instead of one folder after another. The walk still takes
+    folders in queue order, so what it returns never depends on which listing finishes
+    first. A port opts in with ``parallel_listing``; one that does not is listed one
+    folder at a time, exactly as before.
+    """
+
+    def __init__(
+        self,
+        drive: object,
+        budget: Budget,
+        *,
+        include_trashed: bool,
+        list_filter: ListFilter | None,
+    ) -> None:
+        self._drive = drive
+        self._budget = budget
+        self._include_trashed = include_trashed
+        self._list_filter = list_filter
+        self._futures: dict[str, Future] = {}
+        self._pool = (
+            ThreadPoolExecutor(max_workers=LIST_WORKERS, thread_name_prefix="list-walk")
+            if getattr(drive, "parallel_listing", False)
+            else None
+        )
+
+    def _list(self, folder_id: str) -> list:
+        return self._drive.list_children(
+            folder_id=folder_id,
+            budget=self._budget,
+            include_trashed=self._include_trashed,
+            list_filter=self._list_filter,
+        )
+
+    def start(self, folder_id: str) -> None:
+        if self._pool is not None and folder_id not in self._futures:
+            self._futures[folder_id] = self._pool.submit(self._list, folder_id)
+
+    def take(self, folder_id: str) -> list:
+        """The folder's listing: the one already started, or listed now."""
+        future = self._futures.pop(folder_id, None)
+        return self._list(folder_id) if future is None else future.result()
+
+    def close(self) -> None:
+        if self._pool is not None:
+            self._pool.shutdown(wait=False, cancel_futures=True)
+        self._futures.clear()
 
 
 def _children_of(folder_id: str, items: list) -> list[DriveFile]:
@@ -161,41 +214,46 @@ def walk_files(
         if scope.folder_id:
             queue: deque[tuple[str, int]] = deque([(scope.folder_id, 0)])
             seen: set[str] = set()
-            while queue:
-                if budget.time_exceeded():
-                    result.time_exceeded = True
-                    break
-                if honor_file_cap and budget.files_exhausted():
-                    result.truncated = True
-                    break
-                folder, level = queue.popleft()
-                if folder in seen:
-                    continue
-                seen.add(folder)
-                children = _children_of(
-                    folder,
-                    drive.list_children(
-                        folder_id=folder,
-                        budget=budget,
-                        include_trashed=include_trashed,
-                        list_filter=list_filter,
-                    ),
-                )
-                if getattr(drive, "list_time_exceeded", False):
-                    result.time_exceeded = True
-                for index, child in enumerate(children):
-                    if child.is_folder:
-                        queue.append((child.id, level + 1))
-                    consider(child, trust=True, depth=level + 1)
-                    if honor_file_cap and budget.files_exhausted():
-                        if index + 1 < len(children) or queue:
-                            result.truncated = True
-                        break
+            listings = _Listings(
+                drive, budget, include_trashed=include_trashed, list_filter=list_filter
+            )
+            try:
+                while queue:
                     if budget.time_exceeded():
                         result.time_exceeded = True
                         break
-                if result.time_exceeded:
-                    break
+                    if honor_file_cap and budget.files_exhausted():
+                        result.truncated = True
+                        break
+                    folder, level = queue.popleft()
+                    if folder in seen:
+                        continue
+                    seen.add(folder)
+                    listed = listings.take(folder)
+                    children = _children_of(folder, listed)
+                    # The flag rides on the listing itself when the port sets it, so
+                    # listings running side by side cannot mix up each other's.
+                    cut = getattr(listed, "time_exceeded", None)
+                    if cut is None:
+                        cut = getattr(drive, "list_time_exceeded", False)
+                    if cut:
+                        result.time_exceeded = True
+                    for index, child in enumerate(children):
+                        if child.is_folder:
+                            queue.append((child.id, level + 1))
+                            listings.start(child.id)
+                        consider(child, trust=True, depth=level + 1)
+                        if honor_file_cap and budget.files_exhausted():
+                            if index + 1 < len(children) or queue:
+                                result.truncated = True
+                            break
+                        if budget.time_exceeded():
+                            result.time_exceeded = True
+                            break
+                    if result.time_exceeded:
+                        break
+            finally:
+                listings.close()
             return result
 
         # Unscoped: the whole Google grant is never listed.

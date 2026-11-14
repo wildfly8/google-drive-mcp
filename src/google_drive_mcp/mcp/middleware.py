@@ -14,6 +14,7 @@ from google_drive_mcp.domain.retrieval_scope import apply_allowed_folder
 from google_drive_mcp.infra.billing.gateway import BillingGateway, InactiveBilling
 from google_drive_mcp.infra.config import Settings
 from google_drive_mcp.infra.google_auth.refresh_token import mint_readonly_credentials
+from google_drive_mcp.infra.google_drive.memo import MemoDrive
 from google_drive_mcp.infra.logging import log_chain_event
 from google_drive_mcp.infra.mcp_auth.tokens import verify_authorization_header
 from google_drive_mcp.infra.telemetry.recorder import ConnectRecorder
@@ -77,13 +78,16 @@ class Runtime:
         """Mint request-scoped credentials and bind the Drive port used for I/O."""
         creds = mint_readonly_credentials(self.settings)
         if self.drive is not None:
-            _request_drive.set(self.drive)
-            return self.drive
-        from google_drive_mcp.infra.google_drive.client import GoogleDriveClient
+            client = self.drive
+        else:
+            from google_drive_mcp.infra.google_drive.client import GoogleDriveClient
 
-        client = GoogleDriveClient(creds)
-        _request_drive.set(client)
-        return client
+            client = GoogleDriveClient(creds)
+        # A new memo for every call: a repeated metadata get within the call is
+        # answered from memory, and nothing outlives the request.
+        drive = MemoDrive(client)
+        _request_drive.set(drive)
+        return drive
 
     def mint_and_bind(self) -> object:
         """Called only after MCP authentication passes."""

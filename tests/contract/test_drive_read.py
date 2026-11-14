@@ -58,42 +58,48 @@ def test_unknown_content_format_is_invalid_argument(runtime, authz):
     assert result["category"] == "INVALID_ARGUMENT"
 
 
-def test_read_metadata_404_after_allow_is_file_not_found(runtime, fake_drive, authz):
+def test_read_metadata_404_is_file_not_found(fake_drive):
+    # The tool's own metadata get. Behind the access check it is answered from the
+    # call's memo (see test_one_metadata_get_per_id), so it is exercised directly.
+    import pytest
+
+    from google_drive_mcp.domain.errors import DomainError, ErrorCategory
+    from google_drive_mcp.domain.google_errors import GoogleApiError
+    from google_drive_mcp.retrieval.read import drive_read
+
+    def missing(file_id: str):
+        raise GoogleApiError(404)
+
+    fake_drive.get_metadata = missing  # type: ignore[method-assign]
+    with pytest.raises(DomainError) as raised:
+        drive_read(fake_drive, file_id="nested-doc")
+    assert raised.value.error.category == ErrorCategory.FILE_NOT_FOUND
+
+
+def test_read_metadata_429_is_rate_limited(fake_drive):
+    import pytest
+
+    from google_drive_mcp.domain.errors import DomainError, ErrorCategory
+    from google_drive_mcp.domain.google_errors import GoogleApiError
+    from google_drive_mcp.retrieval.read import drive_read
+
+    def limited(file_id: str):
+        raise GoogleApiError(429)
+
+    fake_drive.get_metadata = limited  # type: ignore[method-assign]
+    with pytest.raises(DomainError) as raised:
+        drive_read(fake_drive, file_id="nested-doc")
+    assert raised.value.error.category == ErrorCategory.RATE_LIMITED
+
+
+def test_read_metadata_429_at_the_access_check_is_rate_limited(runtime, fake_drive, authz):
     from google_drive_mcp.domain.google_errors import GoogleApiError
 
-    original = fake_drive.get_metadata
-    seen = {"n": 0}
+    def limited(file_id: str):
+        raise GoogleApiError(429)
 
-    def second_get_misses(file_id: str):
-        seen["n"] += 1
-        if seen["n"] > 1:
-            raise GoogleApiError(404)
-        return original(file_id)
-
-    fake_drive.get_metadata = second_get_misses  # type: ignore[method-assign]
-    result = handle_tool(
-        runtime, "drive_read", {"file_id": "nested-doc"}, authz
-    )
-    assert result["status"] == "ERROR"
-    assert result["category"] == "FILE_NOT_FOUND"
-
-
-def test_read_metadata_429_after_allow_is_rate_limited(runtime, fake_drive, authz):
-    from google_drive_mcp.domain.google_errors import GoogleApiError
-
-    original = fake_drive.get_metadata
-    seen = {"n": 0}
-
-    def second_get_limited(file_id: str):
-        seen["n"] += 1
-        if seen["n"] > 1:
-            raise GoogleApiError(429)
-        return original(file_id)
-
-    fake_drive.get_metadata = second_get_limited  # type: ignore[method-assign]
-    result = handle_tool(
-        runtime, "drive_read", {"file_id": "nested-doc"}, authz
-    )
+    fake_drive.get_metadata = limited  # type: ignore[method-assign]
+    result = handle_tool(runtime, "drive_read", {"file_id": "nested-doc"}, authz)
     assert result["status"] == "ERROR"
     assert result["category"] == "RATE_LIMITED"
 

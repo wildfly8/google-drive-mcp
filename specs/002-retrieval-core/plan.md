@@ -40,7 +40,9 @@ Google 404/403-as-404 (and single-file 429 with no prefix) go through Access Con
 | --- | --- |
 | `max_files` | 40 (`drive_ls` page, `drive_find`); `max_results` may lower it (1–40) |
 | `max_files` for `drive_grep` | 200 (bytes and time caps still bound each call) |
-| `drive_grep` download-ahead | 8 worker threads, at most 16 files and 8 MB ahead, files up to 2 MB with a known size |
+| `drive_grep` download-ahead | 16 worker threads, at most 32 files and 8 MB ahead, files up to 2 MB with a known size |
+| Folder listing in a walk | each discovered folder listed on its own worker thread, 8 at once; folders are still taken in queue order |
+| Named-id lookups in the access check | one `files.get` per id, 8 at once, while the tree is listed; the tool reuses them (a per-call memo, dropped with the call) |
 | `max_bytes` per file / export | 20_000_000 (`drive_read` `max_bytes` may lower it) |
 | `max_bytes` per operation | 20_000_000 |
 | `max_matches` | 50 (also the highest value a caller may set) |

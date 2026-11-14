@@ -12,10 +12,17 @@ GREP_MAX_FILES = 200
 # drive_grep downloads small files ahead of the scan on worker threads: only a
 # known size up to GREP_PREFETCH_MAX_FILE_BYTES, at most GREP_PREFETCH_DEPTH
 # files and GREP_PREFETCH_WINDOW_BYTES ahead, so memory stays near a one-file scan.
-GREP_PREFETCH_WORKERS = 8
-GREP_PREFETCH_DEPTH = 16
+# A small file costs about 0.2 s of Drive round trip and almost no transfer, so a scan
+# is bound by how many requests run at once, not by bytes: 16 workers about halve a
+# 200-file call that 8 took ~9 s to download. The byte window, not the worker count,
+# bounds memory.
+GREP_PREFETCH_WORKERS = 16
+GREP_PREFETCH_DEPTH = 32
 GREP_PREFETCH_MAX_FILE_BYTES = 2_000_000
 GREP_PREFETCH_WINDOW_BYTES = 8_000_000
+# A walk lists each folder it discovers on its own worker thread (one Drive round trip
+# each), so a tree three levels deep lists in about three round trips, not one per folder.
+LIST_WORKERS = 8
 MAX_BYTES_PER_FILE = 20_000_000
 MAX_BYTES_PER_OPERATION = 20_000_000
 MAX_MATCHES = 50

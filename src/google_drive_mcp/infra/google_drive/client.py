@@ -87,13 +87,28 @@ def _meta(resource: dict) -> dict:
     }
 
 
+class _Listing(list):
+    """A listing, and whether the time cap cut it short.
+
+    The flag travels with the result, so listings running side by side on worker
+    threads cannot mix up each other's (``list_time_exceeded`` is shared).
+    """
+
+    time_exceeded = False
+
+
 class GoogleDriveClient:
     """Read-only Drive client. No mutating files() methods."""
+
+    # Each thread has its own connection (see _http), so listings may run side by side.
+    parallel_listing = True
 
     def __init__(self, credentials: Credentials) -> None:
         self._credentials = credentials
         self._service = build("drive", "v3", credentials=credentials, cache_discovery=False)
         self._local = threading.local()
+        self._auth_lock = threading.Lock()
+        self._auth_error: RefreshError | None = None
         self.metadata_get_count = 0
         self.content_export_count = 0
         self.content_media_count = 0
@@ -107,9 +122,30 @@ class GoogleDriveClient:
         """
         http = getattr(self._local, "http", None)
         if http is None:
+            self._ensure_token()
             http = google_auth_httplib2.AuthorizedHttp(self._credentials, http=_build_http())
             self._local.http = http
         return http
+
+    def _ensure_token(self) -> None:
+        """Fetch the access token once, however many threads ask at the same time.
+
+        Credentials are minted for each call without a token, so the first request
+        fetches one. Lookups and downloads start side by side, and each would fetch
+        its own; the rest wait for the first, and share its failure if it fails.
+        """
+        if self._credentials.valid:
+            return
+        with self._auth_lock:
+            if self._auth_error is not None:
+                raise self._auth_error
+            if self._credentials.valid:
+                return
+            try:
+                self._credentials.refresh(google_auth_httplib2.Request(_build_http()))
+            except RefreshError as exc:
+                self._auth_error = exc
+                raise
 
     @property
     def content_count(self) -> int:
@@ -161,13 +197,14 @@ class GoogleDriveClient:
         return items
 
     def _list(self, query: str, budget: Budget | None = None) -> list[dict]:
-        items: list[dict] = []
+        items: list[dict] = _Listing()
         page_token = None
         self.list_time_exceeded = False
         try:
             while True:
                 if budget is not None and budget.time_exceeded():
                     self.list_time_exceeded = True
+                    items.time_exceeded = True
                     break
                 kwargs = {
                     "q": query,
@@ -183,6 +220,7 @@ class GoogleDriveClient:
                     items.append(_meta(resource))
                     if budget is not None and budget.time_exceeded():
                         self.list_time_exceeded = True
+                        items.time_exceeded = True
                         return items
                 page_token = response.get("nextPageToken")
                 if not page_token:

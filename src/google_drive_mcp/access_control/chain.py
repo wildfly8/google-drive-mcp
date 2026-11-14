@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import contextvars
 from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any
 
 from google_drive_mcp.access_control.decisions import (
@@ -22,6 +24,49 @@ from google_drive_mcp.domain.retrieval_scope import (
 
 MetadataGet = Callable[[str], Any]
 GoogleMint = Callable[[], object]
+
+# Named ids are looked up this many at a time; each lookup is one Drive round trip.
+FETCH_WORKERS = 8
+
+
+class _Fetching:
+    """Each named id's parents, fetched at once and handed back one id at a time.
+
+    The check used to ask Drive about the ids one after another, about 0.2 s each.
+    Every named id still gets exactly one lookup, whatever the outcome, so an id
+    outside the folder, a missing id and an ungranted id take the same Drive calls.
+    Results are read in the order the ids were named, and a lookup that failed
+    raises its own error at that point, so the reply is the one the sequential check
+    gave. Without ``concurrent`` an id is looked up when it is read.
+    """
+
+    def __init__(self, ids: list[str], fetch: Callable[[str], Any], *, concurrent: bool) -> None:
+        self._fetch = fetch
+        self._futures: dict[str, Future] = {}
+        self._pool: ThreadPoolExecutor | None = None
+        unique = list(dict.fromkeys(ids))
+        if concurrent and unique:
+            self._pool = ThreadPoolExecutor(
+                max_workers=min(FETCH_WORKERS, len(unique)), thread_name_prefix="authz-fetch"
+            )
+            for fid in unique:
+                # A worker thread starts with an empty context; the lookup needs this
+                # request's Drive binding.
+                self._futures[fid] = self._pool.submit(
+                    contextvars.copy_context().run, fetch, fid
+                )
+
+    def result(self, fid: str) -> Any:
+        future = self._futures.get(fid)
+        return self._fetch(fid) if future is None else future.result()
+
+    def __enter__(self) -> _Fetching:
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        if self._pool is not None:
+            # A refusal does not wait for the lookups that are still running.
+            self._pool.shutdown(wait=False, cancel_futures=True)
 
 
 def evaluate_chain(
@@ -107,15 +152,19 @@ def evaluate_chain(
         # each named id gets one metadata get. An id outside the folder, a
         # missing id and an ungranted id take the same Drive calls and get the
         # same reply, so neither the reply nor its timing reveals existence.
-        tree = {} if set(named) == {allowed} else _tree()
-        parents_of: dict[str, list[str]] = {}
-        for fid in named:
-            parents = _parents_or_none(fid)
-            if parents is None or not is_inside_tree(fid, parents, allowed, tree):
-                return _refuse(
-                    principal_id, StepFailed.google_authorization, "outside_allowed_folder"
-                )
-            parents_of[fid] = parents
+        needs_tree = set(named) != {allowed}
+        # The ids are looked up while the tree is listed: the two do not depend on
+        # each other.
+        with _Fetching(named, _parents_or_none, concurrent=needs_tree) as fetching:
+            tree = _tree() if needs_tree else {}
+            parents_of: dict[str, list[str]] = {}
+            for fid in named:
+                parents = fetching.result(fid)
+                if parents is None or not is_inside_tree(fid, parents, allowed, tree):
+                    return _refuse(
+                        principal_id, StepFailed.google_authorization, "outside_allowed_folder"
+                    )
+                parents_of[fid] = parents
         if named_files and scope.folder_id:
             for fid in named_files:
                 if not is_inside_tree(fid, parents_of[fid], scope.folder_id, tree):
