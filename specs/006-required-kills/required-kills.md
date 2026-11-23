@@ -9,6 +9,8 @@ less faithful without being unsafe; `may` changes only speed or order. **killed 
 on the entry's change when the whole suite runs; each was re-run alone against the change and still fails. An
 id with `S` is a second-order entry: two redundant layers removed together.
 
+<!-- required-kills:begin -->
+
 ## Tally
 
 | invariant | entries | killed | survive by design |
@@ -326,6 +328,8 @@ id with `S` is a second-order entry: two redundant layers removed together.
 | G5-18 | ls: a truncated listing is reported as COMPLETE | redundant: immediate_children sets truncated equal to more, so the second test never differs |
 | G6-07 | scan order has no id tie-break | not a requirement: equal-sized files are ordered by name or by id, both deterministic; the contract does not say which |
 | G6-11 | a repeated id in file_ids is scanned twice | masked by the second duplicate guard; both removed together is killed (G6-S1) |
+
+<!-- required-kills:end -->
 
 ## History
 

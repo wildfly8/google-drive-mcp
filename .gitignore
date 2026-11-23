@@ -40,3 +40,6 @@ coverage/
 Thumbs.db
 *.swp
 .idea/
+
+# Results and worker copies of scripts/required_kills/run.py
+.required-kills/
