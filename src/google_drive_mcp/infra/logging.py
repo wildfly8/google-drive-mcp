@@ -28,7 +28,9 @@ _FIELDS = (
 )
 
 _BEARER_RE = re.compile(r"(?i)bearer\s+\S+")
-_AUTH_HEADER_RE = re.compile(r"(?i)authorization:\s*\S+")
+# The whole header value, not its first word: "Authorization: Basic dXNlcjpw" keeps the
+# credential if only "Basic" is matched.
+_AUTH_HEADER_RE = re.compile(r"(?i)authorization:[^\r\n]*")
 
 
 def redact(text: str, extra_secrets: list[str] | None = None) -> str:
