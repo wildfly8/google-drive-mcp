@@ -65,8 +65,10 @@ class _Fetching:
 
     def __exit__(self, *_exc: object) -> None:
         if self._pool is not None:
-            # A refusal does not wait for the lookups that are still running.
-            self._pool.shutdown(wait=False, cancel_futures=True)
+            # A refusal does not wait for the lookups that are still running, and does not
+            # cancel the ones that have not started: every named id gets its one lookup, so
+            # which calls Drive sees never depends on thread timing.
+            self._pool.shutdown(wait=False)
 
 
 def evaluate_chain(

@@ -21,6 +21,12 @@ from google_drive_mcp.mcp.tools import handle_tool
 MD = "text/markdown"
 
 
+def _wait_until(condition, timeout: float = 2.0) -> None:
+    deadline = time.monotonic() + timeout
+    while not condition() and time.monotonic() < deadline:
+        time.sleep(0.005)
+
+
 def _many(drive: FakeDrive, count: int) -> list[str]:
     ids = []
     for n in range(count):
@@ -103,7 +109,9 @@ def test_a_refused_call_still_looks_up_every_named_id(settings, authz):
         runtime, "drive_grep", {"pattern": "x", "file_ids": ["no-such-file", *inside]}, authz
     )
     assert result["category"] == "AUTHORIZATION_ERROR"
-    # An id Drive does not know and one it does take the same calls, in either order.
+    # An id Drive does not know and one it does take the same calls, in either order. A refusal
+    # does not wait for lookups still in flight, so give them a moment to be counted.
+    _wait_until(lambda: base.metadata_get_count >= 3)
     assert base.metadata_get_count == 3
 
 
